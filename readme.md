@@ -1,7 +1,8 @@
 Work in progress.
 
 ## Description
-This repository contains a collection of solution algorithms for dynamic models. 
+This repository contains a collection of solution algorithms for dynamic models.  They are implemented in Python 
+using the Jax library for Scientific Computing and Machine Learning.
 
 ## Implementation in Google Colab
 - The algorithms are implemented as self-contained google colab notebooks. 

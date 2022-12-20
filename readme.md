@@ -8,7 +8,7 @@ This repository contains a collection of solution algorithms for dynamic models.
 - THey can be run using CPU, GPU or TPU in Google Colab, by changing 1 line of code. 
 - If you subscribe to Google Colab Pro (~$10/month and ~$50/month tiers are available), you can choose between 2 GPU tiers, TPU, and choose wether you need extra RAM.
 - With the free Colab, you can still run these with no problem on a CPU. Furthermore, most of the time you can get a basic tier GPU.
--  
+
 ## Algorithms (list is growing)
 
 1. VFI: Heavily parallelized Value Function Iteration.

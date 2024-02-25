@@ -1,5 +1,7 @@
 from jax import numpy as jnp, lax, random
 import jax
+from simulation import create_episode_simul_fn
+from loss import create_batch_loss_fn
 
 def get_eval_fn(env, config):
   config = config["config_eval"]

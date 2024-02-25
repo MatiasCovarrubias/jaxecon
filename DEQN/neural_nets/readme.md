@@ -1,0 +1,1 @@
+This subfolder contain .py files for each type of neural net. For example, multi layer perceptrons have a file, but there are different version.

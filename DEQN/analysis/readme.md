@@ -1,0 +1,1 @@
+This subfolder contains the scripts of all the analysis we can make on checkpointed solution.

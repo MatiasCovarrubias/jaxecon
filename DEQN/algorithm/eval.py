@@ -4,6 +4,13 @@ from simulation import create_episode_simul_fn
 from loss import create_batch_loss_fn
 
 def get_eval_fn(env, config):
+  """
+  Args:
+    env: an environment
+    config: a dictionary containing the configuration of the algorithm
+  Returns:
+    eval_fn: a function that takes a train_state and a step_rng and returns the loss and accuracy of the model
+  """
   config = config["config_eval"]
   episode_simul_fn = create_episode_simul_fn(env, config)
   batch_loss_fn = create_batch_loss_fn(env, config)

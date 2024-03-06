@@ -34,7 +34,11 @@ def get_eval_fn(econ_model, config):
     min_accuracy = jnp.min(min_accuracies)
     mean_accs_focs = jnp.mean(mean_accs_focs, axis=0)
     min_accs_focs = jnp.min(min_accs_focs, axis=0)
-    mean_obs, max_obs, mean_obs_terminal, max_obs_terminal = obs_metrics
+    mean_obsses, max_obsses, mean_obsses_terminal, max_obsses_terminal = obs_metrics
+    mean_obs = jnp.mean(mean_obsses)
+    max_obs = jnp.max(max_obsses)
+    mean_obs_terminal = jnp.mean(mean_obsses_terminal)
+    max_obs_terminal = jnp.max(max_obsses_terminal)
     return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accs_focs, min_accs_focs, mean_obs, max_obs, mean_obs_terminal, max_obs_terminal
 
   return eval_fn

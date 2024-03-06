@@ -58,14 +58,15 @@ class NeuralNet_compute_expects(nn.Module):
   precision = jnp.float32
 
   @nn.compact
-  def __call__(self, x):
+  def __call__(self, x, freeze_policies: bool = False, freeze_expects: bool = True):
     policy = x
     for feat in self.features_policies[:-1]:
       policy = nn.relu(nn.Dense(feat, param_dtype=self.precision)(policy))
     policy = nn.softplus(nn.Dense(self.features_policies[-1], param_dtype=self.precision)(policy))
 
-    expect = x
+    expect = jax.lax.stop_gradient(x) if freeze_expects else x
     for feat in self.features_expects[:-1]:
       expect = nn.relu(nn.Dense(feat, param_dtype=self.precision)(expect))
-    expect = nn.softplus(nn.Dense(self.features_policies[-1], param_dtype=self.precision)(expect))
+    expect = nn.softplus(nn.Dense(self.features_expects[-1], param_dtype=self.precision)(expect))
+
     return policy, expect

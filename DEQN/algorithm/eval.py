@@ -1,21 +1,9 @@
 from jax import numpy as jnp, lax, random
 import jax
-from simulation import create_episode_simul_fn
-from loss import create_batch_loss_fn
 
-def get_eval_fn(econ_model, config):
-  """
-  Creates a function that evaluates the performance of a train_state on the econ model.
+def get_eval_fn(config, episode_simul_fn, batch_loss_fn):
 
-  Args:
-    econ_model: a class containing the econ model. 
-    config: a dictionary containing the configuration for the experiment.
-  Returns:
-    eval_fn: a function that takes a train_state and a step_rng and returns the loss and accuracy of the model
-  """
   config = config["config_eval"]
-  episode_simul_fn = create_episode_simul_fn(econ_model, config)
-  batch_loss_fn = create_batch_loss_fn(econ_model, config)
 
   def episode_eval_fn(train_state, epis_rng):
     epis_rng, loss_rng = random.split(epis_rng, 2)
@@ -42,3 +30,5 @@ def get_eval_fn(econ_model, config):
     return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accs_focs, min_accs_focs, mean_obs, max_obs, mean_obs_terminal, max_obs_terminal
 
   return eval_fn
+
+

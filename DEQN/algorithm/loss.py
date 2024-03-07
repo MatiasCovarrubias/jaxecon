@@ -1,6 +1,7 @@
 from jax import numpy as jnp, lax, random
 import jax
 
+
 def create_batch_loss_fn_simple(econ_model, config):
 
   def batch_loss_fn(params, train_state, batch_obs, loss_rng):
@@ -31,11 +32,12 @@ def create_batch_loss_fn_simple(econ_model, config):
 
   return batch_loss_fn
 
+
 def create_batch_loss_fn_precomputed_expects(econ_model):
 
-  def batch_loss_fn(params, train_state, batch_obs, batch_expects):
+  def batch_loss_fn(params, train_state, batch_obs):
     """Loss function for a batch of observations."""
-    batch_policies = train_state.apply_fn(params, batch_obs) 
+    batch_policies, batch_expects = train_state.apply_fn(params, batch_obs, freeze_expects=True) 
 
     # parallelize callculation of period_loss for the entire batch
     losses_metrics = jax.vmap(econ_model.loss)(batch_obs, batch_expects, batch_policies)

@@ -45,14 +45,11 @@ def get_epoch_train_fn_precomputed_expects(econ_model, config, episode_simul_fn,
 
   def step_train_fn(train_state, step_rng):
     epis_rng = random.split(step_rng, config["epis_per_step"])
-    step_obs, step_expects = jax.vmap(episode_simul_fn, in_axes=(None,0))(train_state, jnp.stack(epis_rng))
+    step_obs = jax.vmap(episode_simul_fn, in_axes=(None,0))(train_state, jnp.stack(epis_rng))
     step_obs  = step_obs.reshape(config["periods_per_step"], step_obs[0,:].shape[0])              # combine all periods in one axis
-    step_expects  = step_expects.reshape(config["periods_per_step"], step_expects[0,:].shape[0])  
     step_obs = random.permutation(step_rng, step_obs, axis=0)                                     # reshuffle obs at random
-    step_expects = random.permutation(step_rng, step_expects, axis=0)                             
     step_obs = step_obs.reshape(config["n_batches"], config["batch_size"] ,step_obs[0,:].shape[0])          # reshape to into batches
-    step_expects = step_expects.reshape(config["n_batches"], config["batch_size"] ,step_expects[0,:].shape[0]) 
-    train_state, step_metrics = jax.vmap(batch_train_fn, in_axes=(None,0,0), out_axes=(None,0), axis_name="batch")(train_state, step_obs, step_expects)
+    train_state, step_metrics = jax.vmap(batch_train_fn, in_axes=(None,0,0), out_axes=(None,0), axis_name="batch")(train_state, step_obs)
     mean_losses, max_losses, mean_accuracies, min_accuracies,_, _ = step_metrics
     mean_loss = jnp.mean(mean_losses)
     max_loss = jnp.max(max_losses)

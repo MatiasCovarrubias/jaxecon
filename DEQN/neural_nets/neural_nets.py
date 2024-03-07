@@ -63,10 +63,14 @@ class NeuralNet_compute_expects(nn.Module):
     for feat in self.features_policies[:-1]:
       policy = nn.relu(nn.Dense(feat, param_dtype=self.precision)(policy))
     policy = nn.softplus(nn.Dense(self.features_policies[-1], param_dtype=self.precision)(policy))
+    if freeze_policies:
+      policy = jax.lax.stop_gradient(policy)
 
-    expect = jax.lax.stop_gradient(x) if freeze_expects else x
+    expect = x
     for feat in self.features_expects[:-1]:
       expect = nn.relu(nn.Dense(feat, param_dtype=self.precision)(expect))
     expect = nn.softplus(nn.Dense(self.features_expects[-1], param_dtype=self.precision)(expect))
+    if freeze_expects:
+      expect = jax.lax.stop_gradient(expect)
 
     return policy, expect

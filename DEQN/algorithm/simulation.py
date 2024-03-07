@@ -24,12 +24,12 @@ def create_episode_simul_fn_compute_expects(econ_model, config):
     init_obs = econ_model.initial_obs(epis_rng, config["init_range"])
     period_rngs = random.split(epis_rng, config["periods_per_epis"])
     def period_step(env_obs, period_rng):
-      policy, expect = train_state.apply_fn(train_state.params, env_obs)
+      policy, _ = train_state.apply_fn(train_state.params, env_obs)
       period_shock = config["simul_vol_scale"]*econ_model.sample_shock(period_rng)
       obs_next = econ_model.step(env_obs, policy, period_shock)  
-      return obs_next, (obs_next, expect) # we pass it two times because of the syntax of the lax.scan loop
-    _, (epis_obs, epis_expects) = lax.scan(period_step, init_obs, jnp.stack(period_rngs)) # we get the obs_batch
-    return epis_obs, epis_expects
+      return obs_next, obs_next # we pass it two times because of the syntax of the lax.scan loop
+    _, epis_obs = lax.scan(period_step, init_obs, jnp.stack(period_rngs)) # we get the obs_batch
+    return epis_obs
 
   return sample_epis_obs
 

@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 from jax import random
 
-class Model():
+class Rbc():
   """A JAX implementation of an RBC model."""
 
   def __init__(self, precision=jnp.float32):

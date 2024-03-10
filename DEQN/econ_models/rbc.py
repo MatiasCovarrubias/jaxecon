@@ -95,9 +95,12 @@ class Rbc():
     # Calculate the FOC for Pk
     FOC_loss = (1/C)/(self.beta*expect) - 1
     mean_loss = jnp.mean(jnp.array([FOC_loss**2])) # here there is just one, but more gemore generally.
+    max_loss = jnp.max(jnp.array([FOC_loss**2])) # here there is just one, but more gemore generally.
     mean_accuracy = jnp.mean(jnp.array([1-jnp.abs(FOC_loss)]))
     min_accuracy = jnp.min(jnp.array([1-jnp.abs(FOC_loss)]))
-    return mean_loss, mean_accuracy, min_accuracy
+    mean_accuracies_foc = jnp.array([1-jnp.abs(FOC_loss)])
+    max_accuracies_foc = jnp.array([1-jnp.abs(FOC_loss)])
+    return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, max_accuracies_foc
 
   def sample_shock(self, rng, n_draws=1):
     """ sample one realization of the shock.

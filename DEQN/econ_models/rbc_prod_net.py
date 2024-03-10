@@ -1,5 +1,6 @@
 from jax import numpy as jnp
 from jax import random
+import jax
 
 class RbcProdNet():
   """A JAX implementation of an RBC model."""
@@ -174,9 +175,9 @@ class RbcProdNet():
     # I =Ktplus1-(1-self.delta)*K
 
     # get steady state prices to aggregate Y, I and M
-    Pss = jnp.exp(policies_ss[8*self.n_sectors:9*self.n_sectors])
-    Pkss = jnp.exp(policies_ss[2*self.n_sectors:3*self.n_sectors])
-    Pmss = jnp.exp(policies_ss[3*self.n_sectors:4*self.n_sectors])
+    Pss = jnp.exp(self.policies_ss[8*self.n_sectors:9*self.n_sectors])
+    Pkss = jnp.exp(self.policies_ss[2*self.n_sectors:3*self.n_sectors])
+    Pmss = jnp.exp(self.policies_ss[3*self.n_sectors:4*self.n_sectors])
     capadj_term = 1-self.phi*(I/K-self.delta)
     # print("cap_adj_term:", capadj_term)
     # capadj_term = jnp.where(capadj_term<0,0.0001,capadj_term)

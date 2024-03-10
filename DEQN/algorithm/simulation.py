@@ -1,7 +1,7 @@
 import jax
 from jax import numpy as jnp, lax, random
 
-def create_episode_simul_fn_simple(econ_model, config):
+def create_episode_simul_fn(econ_model, config):
 
   def sample_epis_obs(train_state, epis_rng):
     "sample obs of an episode"

@@ -1,7 +1,7 @@
 from jax import numpy as jnp, lax, random
 import jax
 
-def get_epoch_train_fn(econ_model, config, episode_simul_fn, batch_loss_fn):
+def create_epoch_train_fn(econ_model, config, episode_simul_fn, batch_loss_fn):
 
   def batch_train_fn(train_state, batch_obs, loss_rng):
     grad_fn = jax.value_and_grad(batch_loss_fn, has_aux=True)

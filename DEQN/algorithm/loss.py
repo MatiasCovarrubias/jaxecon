@@ -15,8 +15,8 @@ def create_batch_loss_fn(econ_model, config):
       mc_nextobs = jax.vmap(econ_model.step, in_axes = (None,None,0))(obs, policy, mc_shocks)
       mc_nextpols = train_state.apply_fn(params, mc_nextobs)
       expect = jnp.mean(jax.vmap(econ_model.expect_realization)(mc_nextobs, mc_nextpols), axis=0)
-      mean_loss, mean_accuracy, min_accuracy, mean_accs_foc, min_accs_foc = econ_model.loss(obs, expect, policy) 
-      return mean_loss, mean_accuracy, min_accuracy, mean_accs_foc, min_accs_foc
+      mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accs_foc, min_accs_foc = econ_model.loss(obs, expect, policy) 
+      return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accs_foc, min_accs_foc
 
     # parallelize callculation of period_loss for the entire batch
     losses_metrics = jax.vmap(period_loss)(batch_obs, batch_policies, jnp.stack(period_mc_rngs))

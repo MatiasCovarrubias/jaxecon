@@ -15,6 +15,8 @@ class RbcCES_SteadyState():
     self.sigma_y = jnp.array(0.5, dtype=precision)
     self.phi = jnp.array(2, dtype=precision)
     self.theta = jnp.array(1, dtype=precision)
+    self.eps_c = jnp.array(2, dtype=precision)
+    self.eps_l= jnp.array(0.5, dtype=precision)
 
   def loss(self, policy):
     """ Calculate loss associated with observing obs, having policy_params, and expectation exp """

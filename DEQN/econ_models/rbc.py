@@ -24,14 +24,14 @@ class Rbc():
     # number of policies
     self.n_actions = 1
 
-  def initial_obs(self, rng):
+  def initial_obs(self, rng, init_range = 0):
     """ Get initial obs given first shock """
     rng_k, rng_a = random.split(rng,2)
     K = random.uniform(
-            rng_k, minval=0.9 * jnp.exp(self.k_ss), maxval=1.1 * jnp.exp(self.k_ss), dtype=self.precision
+            rng_k, minval=(1-init_range/100) * jnp.exp(self.k_ss), maxval=(1+init_range/100) * jnp.exp(self.k_ss), dtype=self.precision
         )  # get uniform draw around the steady state
     A = random.uniform(
-            rng_a, minval=0.9 * jnp.exp(self.a_ss), maxval=1.1 * jnp.exp(self.a_ss), dtype=self.precision
+            rng_a, minval=(1-init_range/100) * jnp.exp(self.a_ss), maxval=(1+init_range/100) * jnp.exp(self.a_ss), dtype=self.precision
         )  # get uniform draw around the steady state
 
     obs_init_notnorm = jnp.array([jnp.log(K), jnp.log(A)], dtype=self.precision)

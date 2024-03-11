@@ -21,7 +21,7 @@ class RbcCES_SteadyState():
   def loss(self, policy):
     """ Calculate loss associated with observing obs, having policy_params, and expectation exp """
 
-    policy_notnorm = jnp.exp(policy)
+    policy_notnorm = policy
     C = policy_notnorm[0]
     L = policy_notnorm[1]
     K = policy_notnorm[2]

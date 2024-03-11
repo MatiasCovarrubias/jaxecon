@@ -27,20 +27,22 @@ class RbcCES_SteadyState():
     K = policy_notnorm[2]
     P = policy_notnorm[3]
     Y = policy_notnorm[4]
+    theta = policy_notnorm[5]
 
 
     # Calculate the FOC for Pk
-    MgUtC = (C - self.theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
+    MgUtC = (C - theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
     MPL = ((1 - self.alpha) * Y / L)**(self.sigma_y ** (-1))
     MPK = self.beta * ((1-self.delta)+(self.alpha*Y/K)**(self.sigma_y ** (-1)))
     Ydef = (self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
 
     C_loss = P/MgUtC - 1
-    L_loss = self.theta*L**(self.eps_l ** (-1)) / MPL -1
+    L_loss = theta*L**(self.eps_l ** (-1)) / MPL -1
     K_loss = 1/MPK - 1
     P_loss = Y/(C+self.delta*K) - 1
     Y_loss = Y/Ydef-1 
-    losses_array = jnp.array([C_loss,L_loss,K_loss,P_loss,Y_loss])
+    theta_loss = P-1
+    losses_array = jnp.array([C_loss,L_loss,K_loss,P_loss,Y_loss,theta_loss])
     mean_loss = jnp.mean(losses_array**2)
     max_loss = jnp.max(losses_array**2)
     mean_accuracy = jnp.mean(1-jnp.abs(losses_array))

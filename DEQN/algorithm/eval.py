@@ -1,7 +1,7 @@
 from jax import numpy as jnp, lax, random
 import jax
 
-def get_eval_fn(config, episode_simul_fn, batch_loss_fn):
+def create_eval_fn(config, episode_simul_fn, batch_loss_fn):
 
   config = config["config_eval"]
 

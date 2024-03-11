@@ -14,7 +14,6 @@ class RbcCES_SteadyState():
     self.shock_sd = jnp.array(0.02, dtype=precision)
     self.sigma_y = jnp.array(0.5, dtype=precision)
     self.phi = jnp.array(2, dtype=precision)
-    self.theta = jnp.array(1, dtype=precision)
     self.eps_c = jnp.array(2, dtype=precision)
     self.eps_l= jnp.array(0.5, dtype=precision)
 
@@ -55,7 +54,7 @@ class RbcCES_SteadyState():
 class RbcCES():
   """A JAX implementation of an RBC model."""
 
-  def __init__(self, precision=jnp.float32):
+  def __init__(self, precision=jnp.float32, policies_ss=[3.8758656e-01, -1.2288518e-01,  2.4382138e-01,  2.3841855e-07, 4.7065210e-01], theta = jnp.exp(7.1949315e-01)):
     self.precision = precision
     # set parameters
     self.beta = jnp.array(0.96, dtype=precision)
@@ -65,18 +64,19 @@ class RbcCES():
     self.shock_sd = jnp.array(0.02, dtype=precision)
     self.sigma_y = jnp.array(0.5, dtype=precision)
     self.phi = jnp.array(2, dtype=precision)
-    self.theta = jnp.array(1, dtype=precision)
-
+    self.eps_c = jnp.array(2, dtype=precision)
+    self.eps_l= jnp.array(0.5, dtype=precision)
+    self.theta = jnp.array(theta, dtype=precision)
 
     # set steady state and standard deviations for normalization
-    self.k_ss = jnp.log((self.alpha/(1/self.beta-1+self.delta))**(1/(1-self.alpha)))
     self.a_ss = jnp.array(0, dtype=precision)
+    self.policy_ss = jnp.array(policies_ss, dtype=precision)
+    self.k_ss = jnp.array(policies_ss[2], dtype=precision)
     self.obs_ss = jnp.array([self.k_ss, 0], dtype=precision)
     self.obs_sd = jnp.array([1, 1], dtype=precision)  # use 1 if you don't have an estimate
-    self.policy_ss = self.k_ss
 
     # number of policies
-    self.n_actions = 1
+    self.n_actions = 5
 
   def initial_obs(self, rng, init_range = 0):
     """ Get initial obs given first shock """
@@ -100,8 +100,7 @@ class RbcCES():
     a = obs_notnorm[1]                    # a_{t}
     a_tplus1 = self.rho * a + self.shock_sd*shock[0]   # recover a_{t+1}
     policy_notnorm = policy*jnp.exp(self.policy_ss)             # multiply by stst pols in level
-    # K_tplus1 = (1-self.delta)*K + policy_notnorm[0]             #get K_{t+1}
-    K_tplus1 = policy_notnorm[0]             #get K_{t+1}
+    K_tplus1 = policy_notnorm[2]             #get K_{t+1}
     obs_next_notnorm = jnp.array([jnp.log(K_tplus1),a_tplus1])  #concatenate observation
     obs_next = (obs_next_notnorm-self.obs_ss)/self.obs_sd        # normalize
 
@@ -112,12 +111,18 @@ class RbcCES():
     """ A realization (given a shock) of the expectation terms in system of equation """
 
     policy_notnorm = policy_next*jnp.exp(self.policy_ss) # multiply by stst pols in levels
-    K_tplus1 = policy_notnorm[0]                                # define investment
+    C = policy_notnorm[0]
+    L = policy_notnorm[1]
+    K_tplus1 = policy_notnorm[2]
+    P = policy_notnorm[3]
+    Y = policy_notnorm[4]
 
     # Process observation
     obs_notnorm = obs_next*self.obs_sd + self.obs_ss     # denormalize obs
     K = jnp.exp(obs_notnorm[0])                          # K_{t+1} in levels
-    a = obs_notnorm[1]                             # a_{t}
+    a = obs_notnorm[1]   
+    
+    # DEefine rest of the variables
     I = K_tplus1 - (1-self.delta)*K
     # Rest of variables
     A = jnp.exp(a)

@@ -5,7 +5,7 @@ import jax
 
 class NeuralNet(nn.Module):
   features: Sequence[int]
-  precision = jnp.float32
+  precision: jnp.dtype  # Default precision
 
   @nn.compact
   def __call__(self, x):

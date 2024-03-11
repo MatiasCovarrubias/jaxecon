@@ -1,6 +1,53 @@
 from jax import numpy as jnp
 from jax import random
 
+class RbcCES_SteadyState():
+  """A JAX implementation of an RBC model."""
+
+  def __init__(self, precision=jnp.float32):
+    self.precision = precision
+    # set parameters
+    self.beta = jnp.array(0.96, dtype=precision)
+    self.alpha = jnp.array(0.3, dtype=precision)
+    self.delta = jnp.array(0.1, dtype=precision)
+    self.rho = jnp.array(0.9, dtype=precision)
+    self.shock_sd = jnp.array(0.02, dtype=precision)
+    self.sigma_y = jnp.array(0.5, dtype=precision)
+    self.phi = jnp.array(2, dtype=precision)
+    self.theta = jnp.array(1, dtype=precision)
+
+  def loss(self, policy):
+    """ Calculate loss associated with observing obs, having policy_params, and expectation exp """
+
+    policy_notnorm = jnp.exp(policy)
+    C = policy_notnorm[0]
+    L = policy_notnorm[1]
+    K = policy_notnorm[2]
+    P = policy_notnorm[3]
+    Y = policy_notnorm[4]
+
+
+    # Calculate the FOC for Pk
+    MgUtC = (C - self.theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
+    MPL = ((1 - self.alpha) * Y / L)**(self.sigma_y ** (-1))
+    MPK = self.beta * ((1-self.delta)+(self.alpha*Y/K)**(self.sigma_y ** (-1)))
+    Ydef = (self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
+
+    C_loss = P/MgUtC - 1
+    L_loss = self.theta*L**(self.eps_l ** (-1)) / MPL -1
+    K_loss = 1/MPK - 1
+    P_loss = Y/(C+self.delta*K) - 1
+    Y_loss = Y/Ydef-1 
+    losses_array = jnp.array([C_loss,L_loss,K_loss,P_loss,Y_loss])
+    mean_loss = jnp.mean(losses_array**2)
+    max_loss = jnp.max(losses_array**2)
+    mean_accuracy = jnp.mean(1-jnp.abs(losses_array))
+    min_accuracy = jnp.min(1-jnp.abs(losses_array))
+    mean_accuracies_foc = jnp.array(1-jnp.abs(losses_array))
+    max_accuracies_foc = jnp.array(1-jnp.abs(losses_array))
+    return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, max_accuracies_foc
+
+  
 class RbcCES():
   """A JAX implementation of an RBC model."""
 
@@ -12,6 +59,9 @@ class RbcCES():
     self.delta = jnp.array(0.1, dtype=precision)
     self.rho = jnp.array(0.9, dtype=precision)
     self.shock_sd = jnp.array(0.02, dtype=precision)
+    self.sigma_y = jnp.array(0.5, dtype=precision)
+    self.phi = jnp.array(2, dtype=precision)
+    self.theta = jnp.array(1, dtype=precision)
 
 
     # set steady state and standard deviations for normalization

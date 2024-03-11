@@ -229,6 +229,7 @@ class RbcProdNet():
     # jax.debug.print("M: {}", M)
     # Calculate aggregate losses and metrics
     mean_loss = jnp.mean(losses_array**2)
+    max_loss = jnp.max(losses_array**2)
     mean_accuracy = jnp.mean(1-jnp.abs(losses_array))
     min_accuracy = jnp.min(1-jnp.abs(losses_array))
     mean_accuracies_focs = jnp.array([jnp.mean(1-jnp.abs(C_loss)),jnp.mean(1-jnp.abs(L_loss)),jnp.mean(1-jnp.abs(K_loss)),jnp.mean(1-jnp.abs(Pm_loss)),jnp.mean(1-jnp.abs(M_loss)),jnp.mean(1-jnp.abs(Mout_loss)),jnp.mean(1-jnp.abs(Pk_loss)),
@@ -239,7 +240,7 @@ class RbcProdNet():
                               jnp.min(1-jnp.abs(Iout_loss)),jnp.min(1-jnp.abs(Qrc_loss)),jnp.min(1-jnp.abs(Qdef_loss)),jnp.min(1-jnp.abs(Ydef_loss)),jnp.min(1-jnp.abs(Caggdef_loss)),
                               jnp.min(1-jnp.abs(Laggdef_loss)),jnp.min(1-jnp.abs(Yaggdef_loss)),jnp.min(1-jnp.abs(Iaggdef_loss)),jnp.min(1-jnp.abs(Maggdef_loss))])
 
-    return mean_loss, mean_accuracy, min_accuracy, mean_accuracies_focs, min_accuracies_focs
+    return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_focs, min_accuracies_focs
 
   def sample_shock(self, rng):
     """ sample one realization of the shock """

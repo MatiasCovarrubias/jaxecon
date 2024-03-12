@@ -36,12 +36,12 @@ class RbcCES_SteadyState():
     C_loss = P/MgUtC - 1
     L_loss = theta*L**(self.eps_l ** (-1)) / MPL -1
     K_loss = 1/MPK - 1
-    I_loss = Pk/P -1
+    I_loss = Pk/P - 1
     P_loss = Y/(C+I) - 1
     Pk_loss = I/(self.delta*K) - 1
     Y_loss = Y/Ydef-1 
     theta_loss = P-1
-    losses_array = jnp.array([C_loss,L_loss,K_loss,I_loss,P_loss,Pk_loss, Y_loss,theta_loss])
+    losses_array = jnp.array([C_loss,L_loss,K_loss,I_loss,P_loss,Pk_loss,Y_loss,theta_loss])
     mean_loss = jnp.mean(losses_array**2)
     return mean_loss
 
@@ -49,7 +49,7 @@ class RbcCES_SteadyState():
 class RbcCES():
   """A JAX implementation of an RBC model."""
 
-  def __init__(self, policies_ss, precision=jnp.float32, theta=2, beta=0.96, alpha=0.3, delta=0.1, sigma_y=0.5, eps_c=2, eps_l=0.5, rho=0.9, phi=2, shock_sd=0.02):
+  def __init__(self, policies_ss=[1,1,1,1,1,1,1], precision=jnp.float32, theta=2, beta=0.96, alpha=0.3, delta=0.1, sigma_y=0.5, eps_c=2, eps_l=0.5, rho=0.9, phi=2, shock_sd=0.02):
     self.precision = precision
     # set parameters
     self.beta = jnp.array(beta, dtype=precision)
@@ -136,31 +136,30 @@ class RbcCES():
     P = policy_notnorm[4]
     Pk = policy_notnorm[5]
     Y = policy_notnorm[6]
-    theta = policy_notnorm[7]
 
     # Calculate the FOC for Pk
-    MgUtC = (C - theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
+    MgUtC = (C - self.theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
     MPL = A**(1-self.sigma_y**(-1)) ((1 - self.alpha) * Y / L)**(self.sigma_y ** (-1))
     MPK = self.beta * expect
-    Pkmodel = P(1-self.phi*(I/K-self.delta))**(-1)
+    Pkmodel = P* (1-self.phi*(I/K-self.delta))**(-1)
     K_tplus1_def = (1-self.delta)*K + I - (self.phi/2) * (I/K - self.delta)**2 * K 
     Ydef = A*(self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
 
     C_loss = P/MgUtC - 1
-    L_loss = theta*L**(self.eps_l ** (-1)) / MPL -1
+    L_loss = self.theta*L**(self.eps_l ** (-1)) / MPL -1
     K_loss = Pk/MPK - 1
     I_loss =  Pk/Pkmodel -1 
     P_loss = Y/(C+I) - 1
     Pk_loss =K_tplus1/K_tplus1_def - 1
     Y_loss = Y/Ydef-1 
 
-    losses_array = jnp.array([C_loss,L_loss,K_loss,I_loss,P_loss,Pk_loss, Y_loss])
+    losses_array = jnp.array([C_loss,L_loss,K_loss,I_loss,P_loss,Pk_loss,Y_loss])
     mean_loss = jnp.mean(losses_array**2)
     max_loss = jnp.max(losses_array**2) # here there is just one, but more gemore generally.
     mean_accuracy = jnp.mean([1-jnp.abs(losses_array)])
     min_accuracy = jnp.min([1-jnp.abs(losses_array)])
-    mean_accuracies_foc = jnp.mean([1-jnp.abs(losses_array)])
-    min_accuracies_foc = jnp.min([1-jnp.abs(losses_array)])
+    mean_accuracies_foc = jnp.array([jnp.mean([1-jnp.abs(losses_array)])])
+    min_accuracies_foc = jnp.array([jnp.min([1-jnp.abs(losses_array)])])
     return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, min_accuracies_foc
 
   def sample_shock(self, rng, n_draws=1):

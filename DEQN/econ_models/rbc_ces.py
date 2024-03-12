@@ -4,16 +4,13 @@ from jax import random
 class RbcCES_SteadyState():
   """A JAX implementation of an RBC model."""
 
-  def __init__(self, precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, rho=0.9, shock_sd=0.02, sigma_y=0.5, phi=2, eps_c=2, eps_l=0.5):
+  def __init__(self, precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, sigma_y=0.5, eps_c=2, eps_l=0.5):
     self.precision = precision
     # set parameters
     self.beta = jnp.array(beta, dtype=precision)
     self.alpha = jnp.array(alpha, dtype=precision)
     self.delta = jnp.array(delta, dtype=precision)
-    self.rho = jnp.array(rho, dtype=precision)
-    self.shock_sd = jnp.array(shock_sd, dtype=precision)
     self.sigma_y = jnp.array(sigma_y, dtype=precision)
-    self.phi = jnp.array(phi, dtype=precision)
     self.eps_c = jnp.array(eps_c, dtype=precision)
     self.eps_l= jnp.array(eps_l, dtype=precision)
 
@@ -29,7 +26,6 @@ class RbcCES_SteadyState():
     Pk = policy_notnorm[5]
     Y = policy_notnorm[6]
     theta = policy_notnorm[7]
-
 
     # Calculate the FOC for Pk
     MgUtC = (C - theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
@@ -47,12 +43,7 @@ class RbcCES_SteadyState():
     theta_loss = P-1
     losses_array = jnp.array([C_loss,L_loss,K_loss,I_loss,P_loss,Pk_loss, Y_loss,theta_loss])
     mean_loss = jnp.mean(losses_array**2)
-    max_loss = jnp.max(losses_array**2)
-    mean_accuracy = jnp.mean(1-jnp.abs(losses_array))
-    min_accuracy = jnp.min(1-jnp.abs(losses_array))
-    mean_accuracies_foc = jnp.array(1-jnp.abs(losses_array))
-    max_accuracies_foc = jnp.array(1-jnp.abs(losses_array))
-    return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, max_accuracies_foc
+    return mean_loss
 
   
 class RbcCES():

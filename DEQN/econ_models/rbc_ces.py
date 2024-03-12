@@ -140,7 +140,7 @@ class RbcCES():
     # Calculate the FOC for Pk
     MgUtC = (C - self.theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
     MPL = A**(1-self.sigma_y**(-1)) * ((1 - self.alpha) * Y / L)**(self.sigma_y ** (-1))
-    MPK = self.beta * expect[0]
+    MPK = self.beta * expect
     Pkmodel = P* (1-self.phi*(I/K-self.delta))**(-1)
     K_tplus1_def = (1-self.delta)*K + I - (self.phi/2) * (I/K - self.delta)**2 * K 
     Ydef = A*(self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))

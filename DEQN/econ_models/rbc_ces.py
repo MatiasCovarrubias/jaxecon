@@ -4,18 +4,18 @@ from jax import random
 class RbcCES_SteadyState():
   """A JAX implementation of an RBC model."""
 
-  def __init__(self, precision=jnp.float32):
+  def __init__(self, precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, rho=0.9, shock_sd=0.02, sigma_y=0.5, phi=2, eps_c=2, eps_l=0.5):
     self.precision = precision
     # set parameters
-    self.beta = jnp.array(0.96, dtype=precision)
-    self.alpha = jnp.array(0.3, dtype=precision)
-    self.delta = jnp.array(0.1, dtype=precision)
-    self.rho = jnp.array(0.9, dtype=precision)
-    self.shock_sd = jnp.array(0.02, dtype=precision)
-    self.sigma_y = jnp.array(0.5, dtype=precision)
-    self.phi = jnp.array(2, dtype=precision)
-    self.eps_c = jnp.array(2, dtype=precision)
-    self.eps_l= jnp.array(0.5, dtype=precision)
+    self.beta = jnp.array(beta, dtype=precision)
+    self.alpha = jnp.array(alpha, dtype=precision)
+    self.delta = jnp.array(delta, dtype=precision)
+    self.rho = jnp.array(rho, dtype=precision)
+    self.shock_sd = jnp.array(shock_sd, dtype=precision)
+    self.sigma_y = jnp.array(sigma_y, dtype=precision)
+    self.phi = jnp.array(phi, dtype=precision)
+    self.eps_c = jnp.array(eps_c, dtype=precision)
+    self.eps_l= jnp.array(eps_l, dtype=precision)
 
   def loss(self, policy):
     """ Calculate loss associated with observing obs, having policy_params, and expectation exp """
@@ -24,9 +24,11 @@ class RbcCES_SteadyState():
     C = policy_notnorm[0]
     L = policy_notnorm[1]
     K = policy_notnorm[2]
-    P = policy_notnorm[3]
-    Y = policy_notnorm[4]
-    theta = policy_notnorm[5]
+    I = policy_notnorm[3]
+    P = policy_notnorm[4]
+    Pk = policy_notnorm[5]
+    Y = policy_notnorm[6]
+    theta = policy_notnorm[7]
 
 
     # Calculate the FOC for Pk
@@ -38,10 +40,12 @@ class RbcCES_SteadyState():
     C_loss = P/MgUtC - 1
     L_loss = theta*L**(self.eps_l ** (-1)) / MPL -1
     K_loss = 1/MPK - 1
+    I_loss = I/(self.delta*K) - 1
     P_loss = Y/(C+self.delta*K) - 1
+    Pk_loss = Pk/P -1 
     Y_loss = Y/Ydef-1 
     theta_loss = P-1
-    losses_array = jnp.array([C_loss,L_loss,K_loss,P_loss,Y_loss,theta_loss])
+    losses_array = jnp.array([C_loss,L_loss,K_loss,I_loss,P_loss,Pk_loss, Y_loss,theta_loss])
     mean_loss = jnp.mean(losses_array**2)
     max_loss = jnp.max(losses_array**2)
     mean_accuracy = jnp.mean(1-jnp.abs(losses_array))

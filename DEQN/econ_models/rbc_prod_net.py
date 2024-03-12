@@ -98,15 +98,6 @@ class RbcProdNet():
     shock_tmin1 = obs_dev[2*self.n_sectors:]
     policy_devs = jnp.dot(self.C,state_dev)+jnp.dot(self.D,shock_tmin1)
     policy_norm = jnp.exp(policy_devs)
-    # state_notnorm = state_dev+self.states_ss
-    # K = jnp.exp(state_notnorm[:self.n_sectors])
-    # new_state_dev =jnp.dot(self.A,state_dev)+jnp.dot(self.B,shock_tmin1)
-    # new_state_notnorm = new_state_dev/self.states_sd+ self.states_ss
-    # K_tplus1 = jnp.exp(new_state_notnorm[:self.n_sectors])
-    # I_implied = jnp.where(K_tplus1 - (1-self.delta)*K>0,K_tplus1 - (1-self.delta)*K,0.00001)
-    # idevs = jnp.exp(jnp.log(I_implied) -self.policies_ss[:self.n_sectors])
-    # idevs = jnp.where(idevs<3,idevs,3)
-    # idevs = jnp.where(idevs>0.05,idevs,0.05)
     return policy_norm
 
   def expect_realization(self, obs_next, policy_next):

@@ -36,9 +36,9 @@ class RbcCES_SteadyState():
     C_loss = P/MgUtC - 1
     L_loss = theta*L**(self.eps_l ** (-1)) / MPL -1
     K_loss = 1/MPK - 1
-    I_loss = I/(self.delta*K) - 1
-    P_loss = Y/(C+self.delta*K) - 1
-    Pk_loss = Pk/P -1 
+    I_loss = Pk/P -1
+    P_loss = Y/(C+I) - 1
+    Pk_loss = I/(self.delta*K) - 1
     Y_loss = Y/Ydef-1 
     theta_loss = P-1
     losses_array = jnp.array([C_loss,L_loss,K_loss,I_loss,P_loss,Pk_loss, Y_loss,theta_loss])
@@ -49,29 +49,29 @@ class RbcCES_SteadyState():
 class RbcCES():
   """A JAX implementation of an RBC model."""
 
-  def __init__(self, precision=jnp.float32, policies_ss=[3.8758656e-01, -1.2288518e-01,  2.4382138e-01,  2.3841855e-07, 4.7065210e-01], theta = jnp.exp(7.1949315e-01)):
+  def __init__(self, policies_ss, precision=jnp.float32, theta=2, beta=0.96, alpha=0.3, delta=0.1, sigma_y=0.5, eps_c=2, eps_l=0.5, rho=0.9, phi=2, shock_sd=0.02):
     self.precision = precision
     # set parameters
-    self.beta = jnp.array(0.96, dtype=precision)
-    self.alpha = jnp.array(0.3, dtype=precision)
-    self.delta = jnp.array(0.1, dtype=precision)
-    self.rho = jnp.array(0.9, dtype=precision)
-    self.shock_sd = jnp.array(0.02, dtype=precision)
-    self.sigma_y = jnp.array(0.5, dtype=precision)
-    self.phi = jnp.array(2, dtype=precision)
-    self.eps_c = jnp.array(2, dtype=precision)
-    self.eps_l= jnp.array(0.5, dtype=precision)
+    self.beta = jnp.array(beta, dtype=precision)
+    self.alpha = jnp.array(alpha, dtype=precision)
+    self.delta = jnp.array(delta, dtype=precision)
+    self.sigma_y = jnp.array(sigma_y, dtype=precision)
+    self.eps_c = jnp.array(eps_c, dtype=precision)
+    self.eps_l= jnp.array(eps_l, dtype=precision)
     self.theta = jnp.array(theta, dtype=precision)
+    self.rho = jnp.array(rho, dtype=precision)
+    self.phi = jnp.array(phi, dtype=precision)
+    self.shock_sd = jnp.array(shock_sd, dtype=precision)
 
     # set steady state and standard deviations for normalization
-    self.a_ss = jnp.array(0, dtype=precision)
     self.policy_ss = jnp.array(policies_ss, dtype=precision)
+    self.a_ss = jnp.array(0, dtype=precision)
     self.k_ss = jnp.array(policies_ss[2], dtype=precision)
     self.obs_ss = jnp.array([self.k_ss, 0], dtype=precision)
     self.obs_sd = jnp.array([1, 1], dtype=precision)  # use 1 if you don't have an estimate
 
     # number of policies
-    self.n_actions = 5
+    self.n_actions = len(policies_ss)
 
   def initial_obs(self, rng, init_range = 0):
     """ Get initial obs given first shock """
@@ -105,56 +105,63 @@ class RbcCES():
   def expect_realization(self, obs_next, policy_next):
     """ A realization (given a shock) of the expectation terms in system of equation """
 
-    policy_notnorm = policy_next*jnp.exp(self.policy_ss) # multiply by stst pols in levels
-    C = policy_notnorm[0]
-    L = policy_notnorm[1]
-    K_tplus1 = policy_notnorm[2]
-    P = policy_notnorm[3]
-    Y = policy_notnorm[4]
+    obs_next_notnorm = obs_next*self.obs_sd + self.obs_ss# denormalize
+    K_next = jnp.exp(obs_next_notnorm[0]) # put in levels
+    A_next = jnp.exp(obs_next_notnorm[1])
 
-    # Process observation
-    obs_notnorm = obs_next*self.obs_sd + self.obs_ss     # denormalize obs
-    K = jnp.exp(obs_notnorm[0])                          # K_{t+1} in levels
-    a = obs_notnorm[1]   
-    
-    # DEefine rest of the variables
-    I = K_tplus1 - (1-self.delta)*K
-    # Rest of variables
-    A = jnp.exp(a)
-    Y = A * K**self.alpha
-    C = Y-I
+    policy_notnorm = policy_next*jnp.exp(self.policy_ss)
+    I_next = policy_notnorm[3]
+    P_next = policy_notnorm[4]
+    Pk_next = policy_notnorm[5]
+    Y_next = policy_notnorm[6]
 
-    # Calculate the FOC for Pk
-    expect_realization = (1/C) * (1+ A * self.alpha * K**(self.alpha-1)-self.delta)
+    # Solve for the expectation term in the FOC for Ktplus1
+    expect_realization = (P_next*A_next**(1-self.sigma_y**(-1))*(self.alpha*Y_next/K_next)**(1/self.sigma_y)
+      + Pk_next*((1-self.delta) + self.phi/2*(I_next**2 / K_next**2-self.delta**2)))
 
     return expect_realization
 
   def loss(self, obs, expect, policy):
     """ Calculate loss associated with observing obs, having policy_params, and expectation exp """
 
+    obs_notnorm = obs*self.obs_sd + self.obs_ss# denormalize
+    K = jnp.exp(obs_notnorm[0]) # put in levels
+    A = jnp.exp(obs_notnorm[1])
+
     policy_notnorm = policy*jnp.exp(self.policy_ss)
-    K_tplus1 = policy_notnorm[0]
-
-    # Process observation
-    obs_notnorm = obs*self.obs_sd + self.obs_ss        # denormalize
-    K = jnp.exp(obs_notnorm[0])                        # put in levels
-    a = obs_notnorm[1]
-
-    # Rest of variables
-    I = K_tplus1-(1-self.delta)*K
-    A = jnp.exp(a)
-    Y = A * K**self.alpha
-    C = Y-I
+    C = policy_notnorm[0]
+    L = policy_notnorm[1]
+    K_tplus1 = policy_notnorm[2]
+    I = policy_notnorm[3]
+    P = policy_notnorm[4]
+    Pk = policy_notnorm[5]
+    Y = policy_notnorm[6]
+    theta = policy_notnorm[7]
 
     # Calculate the FOC for Pk
-    FOC_loss = (1/C)/(self.beta*expect) - 1
-    mean_loss = jnp.mean(jnp.array([FOC_loss**2])) # here there is just one, but more gemore generally.
-    max_loss = jnp.max(jnp.array([FOC_loss**2])) # here there is just one, but more gemore generally.
-    mean_accuracy = jnp.mean(jnp.array([1-jnp.abs(FOC_loss)]))
-    min_accuracy = jnp.min(jnp.array([1-jnp.abs(FOC_loss)]))
-    mean_accuracies_foc = jnp.array([1-jnp.abs(FOC_loss)])
-    max_accuracies_foc = jnp.array([1-jnp.abs(FOC_loss)])
-    return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, max_accuracies_foc
+    MgUtC = (C - theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
+    MPL = A**(1-self.sigma_y**(-1)) ((1 - self.alpha) * Y / L)**(self.sigma_y ** (-1))
+    MPK = self.beta * expect
+    Pkmodel = P(1-self.phi*(I/K-self.delta))**(-1)
+    K_tplus1_def = (1-self.delta)*K + I - (self.phi/2) * (I/K - self.delta)**2 * K 
+    Ydef = A*(self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
+
+    C_loss = P/MgUtC - 1
+    L_loss = theta*L**(self.eps_l ** (-1)) / MPL -1
+    K_loss = Pk/MPK - 1
+    I_loss =  Pk/Pkmodel -1 
+    P_loss = Y/(C+I) - 1
+    Pk_loss =K_tplus1/K_tplus1_def - 1
+    Y_loss = Y/Ydef-1 
+
+    losses_array = jnp.array([C_loss,L_loss,K_loss,I_loss,P_loss,Pk_loss, Y_loss])
+    mean_loss = jnp.mean(losses_array**2)
+    max_loss = jnp.max(losses_array**2) # here there is just one, but more gemore generally.
+    mean_accuracy = jnp.mean([1-jnp.abs(losses_array)])
+    min_accuracy = jnp.min([1-jnp.abs(losses_array)])
+    mean_accuracies_foc = jnp.mean([1-jnp.abs(losses_array)])
+    min_accuracies_foc = jnp.min([1-jnp.abs(losses_array)])
+    return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, min_accuracies_foc
 
   def sample_shock(self, rng, n_draws=1):
     """ sample one realization of the shock.
@@ -176,20 +183,3 @@ class RbcCES():
     ir_shock_2 = jnp.zeros(shape=(40,1), dtype = self.precision).at[0,:].set(1)
 
     return jnp.array([ir_shock_1, ir_shock_2])
-
-  def get_econ_stats(self, obs, policy):
-
-    policy_notnorm = policy*jnp.exp(self.policy_ss)
-    I = policy_notnorm[0]
-
-    # Process observation
-    obs_notnorm = obs*self.obs_sd + self.obs_ss        # denormalize
-    K = jnp.exp(obs_notnorm[0])                        # put in levels
-    a = obs_notnorm[1]
-
-    # Rest of variables
-    A = jnp.exp(a)
-    Y = A * K**self.alpha
-    C = Y-I
-
-    return jnp.array([K,I,Y,C])

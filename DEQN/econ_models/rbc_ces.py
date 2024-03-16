@@ -64,7 +64,7 @@ class RbcCES():
         self.shock_sd = jnp.array(shock_sd, dtype=precision)
 
         # set steady state and standard deviations for normalization
-        self.policy_ss = jnp.array(policies_ss, dtype=precision)
+        self.policies_ss = jnp.array(policies_ss, dtype=precision)
         self.a_ss = jnp.array(0, dtype=precision)
         self.k_ss = jnp.array(policies_ss[2], dtype=precision)
         self.obs_ss = jnp.array([self.k_ss, 0], dtype=precision)
@@ -109,7 +109,7 @@ class RbcCES():
         K_next = jnp.exp(obs_next_notnorm[0]) # put in levels
         A_next = jnp.exp(obs_next_notnorm[1])
 
-        policy_notnorm = policy_next*jnp.exp(self.policy_ss)
+        policy_notnorm = policy_next*jnp.exp(self.policies_ss)
         I_next = policy_notnorm[3]
         P_next = policy_notnorm[4]
         Pk_next = policy_notnorm[5]
@@ -128,7 +128,7 @@ class RbcCES():
         K = jnp.exp(obs_notnorm[0]) # put in levels
         A = jnp.exp(obs_notnorm[1])
 
-        policy_notnorm = policy*jnp.exp(self.policy_ss)
+        policy_notnorm = policy*jnp.exp(self.policies_ss)
         C = policy_notnorm[0]
         L = policy_notnorm[1]
         K_tplus1 = policy_notnorm[2]

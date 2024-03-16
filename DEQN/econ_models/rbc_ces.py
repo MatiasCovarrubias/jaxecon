@@ -94,7 +94,7 @@ class RbcCES():
         K = jnp.exp(obs_notnorm[0])                 # Kt in levels
         a = obs_notnorm[1]                    # a_{t}
         a_tplus1 = self.rho * a + self.shock_sd*shock[0]   # recover a_{t+1}
-        policy_notnorm = policy*jnp.exp(self.policy_ss)             # multiply by stst pols in level
+        policy_notnorm = policy*jnp.exp(self.policies_ss)             # multiply by stst pols in level
         K_tplus1 = policy_notnorm[2]             #get K_{t+1}
         obs_next_notnorm = jnp.array([jnp.log(K_tplus1),a_tplus1])  #concatenate observation
         obs_next = (obs_next_notnorm-self.obs_ss)/self.obs_sd        # normalize

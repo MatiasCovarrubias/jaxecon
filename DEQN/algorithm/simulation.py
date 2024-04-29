@@ -3,6 +3,8 @@ from jax import numpy as jnp, lax, random
 
 def create_episode_simul_fn(econ_model, config):
 
+  """ Create a function that simulates an episode of the environment. It returns the observations of the episode."""
+
   def sample_epis_obs(train_state, epis_rng):
     "sample obs of an episode"
     init_obs = econ_model.initial_obs(epis_rng, config["init_range"])
@@ -18,6 +20,9 @@ def create_episode_simul_fn(econ_model, config):
   return sample_epis_obs
 
 def create_episode_simul_fn_compute_expects(econ_model, config):
+  
+  """ Create a function that simulates an episode of the environment. It returns the observations of the episode. 
+  Here, the policy also returns the expectation terms."""
 
   def sample_epis_obs(train_state, epis_rng):
     "sample obs of an episode"
@@ -34,6 +39,9 @@ def create_episode_simul_fn_compute_expects(econ_model, config):
   return sample_epis_obs
 
 def create_episode_simul_fn_proxied(econ_model, config):
+
+  """ Create a function that simulates an episode of the environment. It returns the observations of the episode. 
+  It differs from the basic simul fn in that it provides the option of using a proxy sampler."""
 
   if config["proxy_sampler"]:
     def sample_epis_obs(train_state, epis_rng):

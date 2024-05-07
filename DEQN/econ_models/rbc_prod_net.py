@@ -246,5 +246,16 @@ class RbcProdNet():
         L_notnorm = L*jnp.exp(self.policies_ss[11*self.n_sectors+1])
         U = (1/(1-self.eps_c**(-1)))*(C_notnorm-self.theta*(1/(1+self.eps_l**(-1)))*L_notnorm**(1+self.eps_l**(-1)))**(1-self.eps_c**(-1))
         return U
+    
+    def get_aggregates(self, simul_policies):
+        """Calculate aggregates from simulation policies"""
+        Cagg = simul_policies[:,11*self.n_sectors]
+        Lagg = simul_policies[:,11*self.n_sectors+1]
+        Yagg = simul_policies[:,11*self.n_sectors+2]
+        Iagg = simul_policies[:,11*self.n_sectors+3]
+        Magg = simul_policies[:,11*self.n_sectors+4]
+        aggregates = {"Cagg":Cagg,"Lagg":Lagg,"Yagg":Yagg,"Iagg":Iagg,"Magg":Magg}
+        return aggregates
+
 
     

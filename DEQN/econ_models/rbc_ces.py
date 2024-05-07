@@ -179,4 +179,16 @@ class RbcCES():
         L_notnorm = L*jnp.exp(self.policies_ss[1])
         U = (1/(1-self.eps_c**(-1)))*(C_notnorm-self.theta*(1/(1+self.eps_l**(-1)))*L_notnorm**(1+self.eps_l**(-1)))**(1-self.eps_c**(-1))
         return U
+    
+    def get_aggregates(simul_policies):
+        """Calculate aggregates from simulation policies"""
+        C = simul_policies[:,0]
+        L = simul_policies[:,1]
+        K = simul_policies[:,2]
+        I = simul_policies[:,3]
+        Y = simul_policies[:,6]
+        
+        # create aggregates dictionary
+        aggregates = {"C": C, "L": L, "K": K, "I": I, "Y": Y}
+        return aggregates
 

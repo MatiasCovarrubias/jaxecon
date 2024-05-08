@@ -4,7 +4,7 @@ import pandas as pd
 from jax import numpy as jnp, lax, random
 from scipy.stats import skew, kurtosis
 
-def create_episode_simul_analysis_fn(econ_model, config):
+def create_episode_simul_verbose_fn(econ_model, config):
 
     """ Create a function that simulates an episode of the environment. 
     It differes from basic simulation function in that returns both observations and policies."""

@@ -57,13 +57,13 @@ def create_descstats_fn(econ_model, config):
             statistics = statistic(agg_value)
             desc_stats[agg_name] = statistics["desc_stats"]
             autocorrs[agg_name] = statistics["autocorrelations"]
-        desc_stats[" "] = ["Mean", "Sd", "Skewness", "Kurtosis","Q1","Q25","Q50","Q75","Q99"]
-        autocorrs[" "] = ["Lag 1", "Lag 2", "Lag 3", "Lag 4", "Lag 5"]
-        desc_stats_df = pd.DataFrame(desc_stats)
-        desc_stats_df = desc_stats_df.transpose()
+        stat_names = ["Mean", "Sd", "Skewness", "Kurtosis","Q1","Q25","Q50","Q75","Q99"]
+        autocorr_names = ["Lag 1", "Lag 2", "Lag 3", "Lag 4", "Lag 5"]
+        desc_stats_df = pd.DataFrame(desc_stats, index = stat_names)
+        # desc_stats_df = desc_stats_df.transpose()
         desc_stats_df = desc_stats_df.round(3)
-        autocorrs_df = pd.DataFrame(autocorrs)
-        autocorrs_df = autocorrs_df.transpose()
+        autocorrs_df = pd.DataFrame(autocorrs, index = autocorr_names)
+        # autocorrs_df = autocorrs_df.transpose()
         autocorrs_df = autocorrs_df.round(3)
 
         return desc_stats_df, autocorrs_df

@@ -180,7 +180,7 @@ class RbcCES():
         U = (1/(1-self.eps_c**(-1)))*(C_notnorm-self.theta*(1/(1+self.eps_l**(-1)))*L_notnorm**(1+self.eps_l**(-1)))**(1-self.eps_c**(-1))
         return U
     
-    def get_aggregates(simul_policies):
+    def get_aggregates(self, simul_policies):
         """Calculate aggregates from simulation policies"""
         C = simul_policies[:,0]
         L = simul_policies[:,1]

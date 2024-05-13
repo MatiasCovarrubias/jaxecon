@@ -61,10 +61,10 @@ def create_descstats_fn(econ_model, config):
         autocorr_names = ["Lag 1", "Lag 2", "Lag 3", "Lag 4", "Lag 5"]
         desc_stats_df = pd.DataFrame(desc_stats, index = stat_names)
         # desc_stats_df = desc_stats_df.transpose()
-        desc_stats_df = desc_stats_df.round(3)
+        desc_stats_df = desc_stats_df.round(5)
         autocorrs_df = pd.DataFrame(autocorrs, index = autocorr_names)
         # autocorrs_df = autocorrs_df.transpose()
-        autocorrs_df = autocorrs_df.round(3)
+        autocorrs_df = autocorrs_df.round(5)
 
         return desc_stats_df, autocorrs_df
     

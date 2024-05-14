@@ -34,7 +34,7 @@ class RbcCES_SteadyState():
         Ydef = (self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
 
         C_loss = P/MgUtC - 1
-        L_loss = theta*L**(self.eps_l ** (-1)) / MPL -1
+        L_loss = MgUtC * theta*L**(self.eps_l ** (-1)) / MPL -1
         K_loss = 1/MPK - 1
         I_loss = Pk/P - 1
         P_loss = Y/(C+I) - 1

@@ -26,7 +26,8 @@ def create_stochss_fn(econ_model, config):
         stoch_ss = jnp.mean(stoch_ss, axis=0)
         policy_stoch_ss = train_state.apply_fn(train_state.params, stoch_ss)
         policy_stoch_ss_logdev = jnp.log(policy_stoch_ss)
-        aggs_stochss_dict = econ_model.get_aggregates(policy_stoch_ss_logdev)
-        return aggs_stochss_dict
+        # aggs_stochss_dict = econ_model.get_aggregates(policy_stoch_ss_logdev)
+        # return aggs_stochss_dict
+        return policy_stoch_ss_logdev    
 
     return stochss_fn

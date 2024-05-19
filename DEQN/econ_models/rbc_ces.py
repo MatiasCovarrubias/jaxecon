@@ -28,7 +28,7 @@ class RbcCES_SteadyState():
         theta = policy_notnorm[7]
 
         # Calculate the FOC for Pk
-        MgUtC = (C - theta * 1 / (1 + self.eps_l ** (-1)) * L ** (1 + self.eps_l ** (-1))) ** (-self.eps_c ** (-1))
+        MgUtC = (C) ** (-self.eps_c ** (-1))
         MPL = ((1 - self.alpha) * Y / L)**(self.sigma_y ** (-1))
         MPK = self.beta * ((1-self.delta)+(self.alpha*Y/K)**(self.sigma_y ** (-1)))
         Ydef = (self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))

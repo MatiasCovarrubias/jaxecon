@@ -19,9 +19,9 @@ def create_stochss_fn(econ_model, config):
         final_obs, _ = lax.scan(step, obs_init, shocks)
         return final_obs
 
-    def stochss_fn(simul_obs, train_state, n_draws=1000, seed=0, time_to_converge=300):
-        sample_fromdist = random_draws(simul_obs, n_draws, seed)
-        zero_shocks = jnp.zeros(shape=(time_to_converge,1))
+    def stochss_fn(simul_obs, train_state):
+        sample_fromdist = random_draws(simul_obs, config["n_draws"], config["seed"])
+        zero_shocks = jnp.zeros(shape=(config["time_to_converge"],1))
         stoch_ss = jax.vmap(simul_traject_lastobs, in_axes = (None,None,None,0))(econ_model,train_state,zero_shocks,sample_fromdist)
         stoch_ss = jnp.mean(stoch_ss, axis=0)
         policy_stoch_ss = train_state.apply_fn(train_state.params, stoch_ss)

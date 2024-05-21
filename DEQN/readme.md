@@ -1,4 +1,4 @@
-This folder contains a custom implementation of the DEQN (Deep Equilibrium Network) algorithm. To see an example of how to run it, open the Rbc_CES.ipynb notebook, and run it in google colab.
+This folder contains a custom implementation of the DEQN (Deep Equilibrium Network) algorithm written in jax. The algorithm is designed to be authomatic to use with Google Colab GPUs. To see an example of how to run it, open the Rbc_CES.ipynb notebook, and run it in google colab. To see an example that shows and explain all the functions of the algorithms, open the notebook jaxDEQN.ipynb and run it in google colab.
 
 THe implementation of the algorithm has the following subfolders
 - econ_models: This subfolder contain all the economic models implemented. Economic models are implemented as class. Each economic model has its own .py document, but that file may contain many classes corresponding to different versions of the model. 

@@ -138,7 +138,7 @@ class RbcCES_fixL():
 
         # Calculate the FOC for Pk
         MgUtC = (C) ** (-self.eps_c ** (-1))
-        MPL = A**(1-self.sigma_y**(-1)) * ((1 - self.alpha) * Y / L)**(self.sigma_y ** (-1))
+        # MPL = A**(1-self.sigma_y**(-1)) * ((1 - self.alpha) * Y / L)**(self.sigma_y ** (-1))
         MPK = self.beta * expect
         Pkmodel = P* (1-self.phi*(I/K-self.delta))**(-1)
         K_tplus1_def = (1-self.delta)*K + I - (self.phi/2) * (I/K - self.delta)**2 * K 

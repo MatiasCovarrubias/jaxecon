@@ -317,7 +317,7 @@ class RbcCES_fixL_short():
         K = jnp.exp(obs_notnorm[0]) # put in levels
         A = jnp.exp(obs_notnorm[1])
         Lss = jnp.exp(self.policies_ss[1])
-        I = policy[0]*jnp.exp(self.policies_ss[3])[0]
+        I = policy[0]*jnp.exp(self.policies_ss[3])
         L = Lss
         Y = A*(self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
         C = Y - I

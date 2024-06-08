@@ -282,7 +282,7 @@ class RbcCES_fixL_short():
         K = jnp.exp(obs_notnorm[0])                 # Kt in levels
         a = obs_notnorm[1]                    # a_{t}
         a_tplus1 = self.rho * a + self.shock_sd*shock[0]   # recover a_{t+1}
-        I = policy*jnp.exp(self.policies_ss[3])[0]             # multiply by stst pols in level
+        I = policy[0]*jnp.exp(self.policies_ss[3])             # multiply by stst pols in level
         K_tplus1 = (1-self.delta)*K + I - (self.phi/2) * (I/K - self.delta)**2 * K 
         obs_next_notnorm = jnp.array([jnp.log(K_tplus1),a_tplus1])  #concatenate observation
         obs_next = (obs_next_notnorm-self.obs_ss)/self.obs_sd        # normalize
@@ -297,7 +297,7 @@ class RbcCES_fixL_short():
         K_next = jnp.exp(obs_next_notnorm[0]) # put in levels
         A_next = jnp.exp(obs_next_notnorm[1])
 
-        I_next = policy_next*jnp.exp(self.policies_ss[3])[0]
+        I_next = policy_next[0]*jnp.exp(self.policies_ss[3])
         L_next = jnp.exp(self.policies_ss[1])
         Y_next = A_next*(self.alpha**(1/self.sigma_y) * K_next**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L_next**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
         C_next = Y_next - I_next
@@ -317,7 +317,7 @@ class RbcCES_fixL_short():
         K = jnp.exp(obs_notnorm[0]) # put in levels
         A = jnp.exp(obs_notnorm[1])
         Lss = jnp.exp(self.policies_ss[1])
-        I = policy*jnp.exp(self.policies_ss[3])[0]
+        I = policy[0]*jnp.exp(self.policies_ss[3])[0]
         L = Lss
         Y = A*(self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
         C = Y - I

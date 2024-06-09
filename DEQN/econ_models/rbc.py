@@ -1,7 +1,7 @@
 from jax import numpy as jnp
 from jax import random
 
-class RbcCES_SteadyState():
+class Rbc_SteadyState():
     """A JAX implementation of the steady state of an Rbc model."""
 
     def __init__(self, precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, eps_c=2):

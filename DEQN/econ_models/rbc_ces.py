@@ -355,13 +355,14 @@ class RbcCES_fixL_short():
         U = (1/(1-self.eps_c**(-1)))*(C_notnorm)**(1-self.eps_c**(-1)) -self.theta*(1/(1+self.eps_l**(-1)))*L_notnorm**(1+self.eps_l**(-1))
         return U
     
-    def get_aggregates(self, simul_policies):
+    def get_aggregates(self, simul_policies, simul_obs):
         """Calculate aggregates from simulation policies"""
-        C = simul_policies[:,0]
-        L = simul_policies[:,1]
-        K = simul_policies[:,2]
-        I = simul_policies[:,3]
-        Y = simul_policies[:,6]
+        K = simul_policies[:,0] # put in levels
+        A = simul_policies[:,1]
+        I = simul_policies[:,0]
+        L = jnp.exp(self.policies_ss[1])*jnp.ones_like(K)
+        Y = A*(self.alpha**(1/self.sigma_y) * K**((self.sigma_y-1)/self.sigma_y) + (1-self.alpha)**(1/self.sigma_y) * L**((self.sigma_y-1)/self.sigma_y) ) ** (self.sigma_y/(self.sigma_y-1))
+        C = Y - I
         aggregates = {"C": C, "L": L, "K": K, "I": I, "Y": Y}
         return aggregates
     

@@ -1,6 +1,31 @@
 from jax import numpy as jnp
 from jax import random
 
+class RbcCES_SteadyState():
+    """A JAX implementation of the steady state of an Rbc model."""
+
+    def __init__(self, precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, eps_c=2):
+        self.precision = precision
+        # set parameters
+        self.beta = jnp.array(beta, dtype=precision)
+        self.alpha = jnp.array(alpha, dtype=precision)
+        self.delta = jnp.array(delta, dtype=precision)
+        self.eps_c = jnp.array(eps_c, dtype=precision)
+
+    def loss(self, policy):
+        """ Calculate loss associated with observing obs, having policy_params, and expectation exp """
+
+        policy_notnorm = policy
+        I = policy_notnorm[0]
+        K = I/self.delta
+        Y = K**self.alpha
+        MPK = self.beta * ((1-self.delta)+(self.alpha*Y/K))
+        K_loss = 1/MPK - 1
+
+        losses_array = jnp.array([K_loss])
+        mean_loss = jnp.mean(losses_array**2)
+        return mean_loss
+    
 class Rbc_adjcost():
     """A JAX implementation of an RBC model."""
 

@@ -137,12 +137,23 @@ class Rbc_capadj():
     
     def get_aggregates(self, simul_policies, simul_obs):
         """Calculate aggregates from simulation policies"""
-        K = simul_policies[:,0] # put in levels
-        A = simul_policies[:,1]
-        I = simul_policies[:,0]
+        Knorm = simul_obs[:,0]
+        Anorm = simul_obs[:,1]
+        K = jnp.exp(Knorm+self.obs_ss[0])
+        A = jnp.exp(Anorm+self.obs_ss[1])
+        I = simul_policies[:,0]*jnp.exp(self.policies_ss[0])
         Y = A*K**self.alpha
         C = Y - I
-        aggregates = {"C": C, "K": K, "I": I, "Y": Y, "A": A}
+        K_logdev = jnp.log(K/jnp.exp(self.k_ss))
+        A_logdev = jnp.log(A)
+        Yss = jnp.exp(self.k_ss)**self.alpha
+        Css = Yss - jnp.exp(self.policies_ss[0])
+        Iss = jnp.exp(self.policies_ss[0])
+        C_logdev = jnp.log(C/Css)
+        I_logdev = jnp.log(I/Iss)
+        Y_logdev = jnp.log(Y/Yss)
+
+        aggregates = {"C": C_logdev, "K": K_logdev, "I": I_logdev, "Y": Y_logdev, "A": A_logdev}
         return aggregates
     
 class Rbc():

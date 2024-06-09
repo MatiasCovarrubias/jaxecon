@@ -28,6 +28,6 @@ def create_stochss_fn(econ_model, config):
         policy_stoch_ss_logdev = jnp.log(policy_stoch_ss)
         # aggs_stochss_dict = econ_model.get_aggregates(policy_stoch_ss_logdev)
         # return aggs_stochss_dict
-        return policy_stoch_ss_logdev    
+        return policy_stoch_ss_logdev, stoch_ss    
 
     return stochss_fn

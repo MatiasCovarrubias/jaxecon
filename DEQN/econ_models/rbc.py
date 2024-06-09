@@ -147,8 +147,9 @@ class Rbc_capadj():
         K_logdev = jnp.log(K/jnp.exp(self.k_ss))
         A_logdev = jnp.log(A)
         Yss = jnp.exp(self.k_ss)**self.alpha
-        Css = Yss - jnp.exp(self.policies_ss[0])
         Iss = jnp.exp(self.policies_ss[0])
+        Css = Yss - Iss
+        
         C_logdev = jnp.log(C/Css)
         I_logdev = jnp.log(I/Iss)
         Y_logdev = jnp.log(Y/Yss)

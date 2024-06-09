@@ -42,7 +42,7 @@ class Rbc_capadj():
         # set steady state and standard deviations for normalization
         self.policies_ss = jnp.array(policies_ss, dtype=precision)
         self.a_ss = jnp.array(0, dtype=precision)
-        self.k_ss = self.policies_ss[0] / self.delta
+        self.k_ss = jnp.log(jnp.exp(self.policies_ss[0]) / self.delta)
         self.obs_ss = jnp.array([self.k_ss, 0], dtype=precision)
         self.obs_sd = jnp.array([1, 1], dtype=precision)  # use 1 if you don't have an estimate
 
@@ -82,22 +82,13 @@ class Rbc_capadj():
         """ A realization (given a shock) of the expectation terms in system of equation """
 
         obs_next_notnorm = obs_next*self.obs_sd + self.obs_ss# denormalize
-        print("obs_next_notnorm", obs_next_notnorm)
         K_next = jnp.exp(obs_next_notnorm[0]) # put in levels
-        print("K_next", K_next)
         A_next = jnp.exp(obs_next_notnorm[1])
-        print("A_next", A_next)
-
         I_next = policy_next[0]*jnp.exp(self.policies_ss[0])
-        print("I_next", I_next)
         Y_next = A_next*K_next**self.alpha
-        print("Y_next", Y_next)
         C_next = Y_next - I_next
-        print("C_next", C_next)
         P_next = (C_next) ** (-self.eps_c ** (-1))
-        print("P_next", P_next)
         Pk_next = P_next * (1-self.phi*(I_next/K_next-self.delta))**(-1)
-        print("Pk_next", Pk_next)
 
         # Solve for the expectation term in the FOC for Ktplus1
         expect_realization = (P_next*(self.alpha*Y_next/K_next) + Pk_next*((1-self.delta) + self.phi/2*(I_next**2 / K_next**2-self.delta**2)))

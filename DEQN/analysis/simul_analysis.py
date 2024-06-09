@@ -48,11 +48,11 @@ def create_descstats_fn(econ_model, config):
 
         return stats
 
-    def descstat(simul_policies):
+    def descstat(simul_policies, simul_obs):
 
         desc_stats = {}
         autocorrs = {}
-        aggregates = econ_model.get_aggregates(simul_policies)
+        aggregates = econ_model.get_aggregates(simul_policies, simul_obs)
         for agg_name, agg_value in aggregates.items():
             statistics = statistic(agg_value)
             desc_stats[agg_name] = statistics["desc_stats"]

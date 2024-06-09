@@ -26,7 +26,7 @@ class Rbc_SteadyState():
         mean_loss = jnp.mean(losses_array**2)
         return mean_loss
     
-class Rbc_adjcost():
+class Rbc_capadj():
     """A JAX implementation of an RBC model."""
 
     def __init__(self, policies_ss=[1], precision=jnp.float32, theta=2, beta=0.96, alpha=0.3, delta=0.1, eps_c=2, rho=0.9, phi=2, shock_sd=0.02):

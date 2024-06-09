@@ -29,14 +29,13 @@ class Rbc_SteadyState():
 class Rbc_capadj():
     """A JAX implementation of an RBC model."""
 
-    def __init__(self, policies_ss=[1], precision=jnp.float32, theta=2, beta=0.96, alpha=0.3, delta=0.1, eps_c=2, rho=0.9, phi=2, shock_sd=0.02):
+    def __init__(self, policies_ss=[1], precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, eps_c=2, rho=0.9, phi=2, shock_sd=0.02):
         self.precision = precision
         # set parameters
         self.beta = jnp.array(beta, dtype=precision)
         self.alpha = jnp.array(alpha, dtype=precision)
         self.delta = jnp.array(delta, dtype=precision)
         self.eps_c = jnp.array(eps_c, dtype=precision)
-        self.theta = jnp.array(theta, dtype=precision)
         self.rho = jnp.array(rho, dtype=precision)
         self.phi = jnp.array(phi, dtype=precision)
         self.shock_sd = jnp.array(shock_sd, dtype=precision)

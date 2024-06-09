@@ -25,9 +25,8 @@ def create_stochss_fn(econ_model, config):
         stoch_ss = jax.vmap(simul_traject_lastobs, in_axes = (None,None,None,0))(econ_model,train_state,zero_shocks,sample_fromdist)
         stoch_ss = jnp.mean(stoch_ss, axis=0)
         policy_stoch_ss = train_state.apply_fn(train_state.params, stoch_ss)
-        aggregates = econ_model.get_aggregates(policy_stoch_ss, stoch_ss)
         # aggs_stochss_dict = econ_model.get_aggregates(policy_stoch_ss_logdev)
         # return aggs_stochss_dict
-        return aggregates  
+        return policy_stoch_ss, stoch_ss
 
     return stochss_fn

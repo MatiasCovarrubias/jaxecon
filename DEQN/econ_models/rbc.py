@@ -137,6 +137,9 @@ class Rbc_capadj():
     
     def get_aggregates(self, simul_policies, simul_obs):
         """Calculate aggregates from simulation policies"""
+        # Ensure inputs are treated as arrays for consistent indexing
+        simul_policies = jnp.atleast_2d(simul_policies)
+        simul_obs = jnp.atleast_2d(simul_obs)
         Knorm = simul_obs[:,0]
         Anorm = simul_obs[:,1]
         K = jnp.exp(Knorm+self.obs_ss[0])

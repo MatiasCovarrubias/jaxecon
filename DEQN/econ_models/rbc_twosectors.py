@@ -51,7 +51,7 @@ class Rbc_twosectors():
         a_tplus1 = self.rho * a + shock   # recover a_{t+1}
         I = policy*jnp.exp(self.policies_ss)             # multiply by stst pols in level
         K_tplus1 = (1-self.delta)*K + I - (self.phi/2) * (I/K - self.delta)**2 * K 
-        obs_next_notnorm = jnp.array([jnp.log(K_tplus1),a_tplus1])  #concatenate observation
+        obs_next_notnorm = jnp.concatenate([jnp.log(K_tplus1),a_tplus1])  #concatenate observation
         obs_next = (obs_next_notnorm-self.obs_ss)/self.obs_sd        # normalize
 
         return obs_next

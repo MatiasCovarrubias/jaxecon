@@ -233,15 +233,22 @@ class Rbc_twosectors():
         Kaggss = Kss@Pkss
         Iaggss = Iss@Pkss
         
-        C_logdev = jnp.log(Cagg/Caggss)
+        # aggregate loggdevs
+        Cagg_logdev = jnp.log(Cagg/Caggss)
         K_logdev = jnp.log(Kagg/Kaggss)
         I_logdev = jnp.log(Iagg/Iaggss)
         Y_logdev = jnp.log(Yagg/Yaggss)
+
+        #idiosyncratic logdevs
+        C1_logdev = jnp.log(C[0]/Css[0])
+        C2_logdev = jnp.log(C[1]/Css[1])
+        K1_logdev = jnp.log(K[0]/Kss[0])
+        K2_logdev = jnp.log(K[1]/Kss[1])
  
-        return jnp.array([C_logdev,K_logdev,I_logdev,Y_logdev])
+        return jnp.array([Cagg_logdev,K_logdev,I_logdev,Y_logdev,C1_logdev,C2_logdev,K1_logdev,K2_logdev])
         
     def get_aggregates_keys(self):
-        return ["C","K","I","Y"]
+        return ["Cagg","Kagg","Iagg","Yagg","C1","C2","K1","K2"]
     
     def get_shocks_statistics(self):
         # sample many shocks and gets statistics

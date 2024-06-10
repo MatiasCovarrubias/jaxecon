@@ -48,7 +48,7 @@ class Rbc_twosectors():
         obs_notnorm = obs*self.obs_sd + self.obs_ss # denormalize
         K = jnp.exp(obs_notnorm[:2])                 # Kt in levels
         a = obs_notnorm[2:]                    # a_{t}
-        a_tplus1 = self.rho * a + self.shock_sd*shock   # recover a_{t+1}
+        a_tplus1 = self.rho * a + shock   # recover a_{t+1}
         I = policy*jnp.exp(self.policies_ss)             # multiply by stst pols in level
         K_tplus1 = (1-self.delta)*K + I - (self.phi/2) * (I/K - self.delta)**2 * K 
         obs_next_notnorm = jnp.array([jnp.log(K_tplus1),a_tplus1])  #concatenate observation
@@ -66,7 +66,8 @@ class Rbc_twosectors():
         I_next = policy_next*jnp.exp(self.policies_ss)
         Y_next = A_next*K_next**self.alpha
         C_next = Y_next - I_next
-        P_next = (C_next) ** (-self.eps_c ** (-1))
+        Cagg_next = ( (self.xi**(1/self.sigma_c)).T @ C_next**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
+        P_next = (C_next) ** (-self.eps_c ** (-1)) * (Cagg_next * self.xi / C_next) ** (1 / self.sigma_c)
         Pk_next = P_next * (1-self.phi*(I_next/K_next-self.delta))**(-1)
 
         # Solve for the expectation term in the FOC for Ktplus1
@@ -108,7 +109,7 @@ class Rbc_twosectors():
         """ sample omc_draws realizations of the shock (for monte-carlo)
         Uncomment second line for continuous shocks instead of grid """
         # return  jnp.array([-1.2816,-0.6745,0,0.6745, 1.2816])
-        return random.multivariate_normal(rng, jnp.zeros((self.n_sectors,)), self.Sigma_A, shape=(mc_draws,))
+        return random.multivariate_normal(rng, jnp.zeros((2,)), self.Sigma_A, shape=(mc_draws,))
 
     def utility(self,C,L):
         U = (1/(1-self.eps_c**(-1)))*C**(1-self.eps_c**(-1))

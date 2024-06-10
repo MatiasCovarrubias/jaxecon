@@ -115,27 +115,37 @@ class Rbc_twosectors():
         U = (1/(1-self.eps_c**(-1)))*C**(1-self.eps_c**(-1))
         return U
     
-    def get_aggregates(self, simul_policies, simul_obs):
+    def get_aggregates(self, policy, obs):
         """Calculate aggregates from simulation policies"""
         # Ensure inputs are treated as arrays for consistent indexing
-        simul_policies = jnp.atleast_2d(simul_policies)
-        simul_obs = jnp.atleast_2d(simul_obs)
-        Knorm = simul_obs[:,:2]
-        Anorm = simul_obs[:,2:]
-        K = jnp.exp(Knorm+self.k_ss)
-        A = jnp.exp(Anorm)
-        I = simul_policies[:,:2]*jnp.exp(self.policies_ss)
+        obs_notnorm = obs*self.obs_sd + self.obs_ss# denormalize
+        K = jnp.exp(obs_notnorm[:2]) # put in levels
+        A = jnp.exp(obs_notnorm[2:])
+        I = policy*jnp.exp(self.policies_ss)
         Y = A*K**self.alpha
         C = Y - I
-        K_logdev = jnp.log(K/jnp.exp(self.k_ss))
-        A_logdev = jnp.log(A)
-        Yss = jnp.exp(self.k_ss)**self.alpha
+        Cagg = ( (self.xi**(1/self.sigma_c)).T @ C**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
+        P = (Cagg) ** (-self.eps_c ** (-1)) * (Cagg * self.xi / C) ** (1 / self.sigma_c)
+        Pk = P * (1-self.phi*(I/K-self.delta))**(-1)
+        Yagg = Y@P
+        Kagg = K@Pk
+        Iagg = I@Pk
+
+        # get steady state
+        Kss = jnp.exp(self.k_ss)
+        Yss = Kss**self.alpha
         Iss = jnp.exp(self.policies_ss)
         Css = Yss - Iss
+        Caggss = ( (self.xi**(1/self.sigma_c)).T @ Css**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
+        Pss = (Caggss) ** (-self.eps_c ** (-1)) * (Caggss * self.xi / Css) ** (1 / self.sigma_c)
+        Pkss = Pss
+        Yaggss = Yss@Pss
+        Kaggss = Kss@Pkss
+        Iaggss = Iss@Pkss
         
-        C_logdev = jnp.log(C/Css)
-        I_logdev = jnp.log(I/Iss)
-        Y_logdev = jnp.log(Y/Yss)
-
-        aggregates = {"C": C_logdev, "K": K_logdev, "I": I_logdev, "Y": Y_logdev, "A": A_logdev}
-        return aggregates
+        C_logdev = jnp.log(Cagg/Caggss)
+        K_logdev = jnp.log(Kagg/Kaggss)
+        I_logdev = jnp.log(I/Iaggss)
+        Y_logdev = jnp.log(Y/Yaggss)
+ 
+        return jnp.array([C_logdev,K_logdev,I_logdev,Y_logdev]), ["C","K","I","Y"]

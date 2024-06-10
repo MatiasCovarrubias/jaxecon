@@ -52,8 +52,8 @@ def create_descstats_fn(econ_model, config):
 
         desc_stats = {}
         autocorrs = {}
-        aggregates = econ_model.get_aggregates(simul_policies, simul_obs)
-        for agg_name, agg_value in aggregates.items():
+        aggregates, keys = jax.vmap(econ_model.get_aggregates)(simul_policies, simul_obs)
+        for agg_name, agg_value in zip(keys, aggregates):
             statistics = statistic(agg_value)
             desc_stats[agg_name] = statistics["desc_stats"]
             autocorrs[agg_name] = statistics["autocorrelations"]

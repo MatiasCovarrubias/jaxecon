@@ -145,7 +145,7 @@ class Rbc_twosectors():
         
         C_logdev = jnp.log(Cagg/Caggss)
         K_logdev = jnp.log(Kagg/Kaggss)
-        I_logdev = jnp.log(I/Iaggss)
-        Y_logdev = jnp.log(Y/Yaggss)
+        I_logdev = jnp.log(Iagg/Iaggss)
+        Y_logdev = jnp.log(Yagg/Yaggss)
  
         return jnp.array([C_logdev,K_logdev,I_logdev,Y_logdev]), ["C","K","I","Y"]

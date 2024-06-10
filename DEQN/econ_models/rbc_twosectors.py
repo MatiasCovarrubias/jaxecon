@@ -149,3 +149,6 @@ class Rbc_twosectors():
         Y_logdev = jnp.log(Yagg/Yaggss)
  
         return jnp.array([C_logdev,K_logdev,I_logdev,Y_logdev])
+        
+    def get_aggregates_keys(self):
+        return ["C","K","I","Y"]

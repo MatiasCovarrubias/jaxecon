@@ -180,12 +180,12 @@ class Rbc_twosectors():
         """ sample one realization of the shock.
         Uncomment second line for continuous shocks instead of grid """
         shock =  random.multivariate_normal(rng, jnp.zeros((2,)), self.Sigma_A)
-        lower_bound = norm.ppf(0.01)  # 1st percentile (inverse CDF)
-        upper_bound = norm.ppf(0.99)  # 99th percentile
+        # lower_bound = norm.ppf(0.01)  # 1st percentile (inverse CDF)
+        # upper_bound = norm.ppf(0.99)  # 99th percentile
 
-        # Windsorize along each dimension independently
-        shock_windsorized = jnp.clip(shock, lower_bound, upper_bound)
-        return shock_windsorized
+        # # Windsorize along each dimension independently
+        # shock_windsorized = jnp.clip(shock, lower_bound, upper_bound)
+        return shock
 
     def mc_shocks(self, rng=random.PRNGKey(0), mc_draws=8):
         """ sample omc_draws realizations of the shock (for monte-carlo)
@@ -193,13 +193,13 @@ class Rbc_twosectors():
         # return  jnp.array([-1.2816,-0.6745,0,0.6745, 1.2816])
         shocks =  random.multivariate_normal(rng, jnp.zeros((2,)), self.Sigma_A, shape=(mc_draws,))
         # Calculate quantiles for windsorization
-        lower_bound = norm.ppf(0.01)  # 1st percentile (inverse CDF)
-        upper_bound = norm.ppf(0.99)  # 99th percentile
+        # lower_bound = norm.ppf(0.01)  # 1st percentile (inverse CDF)
+        # upper_bound = norm.ppf(0.99)  # 99th percentile
 
         # Windsorize along each dimension independently
-        shocks_windsorized = jnp.clip(shocks, lower_bound, upper_bound)
+        shocks= jnp.clip(shocks, lower_bound, upper_bound)
 
-        return shocks_windsorized
+        return shocks_
 
     def utility(self,C,L):
         U = (1/(1-self.eps_c**(-1)))*C**(1-self.eps_c**(-1))

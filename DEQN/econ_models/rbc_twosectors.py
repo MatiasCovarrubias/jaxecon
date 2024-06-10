@@ -28,22 +28,22 @@ class Rbc_twosectors():
         self.n_actions = len(policies_ss)
 
         # print a dictionary with all the variables to debug
-        print({
-            "beta": self.beta,
-            "alpha": self.alpha,
-            "delta": self.delta,
-            "eps_c": self.eps_c,
-            "rho": self.rho,
-            "phi": self.phi,
-            "xi": self.xi,
-            "sigma_c": self.sigma_c,
-            "Sigma_A": self.Sigma_A,
-            "policies_ss": self.policies_ss,
-            "a_ss": self.a_ss,
-            "k_ss": self.k_ss,
-            "obs_ss": self.obs_ss,
-            "obs_sd": self.obs_sd,
-            })
+        # print({
+        #     "beta": self.beta,
+        #     "alpha": self.alpha,
+        #     "delta": self.delta,
+        #     "eps_c": self.eps_c,
+        #     "rho": self.rho,
+        #     "phi": self.phi,
+        #     "xi": self.xi,
+        #     "sigma_c": self.sigma_c,
+        #     "Sigma_A": self.Sigma_A,
+        #     "policies_ss": self.policies_ss,
+        #     "a_ss": self.a_ss,
+        #     "k_ss": self.k_ss,
+        #     "obs_ss": self.obs_ss,
+        #     "obs_sd": self.obs_sd,
+        #     })
 
     def initial_obs(self, rng, init_range = 0):
         """ Get initial obs given first shock """
@@ -79,16 +79,16 @@ class Rbc_twosectors():
         obs_next = (obs_next_notnorm-self.obs_ss)/self.obs_sd        # normalize
 
         # print a dictionary with all the local variables to debug
-        print({
-            "obs_notnorm": obs_notnorm,
-            "K": K,
-            "a": a,
-            "a_tplus1": a_tplus1,
-            "I": I,
-            "K_tplus1": K_tplus1,
-            "obs_next_notnorm": obs_next_notnorm,
-            "obs_next": obs_next,
-            })
+        # print({
+        #     "obs_notnorm": obs_notnorm,
+        #     "K": K,
+        #     "a": a,
+        #     "a_tplus1": a_tplus1,
+        #     "I": I,
+        #     "K_tplus1": K_tplus1,
+        #     "obs_next_notnorm": obs_next_notnorm,
+        #     "obs_next": obs_next,
+        #     })
 
         return obs_next
 
@@ -110,18 +110,18 @@ class Rbc_twosectors():
         expect_realization = (P_next*(self.alpha*Y_next/K_next) + Pk_next*((1-self.delta) + self.phi/2*(I_next**2 / K_next**2-self.delta**2)))
 
         # print a dictionary with all the local variables to debug
-        print({
-            "obs_next_notnorm": obs_next_notnorm,
-            "K_next": K_next,
-            "A_next": A_next,
-            "I_next": I_next,
-            "Y_next": Y_next,
-            "C_next": C_next,
-            "Cagg_next": Cagg_next,
-            "P_next": P_next,
-            "Pk_next": Pk_next,
-            "expect_realization": expect_realization,
-            })
+        # print({
+        #     "obs_next_notnorm": obs_next_notnorm,
+        #     "K_next": K_next,
+        #     "A_next": A_next,
+        #     "I_next": I_next,
+        #     "Y_next": Y_next,
+        #     "C_next": C_next,
+        #     "Cagg_next": Cagg_next,
+        #     "P_next": P_next,
+        #     "Pk_next": Pk_next,
+        #     "expect_realization": expect_realization,
+        #     })
 
         return expect_realization
 
@@ -150,26 +150,26 @@ class Rbc_twosectors():
         min_accuracies_foc = 1-jnp.abs(losses_array)
         
         # print a dictionary with all the local variables to debug
-        print({
-            "obs_notnorm": obs_notnorm,
-            "K": K,
-            "A": A,
-            "I": I,
-            "Y": Y,
-            "C": C,
-            "Cagg": Cagg,
-            "P": P,
-            "Pk": Pk,
-            "MPK": MPK,
-            "K_loss": K_loss,
-            "losses_array": losses_array,
-            "mean_loss": mean_loss,
-            "max_loss": max_loss,
-            "mean_accuracy": mean_accuracy,
-            "min_accuracy": min_accuracy,
-            "mean_accuracies_foc": mean_accuracies_foc,
-            "min_accuracies_foc": min_accuracies_foc,
-            })
+        # print({
+        #     "obs_notnorm": obs_notnorm,
+        #     "K": K,
+        #     "A": A,
+        #     "I": I,
+        #     "Y": Y,
+        #     "C": C,
+        #     "Cagg": Cagg,
+        #     "P": P,
+        #     "Pk": Pk,
+        #     "MPK": MPK,
+        #     "K_loss": K_loss,
+        #     "losses_array": losses_array,
+        #     "mean_loss": mean_loss,
+        #     "max_loss": max_loss,
+        #     "mean_accuracy": mean_accuracy,
+        #     "min_accuracy": min_accuracy,
+        #     "mean_accuracies_foc": mean_accuracies_foc,
+        #     "min_accuracies_foc": min_accuracies_foc,
+        #     })
 
         return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, min_accuracies_foc
     

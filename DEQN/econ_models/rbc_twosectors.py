@@ -59,10 +59,10 @@ class Rbc_twosectors():
         obs_init = (obs_init_notnorm-self.obs_ss)/self.obs_sd # normalize
 
         # print a dictionary with all the variables to debug
-        print({
-            "obs_init_notnorm": obs_init_notnorm,
-            "obs_init": obs_init,
-            })
+        # print({
+        #     "obs_init_notnorm": obs_init_notnorm,
+        #     "obs_init": obs_init,
+        #     })
         
         return obs_init
 

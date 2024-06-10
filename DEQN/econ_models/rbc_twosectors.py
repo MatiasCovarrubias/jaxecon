@@ -197,9 +197,9 @@ class Rbc_twosectors():
         # upper_bound = norm.ppf(0.99)  # 99th percentile
 
         # Windsorize along each dimension independently
-        shocks= jnp.clip(shocks, lower_bound, upper_bound)
+        # shocks= jnp.clip(shocks, lower_bound, upper_bound)
 
-        return shocks_
+        return shocks
 
     def utility(self,C,L):
         U = (1/(1-self.eps_c**(-1)))*C**(1-self.eps_c**(-1))

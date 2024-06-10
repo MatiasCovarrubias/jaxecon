@@ -227,3 +227,10 @@ class Rbc_twosectors():
         
     def get_aggregates_keys(self):
         return ["C","K","I","Y"]
+    
+    def get_shocks_statistics(self):
+        # sample many shocks and gets statistics
+        shocks = self.mc_shocks(mc_draws=10000)
+        mean_shocks = jnp.mean(shocks, axis=0)
+        sd_shocks = jnp.std(shocks, axis=0)
+        return mean_shocks, sd_shocks

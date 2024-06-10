@@ -20,7 +20,7 @@ class Rbc_twosectors():
 
         # set steady state and standard deviations for normalization
         self.policies_ss = jnp.array(policies_ss, dtype=precision)
-        self.a_ss = jnp.array([0.0], dtype=precision)
+        self.a_ss = jnp.array([0.0,0.0], dtype=precision)
         self.k_ss = jnp.log(jnp.exp(self.policies_ss) / self.delta)
         self.obs_ss = jnp.concatenate([self.k_ss,self.a_ss])
         self.obs_sd = jnp.array([1, 1, 1, 1], dtype=precision)  # use 1 if you don't have an estimate

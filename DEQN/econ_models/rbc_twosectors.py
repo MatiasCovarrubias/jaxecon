@@ -4,7 +4,7 @@ from jax import random
 class Rbc_twosectors():
     """A JAX implementation of an RBC model."""
 
-    def __init__(self, policies_ss=[1,1], precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, eps_c=2, rho=0.9, phi=2, shock_sd=0.02, xi = [0.5,0.5], sigma_c=0.5, Sigma_A=[[0.01,0],[0,0.01]]):
+    def __init__(self, policies_ss=[1,1], precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, eps_c=2, rho=0.9, phi=2, xi = [0.5,0.5], sigma_c=0.5, Sigma_A=[[0.01,0],[0,0.01]]):
         self.precision = precision
         # set parameters
         self.beta = jnp.array(beta, dtype=precision)
@@ -13,7 +13,6 @@ class Rbc_twosectors():
         self.eps_c = jnp.array(eps_c, dtype=precision)
         self.rho = jnp.array(rho, dtype=precision)
         self.phi = jnp.array(phi, dtype=precision)
-        self.shock_sd = jnp.array(shock_sd, dtype=precision)
         self.xi = jnp.array(xi, dtype=precision)
         self.sigma_c = jnp.array(sigma_c, dtype=precision)
         self.Sigma_A = jnp.array(Sigma_A, dtype=precision)
@@ -28,6 +27,24 @@ class Rbc_twosectors():
         # number of policies
         self.n_actions = len(policies_ss)
 
+        # print a dictionary with all the variables to debug
+        print({
+            "beta": self.beta,
+            "alpha": self.alpha,
+            "delta": self.delta,
+            "eps_c": self.eps_c,
+            "rho": self.rho,
+            "phi": self.phi,
+            "xi": self.xi,
+            "sigma_c": self.sigma_c,
+            "Sigma_A": self.Sigma_A,
+            "policies_ss": self.policies_ss,
+            "a_ss": self.a_ss,
+            "k_ss": self.k_ss,
+            "obs_ss": self.obs_ss,
+            "obs_sd": self.obs_sd,
+            })
+
     def initial_obs(self, rng, init_range = 0):
         """ Get initial obs given first shock """
         rng_k, rng_a = random.split(rng,2)
@@ -40,6 +57,13 @@ class Rbc_twosectors():
 
         obs_init_notnorm = jnp.concatenate([jnp.log(K), jnp.log(A)])
         obs_init = (obs_init_notnorm-self.obs_ss)/self.obs_sd # normalize
+
+        # print a dictionary with all the variables to debug
+        print({
+            "obs_init_notnorm": obs_init_notnorm,
+            "obs_init": obs_init,
+            })
+        
         return obs_init
 
     def step(self, obs, policy, shock):
@@ -53,6 +77,18 @@ class Rbc_twosectors():
         K_tplus1 = (1-self.delta)*K + I - (self.phi/2) * (I/K - self.delta)**2 * K 
         obs_next_notnorm = jnp.concatenate([jnp.log(K_tplus1),a_tplus1])  #concatenate observation
         obs_next = (obs_next_notnorm-self.obs_ss)/self.obs_sd        # normalize
+
+        # print a dictionary with all the local variables to debug
+        print({
+            "obs_notnorm": obs_notnorm,
+            "K": K,
+            "a": a,
+            "a_tplus1": a_tplus1,
+            "I": I,
+            "K_tplus1": K_tplus1,
+            "obs_next_notnorm": obs_next_notnorm,
+            "obs_next": obs_next,
+            })
 
         return obs_next
 
@@ -72,6 +108,20 @@ class Rbc_twosectors():
 
         # Solve for the expectation term in the FOC for Ktplus1
         expect_realization = (P_next*(self.alpha*Y_next/K_next) + Pk_next*((1-self.delta) + self.phi/2*(I_next**2 / K_next**2-self.delta**2)))
+
+        # print a dictionary with all the local variables to debug
+        print({
+            "obs_next_notnorm": obs_next_notnorm,
+            "K_next": K_next,
+            "A_next": A_next,
+            "I_next": I_next,
+            "Y_next": Y_next,
+            "C_next": C_next,
+            "Cagg_next": Cagg_next,
+            "P_next": P_next,
+            "Pk_next": Pk_next,
+            "expect_realization": expect_realization,
+            })
 
         return expect_realization
 
@@ -98,9 +148,34 @@ class Rbc_twosectors():
         min_accuracy = jnp.min(1-jnp.abs(losses_array))
         mean_accuracies_foc = 1-jnp.abs(losses_array)
         min_accuracies_foc = 1-jnp.abs(losses_array)
-        return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, min_accuracies_foc
+        
+        # print a dictionary with all the local variables to debug
+        print({
+            "obs_notnorm": obs_notnorm,
+            "K": K,
+            "A": A,
+            "I": I,
+            "Y": Y,
+            "C": C,
+            "Cagg": Cagg,
+            "P": P,
+            "Pk": Pk,
+            "MPK": MPK,
+            "K_loss": K_loss,
+            "losses_array": losses_array,
+            "mean_loss": mean_loss,
+            "max_loss": max_loss,
+            "mean_accuracy": mean_accuracy,
+            "min_accuracy": min_accuracy,
+            "mean_accuracies_foc": mean_accuracies_foc,
+            "min_accuracies_foc": min_accuracies_foc,
+            })
 
-    def sample_shock(self, rng, n_draws=1):
+        return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, min_accuracies_foc
+    
+
+
+    def sample_shock(self, rng):
         """ sample one realization of the shock.
         Uncomment second line for continuous shocks instead of grid """
         return random.multivariate_normal(rng, jnp.zeros((2,)), self.Sigma_A)

@@ -67,7 +67,7 @@ class Rbc_twosectors():
         Y_next = A_next*K_next**self.alpha
         C_next = Y_next - I_next
         Cagg_next = ( (self.xi**(1/self.sigma_c)).T @ C_next**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
-        P_next = (C_next) ** (-self.eps_c ** (-1)) * (Cagg_next * self.xi / C_next) ** (1 / self.sigma_c)
+        P_next = (Cagg_next) ** (-self.eps_c ** (-1)) * (Cagg_next * self.xi / C_next) ** (1 / self.sigma_c)
         Pk_next = P_next * (1-self.phi*(I_next/K_next-self.delta))**(-1)
 
         # Solve for the expectation term in the FOC for Ktplus1
@@ -85,7 +85,7 @@ class Rbc_twosectors():
         Y = A*K**self.alpha
         C = Y - I
         Cagg = ( (self.xi**(1/self.sigma_c)).T @ C**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
-        P = (C) ** (-self.eps_c ** (-1)) * (Cagg * self.xi / C) ** (1 / self.sigma_c)
+        P = (Cagg) ** (-self.eps_c ** (-1)) * (Cagg * self.xi / C) ** (1 / self.sigma_c)
         Pk = P * (1-self.phi*(I/K-self.delta))**(-1)
         MPK = self.beta * expect
         

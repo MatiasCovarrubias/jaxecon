@@ -2,10 +2,10 @@ from jax import numpy as jnp
 from jax import random
 from jax.scipy.stats import norm
 
-class Rbc_twosectors():
+class Rbc_intermediate():
     """A JAX implementation of an RBC model."""
 
-    def __init__(self, policies_ss=[1,1], precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, eps_c=2, rho=0.9, phi=2, xi = [0.5,0.5], sigma_c=0.5, Sigma_A=[[0.01,0],[0,0.01]]):
+    def __init__(self, policies_ss=[1,1], precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, eps_c=2, rho=0.9, phi=2, mu=0.5,  Sigma_A=[[0.01,0],[0,0.01]]):
         self.precision = precision
         # set parameters
         self.beta = jnp.array(beta, dtype=precision)
@@ -14,8 +14,7 @@ class Rbc_twosectors():
         self.eps_c = jnp.array(eps_c, dtype=precision)
         self.rho = jnp.array(rho, dtype=precision)
         self.phi = jnp.array(phi, dtype=precision)
-        self.xi = jnp.array(xi, dtype=precision)
-        self.sigma_c = jnp.array(sigma_c, dtype=precision)
+        self.mu = jnp.array(mu, dtype=precision)
         self.Sigma_A = jnp.array(Sigma_A, dtype=precision)
 
         # set steady state and standard deviations for normalization
@@ -102,13 +101,17 @@ class Rbc_twosectors():
         A_next = jnp.exp(obs_next_notnorm[2:])
         I_next = policy_next*jnp.exp(self.policies_ss)
         Y_next = A_next*K_next**self.alpha
-        C_next = Y_next - I_next
-        Cagg_next = ( (self.xi**(1/self.sigma_c)).T @ C_next**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
-        P_next = (Cagg_next) ** (-self.eps_c ** (-1)) * (Cagg_next * self.xi / C_next) ** (1 / self.sigma_c)
-        Pk_next = P_next * (1-self.phi*(I_next/K_next-self.delta))**(-1)
+        M_next = Y_next[1] - I_next[1]
+        Q1_next = ( self.mu**(1/self.sigma_q) * Y_next[0]**((self.sigma_q-1)/self.sigma_q) + (1-self.mu)**(1/self.sigma_q) * M_next**((self.sigma_q-1)/self.sigma_q) ) ** (self.sigma_q/(self.sigma_q-1))
+        C_next = Q1_next - I_next[0]
+        P1_next = (C_next) ** (-self.eps_c ** (-1))
+        P2_next = P1_next * ((1-self.mu)*Q1_next/M_next)**(1/self.sigma_q) 
+        Pk1_next = P1_next * (1-self.phi*(I_next[0]/K_next[0]-self.delta))**(-1)
+        Pk2_next = P2_next * (1-self.phi*(I_next[1]/K_next[1]-self.delta))**(-1)
 
         # Solve for the expectation term in the FOC for Ktplus1
-        expect_realization = (P_next*(self.alpha*Y_next/K_next) + Pk_next*((1-self.delta) + self.phi/2*(I_next**2 / K_next**2-self.delta**2)))
+        expect_realization1 = (P1_next*(self.mu*Q1_next/Y_next[0])**(1/self.sigma_q) * (self.alpha*Y_next[0]/K_next[0]) + Pk1_next*((1-self.delta) + self.phi/2*(I_next[0]**2 / K_next[0]**2-self.delta**2)))
+        expect_realization2 = (P2_next*(self.alpha*Y_next[1]/K_next[1]) + Pk2_next*((1-self.delta) + self.phi/2*(I_next**2 / K_next**2-self.delta**2)))
 
         # print a dictionary with all the local variables to debug
         # print({
@@ -124,7 +127,7 @@ class Rbc_twosectors():
         #     "expect_realization": expect_realization,
         #     })
 
-        return expect_realization
+        return jnp.array([expect_realization1,expect_realization2])
 
     def loss(self, obs, expect, policy):
         """ Calculate loss associated with observing obs, having policy_params, and expectation exp """
@@ -134,14 +137,19 @@ class Rbc_twosectors():
         A = jnp.exp(obs_notnorm[2:])
         I = policy*jnp.exp(self.policies_ss)
         Y = A*K**self.alpha
-        C = Y - I
-        Cagg = ( (self.xi**(1/self.sigma_c)).T @ C**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
-        P = (Cagg) ** (-self.eps_c ** (-1)) * (Cagg * self.xi / C) ** (1 / self.sigma_c)
-        Pk = P * (1-self.phi*(I/K-self.delta))**(-1)
-        MPK = self.beta * expect
+        M = Y[1] - I[1]
+        Q1 = ( self.mu**(1/self.sigma_q) * Y[0]**((self.sigma_q-1)/self.sigma_q) + (1-self.mu)**(1/self.sigma_q) * M**((self.sigma_q-1)/self.sigma_q) ) ** (self.sigma_q/(self.sigma_q-1))
+        C = Q1 - I[0]
+        P1 = (C) ** (-self.eps_c ** (-1))
+        P2 = P1 * ((1-self.mu)*Q1/M)**(1/self.sigma_q) 
+        Pk1 = P1 * (1-self.phi*(I[0]/K[0]-self.delta))**(-1)
+        Pk2 = P2 * (1-self.phi*(I[1]/K[1]-self.delta))**(-1)
+        MPK1 = self.beta * expect[0]
+        MPK2 = self.beta * expect[1]
         
-        K_loss = Pk/MPK - 1
-
+        K1_loss = Pk1/MPK1 - 1
+        K2_loss = Pk2/MPK2 - 1
+        K_loss = jnp.array([K1_loss,K2_loss])
         losses_array = jnp.array([K_loss])
         mean_loss = jnp.mean(losses_array**2)
         max_loss = jnp.max(losses_array**2) # here there is just one, but more gemore generally.
@@ -174,7 +182,27 @@ class Rbc_twosectors():
 
         return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, min_accuracies_foc
     
+    def loss_ss(self, policy):
+        """ Calculate loss associated with observing obs, having policy_params, and expectation exp """
 
+        I=policy
+        K = I/self.delta
+        Y = K**self.alpha
+        M = Y[1] - I[1]
+        Q1 = ( self.mu**(1/self.sigma_q) * Y[0]**((self.sigma_q-1)/self.sigma_q) + (1-self.mu)**(1/self.sigma_q) * M**((self.sigma_q-1)/self.sigma_q) ) ** (self.sigma_q/(self.sigma_q-1))
+        C = Q1 - I[0]
+        MPK1 = self.beta * ((1-self.delta)+(self.mu*Q1/Y[0])**(1/self.sigma_q) * (self.alpha*Y[0]/K[0]))
+        MPK2 = self.beta * ((1-self.delta)+(self.alpha*Y[1]/K[1]))
+        
+        
+        K1_loss = 1/MPK1 - 1
+        K2_loss = 1/MPK2 - 1
+        K_loss = jnp.array([K1_loss,K2_loss])
+        losses_array = jnp.array([K_loss])
+        mean_loss = jnp.mean(losses_array**2)
+        
+        return mean_loss
+    
 
     def sample_shock(self, rng):
         """ sample one realization of the shock.
@@ -217,7 +245,9 @@ class Rbc_twosectors():
         Cagg = ( (self.xi**(1/self.sigma_c)).T @ C**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
         P = (Cagg) ** (-self.eps_c ** (-1)) * (Cagg * self.xi / C) ** (1 / self.sigma_c)
         Pk = P * (1-self.phi*(I/K-self.delta))**(-1)
-
+        Yagg = Y@P
+        Kagg = K@Pk
+        Iagg = I@Pk
 
         # get steady state
         Kss = jnp.exp(self.k_ss)
@@ -227,10 +257,6 @@ class Rbc_twosectors():
         Caggss = ( (self.xi**(1/self.sigma_c)).T @ Css**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
         Pss = (Caggss) ** (-self.eps_c ** (-1)) * (Caggss * self.xi / Css) ** (1 / self.sigma_c)
         Pkss = Pss
-
-        Yagg = Y@Pss
-        Kagg = K@Pkss
-        Iagg = I@Pkss
         Yaggss = Yss@Pss
         Kaggss = Kss@Pkss
         Iaggss = Iss@Pkss
@@ -258,4 +284,3 @@ class Rbc_twosectors():
         mean_shocks = jnp.mean(shocks, axis=0)
         sd_shocks = jnp.std(shocks, axis=0)
         return mean_shocks, sd_shocks
-    

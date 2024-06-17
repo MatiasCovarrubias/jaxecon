@@ -112,7 +112,7 @@ class Rbc_intermediates():
 
         # Solve for the expectation term in the FOC for Ktplus1
         expect_realization1 = (P1_next*(self.mu*Q1_next/Y_next[0])**(1/self.sigma_q) * (self.alpha*Y_next[0]/K_next[0]) + Pk1_next*((1-self.delta) + self.phi/2*(I_next[0]**2 / K_next[0]**2-self.delta**2)))
-        expect_realization2 = (P2_next*(self.alpha*Y_next[1]/K_next[1]) + Pk2_next*((1-self.delta) + self.phi/2*(I_next**2 / K_next**2-self.delta**2)))
+        expect_realization2 = (P2_next*(self.alpha*Y_next[1]/K_next[1]) + Pk2_next*((1-self.delta) + self.phi/2*(I_next[1]**2 / K_next[1]**2-self.delta**2)))
 
         # print a dictionary with all the local variables to debug
         # print({

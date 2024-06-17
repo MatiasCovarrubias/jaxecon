@@ -2,7 +2,7 @@ from jax import numpy as jnp
 from jax import random
 from jax.scipy.stats import norm
 
-class Rbc_intermediate():
+class Rbc_intermediates():
     """A JAX implementation of an RBC model."""
 
     def __init__(self, policies_ss=[1,1], precision=jnp.float32, beta=0.96, alpha=0.3, delta=0.1, eps_c=2, rho=0.9, phi=2, mu=0.5,  Sigma_A=[[0.01,0],[0,0.01]]):

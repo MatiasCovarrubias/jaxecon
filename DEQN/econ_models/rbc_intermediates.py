@@ -185,7 +185,7 @@ class Rbc_intermediate():
     def loss_ss(self, policy):
         """ Calculate loss associated with observing obs, having policy_params, and expectation exp """
 
-        I=policy
+        I=jnp.exp(policy)
         K = I/self.delta
         Y = K**self.alpha
         M = Y[1] - I[1]

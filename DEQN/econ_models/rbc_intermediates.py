@@ -242,10 +242,15 @@ class Rbc_intermediates():
         A = jnp.exp(obs_notnorm[2:])
         I = policy*jnp.exp(self.policies_ss)
         Y = A*K**self.alpha
-        C = Y - I
-        Cagg = ( (self.xi**(1/self.sigma_c)).T @ C**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
-        P = (Cagg) ** (-self.eps_c ** (-1)) * (Cagg * self.xi / C) ** (1 / self.sigma_c)
-        Pk = P * (1-self.phi*(I/K-self.delta))**(-1)
+        M = Y[1] - I[1]
+        Q1 = ( self.mu**(1/self.sigma_q) * Y[0]**((self.sigma_q-1)/self.sigma_q) + (1-self.mu)**(1/self.sigma_q) * M**((self.sigma_q-1)/self.sigma_q) ) ** (self.sigma_q/(self.sigma_q-1))
+        C = Q1 - I[0]
+        P1 = (C) ** (-self.eps_c ** (-1))
+        P2 = P1 * ((1-self.mu)*Q1/M)**(1/self.sigma_q) 
+        P = jnp.array([P1,P2])
+        Pk1 = P1 * (1-self.phi*(I[0]/K[0]-self.delta))**(-1)
+        Pk2 = P2 * (1-self.phi*(I[1]/K[1]-self.delta))**(-1)
+        Pk = jnp.array([Pk1,Pk2])
         Yagg = Y@P
         Kagg = K@Pk
         Iagg = I@Pk
@@ -254,30 +259,33 @@ class Rbc_intermediates():
         Kss = jnp.exp(self.k_ss)
         Yss = Kss**self.alpha
         Iss = jnp.exp(self.policies_ss)
-        Css = Yss - Iss
-        Caggss = ( (self.xi**(1/self.sigma_c)).T @ Css**((self.sigma_c-1)/self.sigma_c) ) ** (self.sigma_c/(self.sigma_c-1))
-        Pss = (Caggss) ** (-self.eps_c ** (-1)) * (Caggss * self.xi / Css) ** (1 / self.sigma_c)
+        Mss = Yss[1] - Iss[1]
+        Q1ss = ( self.mu**(1/self.sigma_q) * Yss[0]**((self.sigma_q-1)/self.sigma_q) + (1-self.mu)**(1/self.sigma_q) * Mss**((self.sigma_q-1)/self.sigma_q) ) ** (self.sigma_q/(self.sigma_q-1))
+        Css = Q1ss - Iss[0]
+        
+        P1ss = (Css) ** (-self.eps_c ** (-1))
+        P2ss = P1ss * ((1-self.mu)*Q1ss/Mss)**(1/self.sigma_q)  
+        Pss = jnp.array([P1ss,P2ss])
         Pkss = Pss
         Yaggss = Yss@Pss
         Kaggss = Kss@Pkss
         Iaggss = Iss@Pkss
         
         # aggregate loggdevs
-        Cagg_logdev = jnp.log(Cagg/Caggss)
+        C_logdev = jnp.log(C/Css)
         K_logdev = jnp.log(Kagg/Kaggss)
         I_logdev = jnp.log(Iagg/Iaggss)
         Y_logdev = jnp.log(Yagg/Yaggss)
+        M_logdev = jnp.log(M/Mss)
 
         #idiosyncratic logdevs
-        C1_logdev = jnp.log(C[0]/Css[0])
-        C2_logdev = jnp.log(C[1]/Css[1])
         K1_logdev = jnp.log(K[0]/Kss[0])
         K2_logdev = jnp.log(K[1]/Kss[1])
  
-        return jnp.array([Cagg_logdev,K_logdev,I_logdev,Y_logdev,C1_logdev,C2_logdev,K1_logdev,K2_logdev])
+        return jnp.array([C_logdev,K_logdev,I_logdev,Y_logdev,K1_logdev,K2_logdev, M_logdev])
         
     def get_aggregates_keys(self):
-        return ["Cagg","Kagg","Iagg","Yagg","C1","C2","K1","K2"]
+        return ["C","Kagg","Iagg","Yagg","K1","K2","M"]
     
     def get_shocks_statistics(self):
         # sample many shocks and gets statistics

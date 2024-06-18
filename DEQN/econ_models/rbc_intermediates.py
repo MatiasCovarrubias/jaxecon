@@ -1,3 +1,4 @@
+import jax
 from jax import numpy as jnp
 from jax import random
 from jax.scipy.stats import norm
@@ -128,7 +129,7 @@ class Rbc_intermediates():
         #     "expect_realization": expect_realization,
         #     })
 
-        return jnp.array([expect_realization1,expect_realization2])
+        return jax.lax.stop_gradient(jnp.array([expect_realization1,expect_realization2]))
 
     def loss(self, obs, expect, policy):
         """ Calculate loss associated with observing obs, having policy_params, and expectation exp """

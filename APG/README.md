@@ -17,47 +17,59 @@ The code has been organized into the following modules:
     -   `eval.py`: Evaluation, or the function that evaluates the performance of the algorithm (`get_eval_fn`)
 -   **`utilities/plot_results.py`**: Plotting and visualization functions
 
-### Main Script
+### Execution Options
 
--   **`apg_run.py`**: Complete experiment script that imports all modules and runs the training
+This implementation provides two ways to run the APG algorithm:
+
+-   **`apg_run.py`**: Complete experiment script for **local execution**
+-   **`apg_run.ipynb`**: Jupyter notebook for **Google Colab execution** (recommended for GPU usage)
 
 ## Usage
 
-### Running in Google Colab (Recommended)
+### Option 1: Local Execution (Recommended for Development)
 
-The easiest way to run this code is in Google Colab:
+If you want to run the algorithm locally on your machine:
 
-1. **First Cell - Setup and Clone Repository**: Copy and paste this into the first cell of your Colab notebook:
+1. **Prerequisites**: Ensure you have the required dependencies installed:
 
-```python
-# Clone the jaxecon repository
-! git clone https://github.com/MatiasCovarrubias/jaxecon
+    ```bash
+    pip install jax flax optax matplotlib
+    ```
 
-# Add the repository to Python path
-import sys
-sys.path.insert(0, '/content/jaxecon')
+2. **Run the script**:
+    ```bash
+    cd APG/
+    python apg_run.py
+    ```
 
-# Basic imports and setup
-import jax
-from jax import config as jax_config
-print("JAX devices:", jax.devices())
-print("Repository cloned and ready!")
-```
+The script will automatically:
 
-2. **Second Cell - Run the APG Algorithm**: Copy and paste the entire contents of `apg_run.py` into a second cell
+-   Import all modular components
+-   Test the environment and neural network setup
+-   Configure and run the training experiment
+-   Generate and display plots
+-   Save results and model checkpoints to the `results/` folder
 
-3. **Run both cells** - The first cell will clone the repository and set up the environment, then the second cell will automatically:
-    - Import all modular components from the cloned repository
-    - Test the environment and neural network
-    - Configure and run the training experiment
-    - Generate and display plots
-    - Save results and model checkpoints
+### Option 2: Google Colab Execution (Recommended for GPU Training)
 
-The algorithm will run completely automatically once the repository is properly set up!
+For GPU acceleration or if you don't want to set up dependencies locally:
 
-### What the Script Does
+1. **Open the notebook in Colab**: Click the "Open in Colab" badge in `apg_run.ipynb` or manually upload the notebook to Google Colab
 
-When you run `apg_run.py`, it will:
+2. **Set up GPU runtime** (optional but recommended):
+
+    - Go to Runtime → Change runtime type
+    - Select "GPU" as hardware accelerator
+
+3. **Run all cells**: The notebook will automatically:
+    - Clone the repository
+    - Set up the Python path
+    - Import all necessary components
+    - Run the complete experiment with the same functionality as the local script
+
+### What the Algorithm Does
+
+When you run the APG algorithm (either locally or in Colab), it will:
 
 1. **Test Setup**: Verify that the environment and neural network work correctly
 2. **Configuration**: Set up learning rates, network architecture, and training parameters
@@ -66,13 +78,28 @@ When you run `apg_run.py`, it will:
 5. **Visualization**: Create plots showing training progress and policy performance
 6. **Results**: Save all results, plots, and model checkpoints to a `results/` folder
 
+## When to Use Which Option
+
+-   **Use `apg_run.py` (local execution)** when:
+
+    -   You're developing or debugging the algorithm
+    -   You want to modify the code and run experiments iteratively
+    -   You have a local setup with sufficient computational resources
+    -   You prefer working in your local development environment
+
+-   **Use `apg_run.ipynb` (Colab execution)** when:
+    -   You want to leverage free GPU resources from Google Colab
+    -   You don't want to install dependencies locally
+    -   You're sharing the experiment with others who need easy access
+    -   You want to run longer experiments that benefit from GPU acceleration
+
 ## Dependencies
 
-The script automatically handles dependencies, but requires:
+The algorithm requires:
 
 -   JAX (for fast numerical computing)
 -   Flax (for neural networks)
 -   Optax (for optimization)
 -   Matplotlib (for plotting)
 
-These are typically pre-installed in Google Colab or will be installed automatically.
+These dependencies are automatically available in Google Colab, or can be installed locally using the pip command shown above.

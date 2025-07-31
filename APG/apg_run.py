@@ -9,7 +9,8 @@ import os
 import json
 from jax import numpy as jnp, random
 from flax import linen as nn
-from flax.training import train_state as ts_class, checkpoints
+from flax.training.train_state import TrainState
+from flax.training import checkpoints
 from time import time
 
 # Import our modular components
@@ -37,13 +38,13 @@ def get_config():
             optax.constant_schedule(0.0001),
             optax.cosine_decay_schedule(0.0001, 1000),
         ],
-        boundaries=[300, 1000, 1500, 2000],
+        boundaries=[200, 400, 600, 800],
     )
 
     config_apg = {
         "learning_rate": lr_schedule,
-        "n_epochs": 60,
-        "steps_per_epoch": 50,
+        "n_epochs": 100,
+        "steps_per_epoch": 100,
         "epis_per_step": 1024 * 8,
         "periods_per_epis": 32,
         "eval_n_epis": 1024 * 32,
@@ -94,7 +95,7 @@ def run_experiment(env, config):
     rng, rng_pol, rng_env, rng_epoch, rng_eval = random.split(random.PRNGKey(config["seed"]), num=5)
 
     obs, env_state = env.reset(rng_env)
-    train_state = ts_class.TrainState.create(apply_fn=nn_policy.apply, params=nn_policy.init(rng_pol, obs), tx=optim)
+    train_state = TrainState.create(apply_fn=nn_policy.apply, params=nn_policy.init(rng_pol, obs), tx=optim)
 
     # GET EPOCH TRAIN AND EVAL FUNCTIONS
     epoch_update = jax.jit(get_apg_train_fn(env, config))

@@ -1,6 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1753435553 "/Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet/docs/aggregation_notes.tex" "aggregation_notes.pdf" "aggregation_notes" 1753435554 0
-  "/Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet/docs/aggregation_notes.tex" 1753435553 9779 f65efba3441612748e6b6cf65795cb26 ""
+["pdflatex"] 1753973505 "/Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet/docs/aggregation_notes.tex" "aggregation_notes.pdf" "aggregation_notes" 1753973506 0
+  "/Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet/docs/aggregation_notes.tex" 1753973505 9778 a5bf2dd5e5e98b0f05cedef4c4ac1095 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/adobe/palatino/pplb8r.tfm" 1136768653 2532 9ad73cf4dd2173a847f2a5f5608e0b9a ""
@@ -118,9 +118,9 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1707159474 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1707159445 7883458 9f66061db12ffb12e606293a811abc0f ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "aggregation_notes.aux" 1753435554 2156 8bf54b6393cb46fe251374d45b332e35 "pdflatex"
-  "aggregation_notes.out" 1753435554 1043 b90abe1a597daef59c534328a2b6536f "pdflatex"
-  "aggregation_notes.tex" 1753435553 9779 f65efba3441612748e6b6cf65795cb26 ""
+  "aggregation_notes.aux" 1753973506 2156 8bf54b6393cb46fe251374d45b332e35 "pdflatex"
+  "aggregation_notes.out" 1753973506 1043 b90abe1a597daef59c534328a2b6536f "pdflatex"
+  "aggregation_notes.tex" 1753973505 9778 a5bf2dd5e5e98b0f05cedef4c4ac1095 ""
   (generated)
   "aggregation_notes.aux"
   "aggregation_notes.log"

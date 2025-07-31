@@ -1,0 +1,188 @@
+\documentclass[12pt,english]{article}
+\usepackage[sc]{mathpazo}
+\usepackage[utf8]{inputenc}     
+\usepackage{geometry}
+\usepackage{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{parskip}  % Add vertical space between paragraphs
+\usepackage{color}
+
+% Basic geometry settings
+\geometry{left=6em, right=6em, top=6em, bottom=6em}
+
+% Spacing and paragraph settings
+\setlength{\parskip}{1em}  % Adjust space between paragraphs
+\onehalfspacing
+
+% Hyperref setup
+\hypersetup{colorlinks,linkcolor={blue},citecolor={blue},urlcolor={black}}
+
+% Theorem environments
+\usepackage{amsthm}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem*{proposition*}{Proposition}
+
+% Section title size adjustments
+\usepackage{titlesec}
+\titleformat*{\section}{\normalsize\bfseries}
+\titleformat*{\subsection}{\normalsize\bfseries}
+
+\title{Vectorized Implementation of the Tornqvist GDP Index}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Tornqvist GDP Index}
+
+\subsection{Scalar Formula}
+The Tornqvist index for aggregate real GDP is defined as:
+$$\ln\left(\frac{Q_t}{Q_{t-1}}\right) = \frac{1}{2}\sum_{i=1}^{n}\left(\frac{y_{i,t-1}p_{i,t-1}}{y_{t-1}p_{t-1}} + \frac{y_{i,t}p_{i,t}}{y_{t}p_{t}}\right)\ln\left(\frac{y_{i,t}}{y_{i,t-1}}\right)$$
+
+where $Q_t$ is the aggregate quantity index, $y_{i,t}$ is real value added in sector $i$ at time $t$, and $p_{i,t}$ is the corresponding price.
+
+\subsection{Vectorized Implementation}
+Given matrices $\mathbf{Y} \in \mathbb{R}^{T \times N}$ (quantities) and $\mathbf{P} \in \mathbb{R}^{T \times N}$ (prices):
+We begin by computing the expenditure shares at each point in time by taking the element-wise product of quantities and prices, normalized by total expenditure:
+
+$$\mathbf{S}_{t} = \frac{\mathbf{Y}_t \odot \mathbf{P}_t}{\mathbf{1}^T(\mathbf{Y}_t \odot \mathbf{P}_t)}$$
+
+Next, we calculate the average shares between consecutive periods, which will serve as our time-varying weights in the index:
+$$\bar{\mathbf{S}}_{t} = \frac{1}{2}(\mathbf{S}_{t-1} + \mathbf{S}_t)$$
+
+The sectoral growth rates are then computed as log-differences of the quantity series:
+$$\mathbf{g}_t = \ln\left(\frac{\mathbf{Y}_t}{\mathbf{Y}_{t-1}}\right)$$
+
+These growth rates are aggregated using the previously calculated weights to obtain period-by-period growth in the aggregate index:
+$$\ln\left(\frac{Q_t}{Q_{t-1}}\right) = \bar{\mathbf{S}}_{t}^T \mathbf{g}_t$$
+
+Finally, to construct the level series of the quantity index, we cumulate the log changes starting from zero and exponentiate:
+$$\ln(\mathbf{Q}) = \text{cumsum}\left(\begin{bmatrix} 0 \\ \ln(Q_2/Q_1) \\ \vdots \\ \ln(Q_T/Q_{T-1}) \end{bmatrix}\right)$$
+
+$$\mathbf{Q} = \exp(\ln(\mathbf{Q}))$$
+
+\subsection{Stationarity of Tornqvist Indices}
+
+We have applied Tornqvist aggregation to simulations with both the loglinear solution and the fully nonlinear solution. We get that for Y and I, the Tornqvist index diverges for long simulations (e.g., T=20000). This is not the case for C and K. We also aggregated using fixed prices, and for that aggregator the aggregates are stationary. For a simulation of $T=20000$, the mean of aggregates with each method is:
+
+\begin{table}[h]
+\label{tab:aggregation_methods}
+\centering
+\caption{Mean of aggregates by aggregation method}
+\begin{tabular}{lrrrr}
+\hline
+\textbf{Variable} & \textbf{Baseline} & \textbf{Low volatility} & \textbf{High Volatility} & \textbf{Loglinear} \\
+\hline 
+\multicolumn{5}{c}{\textit{Tornqvist Aggregation (mean log index)}} \\[0.5ex]
+$C_{agg}$ & -0.0098 & -0.0041 & -0.0100 & -0.0015 \\[0.5ex]
+$M_{agg}$ & -0.0229 & -0.0186 & -0.0232 & -0.0885 \\[0.5ex]
+$I_{agg}$ & 0.5265 & 0.5780 & 0.4906 & -1.1255 \\[0.5ex]
+$Y_{agg}$ & 0.1081 & 0.1166 & 0.1033 & -0.3160 \\[0.5ex]
+$K_{agg}$ & -0.0184 & -0.0085 & -0.0252 & 0.0096 \\[1ex]
+\hline 
+\multicolumn{5}{c}{\textit{Fixed Price Aggregation (mean log deviation from SS)}} \\[0.5ex]
+$C_{agg}$ & -0.0123 & -0.0032 & -0.0160 & -0.0004 \\[0.5ex]
+$M_{agg}$ & -0.0150 & -0.0051 & -0.0180 & -0.0006 \\[0.5ex]
+$I_{agg}$ & -0.0138 & -0.0043 & -0.0153 & 0.0045 \\[0.5ex]
+$Y_{agg}$ & -0.0083 & -0.0014 & -0.0103 & 0.0005 \\[0.5ex]
+$K_{agg}$ & -0.0125 & -0.0031 & -0.0141 & -0.0008 \\
+\hline
+\end{tabular}
+
+\footnotesize\noindent{Note: Results from 20,000-period simulations starting at steady state. For Tornqvist, we report mean log index (initial index = 1). For fixed prices, we report mean log deviation from deterministic steady state.}
+\end{table}
+
+
+
+
+For o3: Add a discussion of why the Tornqvist can be nonstationary even if the underlying variables are stationary. I have checked that the Tornqvist index apploed to AR1 quantity and prices also diverges (for AR1 the decrease a lot over time). One possibility is that for AR1, when quantity is high, the weights are high, but mean reversion means that expected log growth is negative if it is above trend. Then, we get that high weight sector has expected negative growth, so Torqnvist is biased downwards. For our economic model, that is not so simple, because Y may be correlated with P. In our model, we have sectoral TFP shock, and constant returns to scale. THen, we have sectoral supply shocks, which mean we move along the demand curve. Then, Y and P should be negative correlated. Thus, we can have positive drift. Explain all these phenomena in details. If you can, discuss mathematically. In a later review, we will add proofs.
+% Discussion added by o3
+\subsubsection{Why Can the Tornqvist Index Exhibit Non--Stationarity?}
+\label{subsec:torq_stationarity}
+
+Even when the underlying sectoral quantities and prices are (covariance--)
+stationary, the Tornqvist aggregate constructed from them 
+need not inherit this property.  The root cause is that the
+Tornqvist growth rate
+\begin{equation}
+\label{eq:torq_growth}
+  \Delta \ln Q_t \;\equiv\; \ln\!\left(\frac{Q_t}{Q_{t-1}}\right)
+  \;=\; \sum_{i=1}^{N} \bar{s}_{i,t}\, \Delta \ln y_{i,t},
+  \qquad \bar{s}_{i,t}\;=\;\tfrac12\bigl(s_{i,t-1}+s_{i,t}\bigr),
+\end{equation}
+is a bilinear object: it multiplies time--varying weights
+$\bar{s}_{i,t}$ by subsequent changes in sectoral quantities.  When the
+weights are correlated with future growth, the sum in \eqref{eq:torq_growth}
+can acquire a non--zero mean, so that the cumulative index
+$\ln Q_t = \sum_{\tau\le t}\Delta\ln Q_\tau$ develops a deterministic
+trend.
+
+\paragraph{Illustration with a univariate AR(1).}
+Consider a single sector whose log quantity follows the stationary AR(1)
+\begin{equation*}
+  y_t \;=\; \rho y_{t-1} + \varepsilon_t,\qquad |\rho|<1,\quad \varepsilon_t\stackrel{iid}{\sim}\mathcal{N}(0,\sigma^2).
+\end{equation*}
+Let the (log) price be an independent copy $p_t$ of the same process so
+that both $y_t$ and $p_t$ are stationary.  When the Tornqvist formula is
+applied to the artificial two--period panel $(y_{t-1},p_{t-1})$ and
+$(y_t,p_t)$, the weight is proportional to $\exp(y_{t-1})$, while the
+subsequent growth is $y_t-y_{t-1}=-(1-\rho)y_{t-1}+\varepsilon_t$.
+Because $\mathbb{E}[y_{t-1}\,\varepsilon_t]=0$, we obtain
+\begin{equation*}
+  \mathbb{E}\bigl[\bar{s}_{t}\,\Delta y_t\bigr]
+  \;\propto\; \mathbb{E}\bigl[ e^{y_{t-1}}
+    \bigl(-(1-\rho)y_{t-1}+\varepsilon_t\bigr)\bigr]
+  \;=\; -(1-\rho)\,\mathbb{E}\bigl[y_{t-1}e^{y_{t-1}}\bigr] \;<\;0.
+\end{equation*}
+Hence the expected Tornqvist growth rate is 
+negative: episodes in which the level is high get large weights, yet by
+mean reversion high levels forecast \emph{negative} future growth.  The
+resulting index drifts downward even though $y_t$ itself is stationary.
+
+\paragraph{General multi--sector setting.}
+With $N>1$ stationary sectors, let $(y_{i,t},p_{i,t})$ be stationary and
+log--normal for simplicity.  Write the demeaned log quantities as
+$\tilde{y}_{i,t}=\ln y_{i,t}-\mu_i$.  A first--order approximation yields
+\[\bar{s}_{i,t} \;\approx\; \bar{s}_i^{\,*} + \gamma_i\,\tilde{y}_{i,t}
+   + \delta_i\,\tilde{p}_{i,t},\]
+with deterministic constants $\bar{s}_i^{\,*}$, $\gamma_i$, $\delta_i$.
+The expected aggregate growth is then
+\begin{align*}
+  \mathbb{E}[\Delta\ln Q_t]
+  &\;=\; \sum_{i=1}^N \gamma_i\,\mathbb{E}[\tilde{y}_{i,t}\,\Delta\ln y_{i,t}]
+   + \sum_{i=1}^N \delta_i\,\mathbb{E}[\tilde{p}_{i,t}\,\Delta\ln y_{i,t}].
+\end{align*}
+The first term is negative by mean reversion of $y_{i,t}$, exactly as in
+the univariate example.  The second term can offset or reinforce this
+bias depending on the quantity–price correlation.
+
+\paragraph{Rbc with production networks case.}
+In our model, the only shocks are sectoral supply (TFP) shocks, which shift the sectoral supply curve. If we abstract from general equilibrium effects, we are moving along the sectoral demand curves. This implies a \emph{negative} contemporaneous correlation between
+$\tilde{y}_{i,t}$ and $\tilde{p}_{i,t}$.  Consequently, the quantity bias
+(downward) and the price bias (upward) act in opposite directions.  If
+the price response is strong enough, the second term above dominates and
+the expected drift can become positive, precisely what we observe for
+aggregate $Y$ in Table~\ref{tab:aggregation_methods}.
+
+In contrast, when we aggregate at \emph{fixed} base prices the weights are
+constant and independent of future growth, so both cross--moments vanish
+and the resulting index is stationary, matching the simulations.
+
+Stationarity of the underlying sectoral data is
+\emph{insufficient} for stationarity of the Tornqvist aggregate.  One
+must also require that the weights be \emph{orthogonal} to future sectoral
+growth.  Any economic environment that ties expenditure shares to levels
+that are predictive of subsequent changes will generically impart a drift
+term to the index.
+
+
+\end{document}

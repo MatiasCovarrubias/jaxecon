@@ -1,0 +1,466 @@
+\section{First-order conditions and auxiliary results regarding the full model\label{sec:Algebraic-Appendix}}
+
+In this appendix, we derive the first-order conditions of the full model. We also provide some additional results
+
+The Lagrangian of the planner is:
+
+\begin{align*}
+\mathcal{{L}} & =\mathbb{{E}}_{0}\sum_{t=0}^{\infty}\beta^{t}\left\{ \frac{1}{1-\epsilon_{c}^{-1}}\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{1-\epsilon_{c}^{-1}}\right.\\
+ & \qquad+\sum_{j=1}^{N}P_{jt}^{\text{k}}\left[I_{jt}+(1-\delta_{j})K_{jt}-\Phi_{jt}-K_{jt+1}\right]\\
+ & \qquad\left.+\sum_{j=1}^{N}P_{jt}\left[Q_{jt}-C_{jt}-\sum_{i=1}^{N}\left[M_{jit}+I_{jit}\right]\right]\right\}, 
+\end{align*}
+
+where
+
+\begin{align*}
+C_{t} & =\left(\sum_{j=1}^{N}\xi_{j}^{\sigma_{c}^{-1}}(C_{jt})^{1-\sigma_{c}^{-1}}\right)^{\frac{1}{1-\sigma_{c}^{-1}}},\\
+L_{t} & =\left(\sum_{j=1}^{N}(L_{jt})^{1+\sigma_{l}^{-1}}\right)^{\frac{1}{1+\sigma_{l}^{-1}}},\\
+Q_{jt} & =\text{\ensuremath{\left[(\mu_{j})^{\sigma_{q}^{-1}}\left(Y_{jt}\right)^{1-\sigma_{q}^{-1}}+\left(1-\mu_{j}\right)^{\sigma_{q}^{-1}}\left(M_{jt}\right)^{1-\sigma_{q}^{-1}}\right]^{\frac{1}{1-\sigma_{q}^{-1}}}}},\\
+Y_{jt} & =A_{jt}\left[(\alpha_{j})^{\sigma_{q}^{-1}}\left(K_{jt}\right)^{1-\sigma_{y}^{-1}}+\left(1-\alpha_{j}\right)^{\sigma_{y}^{-1}}\left(L_{jt}\right)^{1-\sigma_{y}^{-1}}\right]^{\frac{1}{1-\sigma_{y}^{-1}}},\\
+I_{jt} & =\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{I}\right)^{\sigma_{I}^{-1}}\left(I_{ijt}\right)^{1-\sigma_{I}^{-1}}\right)^{\frac{1}{1-\sigma_{I}^{-1}}},\\
+M_{jt} & =\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{m}\right)^{\sigma_{m}^{-1}}\left(M_{ijt}\right)^{1-\sigma_{m}^{-1}}\right)^{\frac{1}{1-\sigma_{m}^{-1}}},\\
+\Phi_{jt} & =\frac{\phi}{2}\left(\frac{{I_{jt}}}{K_{jt}}-\delta_{j}\right)^{2}K_{jt}.
+\end{align*}
+
+We will start by writing down all the derivatives of the CES aggregators
+and the adjustment cost function. See sub-appendix \ref{subsec:Norm-CES-algebra}
+to see the details of the CES algebra involved: 
+\begin{align*}
+\frac{\partial C_{t}}{\partial C_{jt}} & =\left(\xi_{j}\frac{{C_{t}}}{C_{jt}}\right)^{\sigma_{c}^{-1}} & \frac{\partial L_{t}}{\partial L_{jt}} & =\left(\frac{{L_{jt}}}{L_{t}}\right)^{\sigma_{l}^{-1}}\\
+\frac{\partial Q_{jt}}{\partial Y_{jt}} & =\left(\mu_{j}\frac{{Q_{jt}}}{Y_{jt}}\right)^{\sigma_{q}^{-1}} & \frac{\partial Q_{jt}}{\partial M_{jt}} & =\left(\left(1-\mu_{j}\right)\frac{{Q_{jt}}}{M_{jt}}\right)^{\sigma_{q}^{-1}}\\
+\frac{\partial Y_{jt}}{\partial K_{jt}} & =A_{jt}^{1-\sigma_{y}^{-1}}\left(\alpha_{j}\frac{{Y_{jt}}}{K_{jt}}\right)^{\sigma_{y}^{-1}} & \frac{\partial Y_{jt}}{\partial L_{jt}} & =A_{jt}^{1-\sigma_{y}^{-1}}\left(\left(1-\alpha_{j}\right)\frac{{Y_{jt}}}{L_{jt}}\right)^{\sigma_{y}^{-1}}\\
+\frac{\partial M_{jt}}{\partial M_{ijt}} & =\left(\gamma_{ij}^{M}\frac{{M_{jt}}}{M_{ijt}}\right)^{\sigma_{m}^{-1}} & \frac{\partial I_{jt}}{\partial I_{ijt}} & =\left(\gamma_{ij}^{I}\frac{{I_{jt}}}{I_{ijt}}\right)^{\sigma_{I}^{-1}}\\
+\frac{\partial\Phi_{jt}}{\partial I_{jt}} & =\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right) & \frac{\partial\Phi_{jt}}{\partial K_{jt}} & =-\frac{\phi}{2}\left(\frac{I_{jt}^{2}}{K_{jt}^{2}}-\delta_{j}^{2}\right).
+\end{align*}
+
+
+\subsection{FOC for consumption}
+
+We start with
+\begin{align*}
+\frac{\partial\mathcal{{L}}}{\partial C_{jt}} & =\beta^{t}\left(\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{-\epsilon_{c}^{-1}}\frac{\partial C_{t}}{\partial C_{jt}}-P_{jt}\right)=0.
+\end{align*}
+
+Next, we replace the derivatives:
+\begin{align*}
+\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{-\epsilon_{c}^{-1}}\frac{\partial C_{t}}{\partial C_{jt}} & =P_{jt},\\
+\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{-\epsilon_{c}^{-1}}\left(\xi_{j}\frac{{C_{t}}}{C_{jt}}\right)^{\sigma_{c}^{-1}} & =P_{jt}.
+\end{align*}
+
+
+\subsection{FOC for labor}
+
+We start with
+\begin{align*}
+\frac{\partial\mathcal{{L}}}{\partial L_{jt}} & =\beta^{t}\left(-\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{-\epsilon_{c}^{-1}}\theta\left(L_{t}\right)^{\epsilon_{l}^{-1}}\frac{\partial L_{t}}{\partial L_{jt}}+P_{jt}\frac{\partial Q_{jt}}{\partial L_{jt}}\right)=0.
+\end{align*}
+
+Next, we replace the derivatives, using the chain rule when needed:
+\begin{align*}
+\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{-\epsilon_{c}^{-1}}\theta\left(L_{t}\right)^{\epsilon_{l}^{-1}}\frac{\partial L_{t}}{\partial L_{jt}} & =P_{jt}\frac{\partial Q_{jt}}{\partial Y_{jt}}\frac{\partial Y_{jt}}{\partial L_{jt}},\\
+\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{-\epsilon_{c}^{-1}}\theta\left(L_{t}\right)^{\epsilon_{l}^{-1}}\left(\frac{{L_{jt}}}{L_{t}}\right)^{\sigma_{l}^{-1}} & =P_{jt}A_{jt}^{1-\sigma_{y}^{-1}}\left(\mu_{j}\frac{{Q_{jt}}}{Y_{jt}}\right)^{\sigma_{q}^{-1}}\left(\left(1-\alpha_{j}\right)\frac{{Y_{jt}}}{L_{jt}}\right)^{\sigma_{y}^{-1}}.
+\end{align*}
+
+
+\subsection{FOC with respect to capital in next period}
+
+We start with
+\begin{align*}
+\frac{\partial\mathcal{{L}}}{\partial K_{jt+1}} & =\beta^{t}\left(-P_{jt}^{k}\right)+\beta^{t+1}\mathbb{{E}}_{t}\left(P_{jt+1}^{k}\left((1-\delta_{j})-\frac{\partial\Phi_{jt+1}}{\partial K_{jt+1}}\right)+P_{jt+1}\frac{\partial Q_{jt+1}}{\partial K_{jt+1}}\right)=0.
+\end{align*}
+
+Next, we replace the derivatives, using the chain rule when needed:
+\begin{align*}
+P_{jt}^{k} & =\beta\mathbb{{E}}_{t}\left(P_{jt+1}^{k}\left((1-\delta_{j})-\frac{\partial\Phi_{jt+1}}{\partial K_{jt+1}}\right)+P_{jt+1}\frac{\partial Q_{jt+1}}{\partial Y_{jt+1}}\frac{\partial Y_{jt+1}}{\partial K_{jt+1}}\right),\\
+P_{jt}^{k} & =\beta\mathbb{{E}}_{t}\left[P_{jt+1}^{k}\left((1-\delta_{j})+\frac{\phi}{2}\left(\frac{I_{jt+1}^{2}}{K_{jt+1}^{2}}-\delta_{j}^{2}\right)\right)\right. \\
+ & \left.+P_{jt+1}A_{jt+1}^{1-\sigma_{y}^{-1}}\left(\mu_{j}\frac{{Q_{jt+1}}}{Y_{jt+1}}\right)^{\sigma_{q}^{-1}}\left(\alpha_{j}\frac{{Y_{jt+1}}}{K_{jt+1}}\right)^{\sigma_{y}^{-1}}\right].
+\end{align*}
+
+
+\subsection{FOC for intermediates and system reduction}
+
+We start with
+\begin{align*}
+\frac{\partial\mathcal{{L}}}{\partial M_{ijt}} & =\beta^{t}\left(P_{jt}\frac{\partial Q_{jt}}{\partial M_{ijt}}-P_{it}\right)=0.
+\end{align*}
+
+Next, we replace the derivatives, using the chain rule when needed:
+\begin{align*}
+P_{jt}\frac{\partial Q_{jt}}{\partial M_{jt}} & \frac{\partial M_{jt}}{\partial M_{ijt}}=P_{it} , \\
+P_{jt}\left(\left(1-\mu_{j}\right)\frac{{Q_{jt}}}{M_{jt}}\right)^{\sigma_{q}^{-1}} & \left(\gamma_{ij}^{M}\frac{{M_{jt}}}{M_{ijt}}\right)^{\sigma_{m}^{-1}}=P_{it}
+\end{align*}
+
+We want to use this FOC to get rid of $M_{ijt}$. First, we solve
+for $M_{ijt}$:
+
+\[
+M_{ijt}=\left(\frac{P_{jt}}{P_{it}}\right)^{\sigma_{m}}\left(\left(1-\mu_{j}\right)\frac{Q_{jt}}{M_{jt}}\right)^{\frac{{\sigma_{m}}}{\sigma q}}\gamma_{ij}^{m}M_{jt}
+\]
+
+We solve for $M_{jt}$ by aggregating from the solution for $M_{ijt}$.
+First, we construct the term $\left(\gamma_{ij}^{m}\right)^{\frac{{1}}{\sigma_{m}}}M_{ijt}^{1-\sigma_{m}^{-1}}$
+that is inside the aggregator:
+\begin{align*}
+M_{ijt} & =\left(\frac{P_{jt}}{P_{it}}\right)^{\sigma_{m}}\left(\left(1-\mu_{j}\right)\frac{Q_{jt}}{M_{jt}}\right)^{\frac{{\sigma_{m}}}{\sigma q}}\gamma_{ij}^{m}M_{jt},\\
+\left(\gamma_{ij}^{m}\right)^{\frac{{1}}{\sigma_{m}}}M_{ijt}^{1-\sigma_{m}^{-1}} & =\left(\gamma_{ij}^{m}\right)^{\frac{{1}}{\sigma_{m}}}\left(\frac{P_{it}}{P_{jt}}\right)^{1-\sigma_{m}}\left(\left(1-\mu_{j}\right)\frac{{Q_{jt}}}{M_{jt}}\right)^{\frac{{\sigma_{m}-1}}{\sigma q}}\left(\gamma_{ij}^{m}M_{jt}\right)^{1-\sigma_{m}^{-1}},\\
+\left(\gamma_{ij}^{m}\right)^{\frac{{1}}{\sigma_{m}}}M_{ijt}^{1-\sigma_{m}^{-1}} & =\gamma_{ij}^{m}\left(\frac{P_{it}}{P_{jt}}\right)^{1-\sigma_{m}}\left(\left(1-\mu_{j}\right)\frac{{Q_{jt}}}{M_{jt}}\right)^{\frac{{\sigma_{m}-1}}{\sigma q}}\left(M_{jt}\right)^{1-\sigma_{m}^{-1}}.
+\end{align*}
+
+Next, we sum over all the goods in the aggregator:
+
+\begin{align*}
+\sum_{i=1}^{N}\left(\gamma_{ij}^{m}\right)^{\frac{{1}}{\sigma_{m}}}M_{ijt}^{1-\sigma_{m}^{-1}} & =\sum_{i=1}^{N}\gamma_{ij}^{m}\left(\frac{P_{it}}{P_{jt}}\right)^{1-\sigma_{m}}\left(\left(1-\mu_{j}\right)\frac{{Q_{jt}}}{M_{jt}}\right)^{\frac{{\sigma_{m}-1}}{\sigma q}}M_{jt}^{1-\sigma_{m}^{-1}},\\
+M_{jt}^{1-\sigma_{m}^{-1}} & =(P_{jt})^{\sigma_{m}-1}\left(\left(1-\mu_{j}\right)\frac{Q_{jt}}{M_{jt}}\right)^{\frac{{\sigma_{m}-1}}{\sigma q}}M_{jt}^{1-\sigma_{m}^{-1}}\sum_{i=1}^{N}\gamma_{ij}^{m}\left(P_{it}\right)^{1-\sigma_{m}},\\
+M_{jt}^{\frac{{\sigma_{m}-1}}{\sigma q}} & =\left(\left(1-\mu_{j}\right)Q_{jt}\right)^{\frac{{\sigma_{m}-1}}{\sigma q}}(P_{jt})^{\sigma_{m}-1}\sum_{i=1}^{N}\left(\gamma_{ij}^{m}\right)\left(P_{it}\right)^{1-\sigma_{m}},\\
+M_{jt} & =\left(\left(1-\mu_{j}\right)Q_{jt}\right)P_{jt}^{\sigma_{q}}\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{m}\right)\left(P_{it}\right)^{1-\sigma_{m}}\right)^{\frac{{\sigma_{q}}}{\sigma_{m-1}}}.
+\end{align*}
+
+Following the CES algebra in sub-appendix \ref{subsec:Norm-CES-algebra},
+we define the price index for the $M_{jt}$ bundle as:
+\[
+P_{jt}^{m}=\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{m}\right)\left(P_{it}\right)^{1-\sigma_{m}}\right)^{\frac{{1}}{1-\sigma_{m}}}.
+\]
+
+so we can write the FOC for $M_{jt}$ as:
+\[
+M_{jt}=\left(1-\mu_{j}\right)\left(\frac{P_{jt}^{m}}{P_{jt}}\right)^{-\sigma_{q}}Q_{jt}.
+\]
+
+We can use this expression for $M_{jt}$ to simplify our solution for
+$M_{ijt}$:
+\begin{align*}
+M_{ijt} & =\left(\frac{{P_{it}}}{P_{jt}}\right)^{-\sigma_{m}}\left(\left(1-\mu_{j}\right)\frac{Q_{jt}}{M_{jt}}\right)^{\frac{{\sigma_{m}}}{\sigma q}}\gamma_{ij}^{m}M_{jt},\\
+ & = \left(\frac{{P_{it}}}{P_{jt}}\right)^{-\sigma_{m}}\left(\left(1-\mu_{j}\right)\frac{Q_{jt}}{\left(1-\mu_{j}\right)\left(\frac{P_{jt}^{m}}{P_{jt}}\right)^{-\sigma_{q}}Q_{jt}}\right)^{\frac{{\sigma_{m}}}{\sigma q}}\gamma_{ij}^{m}M_{jt},\\
+ & =\gamma_{ij}^{m}\left(\frac{{P_{it}}}{P_{jt}^{m}}\right)^{-\sigma_{m}}M_{jt}.
+\end{align*}
+
+Finally, using this solution for $M_{ijt}$, we can calculate the
+supply of intermediate goods of each sector, which we denote $M_{jt}^{out}=\sum_{i=1}^{N}M_{jit}$:
+\[
+M_{jt}^{out}=\sum_{i=1}^{N}M_{jit}=\sum_{i=1}^{N}\gamma_{ji}^{m}\left(\frac{{P_{jt}}}{P_{it}^{m}}\right)^{-\sigma_{m}}M_{it}.
+\]
+
+
+\subsection{FOC for investment and system reduction}
+
+We start with
+\begin{align*}
+\frac{\partial\mathcal{{L}}}{\partial I_{ijt}} & =\beta^{t}\left(P_{jt}^{k}\left(\frac{\partial I_{jt}}{\partial I_{ijt}}-\frac{\partial\Phi_{jt}}{\partial I_{ijt}}\right)-P_{it}\right)=0.
+\end{align*}
+
+Next, we replace the derivatives, using the chain rule when needed:
+\begin{align*}
+P_{jt}^{k}\left(\frac{\partial I_{jt}}{\partial I_{ijt}}-\frac{\partial\Phi_{jt}}{\partial I_{jt}}\frac{\partial I_{jt}}{\partial I_{ijt}}\right) & =P_{it},\\
+P_{jt}^{k}\frac{\partial I_{jt}}{\partial I_{ijt}}\left(1-\frac{\partial\Phi_{jt}}{\partial I_{jt}}\right) & =P_{it},\\
+P_{jt}^{k}\left(\gamma_{ij}^{I}\frac{{I_{jt}}}{I_{ijt}}\right)^{\sigma_{I}^{-1}}\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right) & =P_{it}.
+\end{align*}
+
+We want to use this FOC to eliminate $I_{ijt}$. First, we solve
+for $I_{ijt}$:
+
+\[
+I_{ijt}=\gamma_{ij}^{I}\left(\frac{{P_{it}}}{P_{jt}^{k}}\right)^{-\sigma_{I}}I_{jt}\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right)^{\sigma_{I}}.
+\]
+
+We solve for $I_{jt}$ by aggregating up from the solution for $I_{ijt}$
+\begin{align*}
+I_{ijt} & =\gamma_{ij}^{I}\left(\frac{{P_{it}}}{P_{jt}^{k}}\right)^{-\sigma_{I}}I_{jt}\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right)^{\sigma_{I}},\\
+\left(\gamma_{ij}^{I}\right)^{\sigma_{I}^{-1}}I_{ijt}^{1-\sigma_{I}^{-1}} & =\left(\gamma_{ij}^{I}\right)^{\sigma_{I}^{-1}}\left(\frac{{P_{it}}}{P_{jt}^{k}}\right)^{1-\sigma_{I}}\left(\gamma_{ij}^{I}I_{jt}\right)^{1-\sigma_{I}^{-1}}\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right)^{\sigma_{I}-1},\\
+I_{jt}^{1-\sigma_{I}^{-1}} & =\sum_{i=1}^{N}\left(\gamma_{ij}^{I}\right)\left(\frac{{P_{it}}}{P_{jt}^{k}}\right)^{1-\sigma_{I}}\left(I_{jt}\right)^{1-\sigma_{I}^{-1}}\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right)^{\sigma_{I}-1}.\\
+1 & =\left(P_{jt}^{k}\right)^{\sigma_{I}-1}\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right)^{\sigma_{I}-1}\sum_{i=1}^{N}\left(\gamma_{ij}^{I}\right)\left(P_{it}\right)^{1-\sigma_{I}},\\
+P_{jt}^{k} & =\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right)^{-1}\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{I}\right)\left(P_{it}\right)^{1-\sigma_{I}}\right)^{\frac{{1}}{1-\sigma_{I}}}.
+\end{align*}
+
+We define the frictionless price index of capital goods as 
+\[
+\tilde{{P}}_{jt}^{k}=\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{I}\right)\left(P_{it}\right)^{1-\sigma_{I}}\right)^{\frac{{1}}{1-\sigma_{I}}}.
+\]
+
+Then, we can write the FOC for $I_{jt}$ as 
+\[
+P_{jt}^{k}=\tilde{{P}}_{jt}^{k}\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right)^{-1}.
+\]
+
+Next, we calculate the amount of goods of a sector that goes to other
+sectors as investment goods. We define
+\[
+I_{jt}^{out}=\sum_{i=1}^{N}I_{jit}.
+\]
+
+Using the FOC for $I_{ijt}$, we have
+\[
+I_{jt}^{out}=\sum_{i=1}^{N}\gamma_{ji}^{I}\left(\frac{{P_{jt}}}{P_{it}^{k}}\right)^{-\sigma_{I}}I_{it}\left(1-\phi\left(\frac{I_{it}}{K_{it}}-\delta_{i}\right)\right)^{\sigma_{I}}.
+\]
+
+
+\subsection{Full system of equations} \label{subsec:EquationsSystem}
+The full system we get is:
+{\footnotesize
+\begin{align*}
+\log A_{jt+1} & =\rho_{j}\log A_{jt}+\varepsilon_{jt+1}^{A},\\
+K_{jt+1} & =(1-\delta_{j})K_{jt}+I_{jt}-\frac{\phi}{2}\left(\frac{{I_{jt}}}{K_{jt}}-\delta_{j}\right)^{2}K_{jt},\\
+P_{jt} & =\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{-\epsilon_{c}^{-1}}\left(\xi_{j}\frac{{C_{t}}}{C_{jt}}\right)^{\sigma_{c}^{-1}},\\
+\frac{\theta\left(L_{t}\right)^{\epsilon_{l}^{-1}}\left(\frac{{L_{jt}}}{L_{t}}\right)^{\sigma_{l}^{-1}}}{\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{\epsilon_{c}^{-1}}} & =P_{jt}A_{jt}^{1-\sigma_{y}^{-1}}\left(\mu_{j}\frac{{Q_{jt}}}{Y_{jt}}\right)^{\sigma_{q}^{-1}}\left(\left(1-\alpha_{j}\right)\frac{{Y_{jt}}}{L_{jt}}\right)^{\sigma_{y}^{-1}},\\
+P_{jt}^{k} & =\beta\mathbb{{E}}_{t}\left[P_{jt+1}A_{jt+1}^{1-\sigma_{y}^{-1}}\left(\mu_{j}\frac{{Q_{jt+1}}}{Y_{jt+1}}\right)^{\sigma_{q}^{-1}}\left(\alpha_{j}\frac{{Y_{jt+1}}}{K_{jt+1}}\right)^{\sigma_{y}^{-1}}\right], \\
+ & \left.+P_{jt+1}^{k}\left((1-\delta_{j})+\frac{\phi}{2}\left(\frac{I_{jt+1}^{2}}{K_{jt+1}^{2}}-\delta_{j}^{2}\right)\right)\right],\\
+P_{jt}^{m} & =\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{m}\right)\left(P_{it}\right)^{1-\sigma_{m}}\right)^{\frac{{1}}{1-\sigma_{m}}},\\
+M_{jt} & =\left(1-\mu_{j}\right)\left(\frac{P_{jt}^{m}}{P_{jt}}\right)^{-\sigma_{q}}Q_{jt},\\
+M_{jt}^{out} & =\sum_{i=1}^{N}\gamma_{ji}^{m}\left(\frac{{P_{jt}}}{P_{it}^{m}}\right)^{-\sigma_{m}}M_{it},\\
+% \tilde{{P}}_{jt}^{k} & =\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{I}\right)\left(P_{it}\right)^{1-\sigma_{I}}\right)^{\frac{1}{1-\sigma_{I}}}\\
+P_{jt}^{k} & =\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{I}\right)\left(P_{it}\right)^{1-\sigma_{I}}\right)^{\frac{1}{1-\sigma_{I}}}\left(1-\phi\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)\right)^{-1},\\
+I_{jt}^{out} & =\sum_{i=1}^{N}\gamma_{ji}^{I}\left(\frac{{P_{jt}}}{P_{it}^{k}}\right)^{-\sigma_{I}}I_{it}\left(1-\phi\left(\frac{I_{it}}{K_{it}}-\delta_{i}\right)\right)^{\sigma_{I}},\\
+Q_{jt} & =C_{jt}+M_{jt}^{out}+I_{jt}^{out},\\
+Q_{jt} & =\left[(\mu_{j})^{\sigma_{q}^{-1}}\left(Y_{jt}\right)^{1-\sigma_{q}^{-1}}+\left(1-\mu_{j}\right)^{\sigma_{q}^{-1}}\left(M_{jt}\right)^{1-\sigma_{q}^{-1}}\right]^{\frac{1}{1-\sigma_{q}^{-1}}}\text{ },\\
+Y_{jt} & =A_{jt}\left[(\alpha_{j})^{\sigma_{y}^{-1}}\left(K_{jt}\right)^{1-\sigma_{y}^{-1}}+\left(1-\alpha_{j}\right)^{\sigma_{y}^{-1}}\left(L_{jt}\right)^{1-\sigma_{y}^{-1}}\right]^{\frac{1}{1-\sigma_{y}^{-1}}},\\
+C_{t} & =\left(\sum_{j=1}^{N}\xi_{j}^{\frac{{1}}{\sigma_{c}}}(C_{jt})^{1-\sigma_{c}^{-1}}\right)^{\frac{1}{1-\sigma_{c}^{-1}}},\\
+L_{t} & =\left(\sum_{j=1}^{N}(L_{jt})^{1+\sigma_{l}^{-1}}\right)^{\frac{1}{1+\sigma_{l}^{-1}}}.
+\end{align*}
+}
+
+
+\subsection{Welfare } \label{subsec:Welfare}
+
+In order to calculate welfare, we can write the intertemporal utility
+of the representative household as:
+\[
+V_{t}=\frac{1}{1-\epsilon_{c}^{-1}}\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{1-\epsilon_{c}^{-1}}+\beta  E_{t} V_{t+1}.
+\]
+
+Steady state welfare is:
+\[
+\bar{{V}}=\frac{1}{1-\beta}\frac{1}{1-\epsilon_{c}^{-1}}\left(\bar{{C}}-\theta\frac{\bar{{L}}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{1-\epsilon_{c}^{-1}}.
+\]
+
+Then, in a given period, we can get an interpretable measure of welfare
+by calculating the fraction of steady-state consumption that you would
+need to give up to achieve that level of welfare in the steady
+state. We denote such consumption-equivalent welfare as $\hat{V}_{t}^{c}$:
+
+\begin{align*}
+V_{t}=\frac{1}{1-\beta} & \frac{1}{1-\epsilon_{c}^{-1}}\left(\bar{{C}}(1+\hat{{V}}_{t}^{c})-\theta\frac{\bar{{L}}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{1-\epsilon_{c}^{-1}}.
+\end{align*}
+
+We can solve analytically for consumption-equivalent welfare $\hat{{V}_{t}^{c}}$:
+\[
+\hat{{V}_{t}^{c}}=\frac{1}{\bar{{C}}}\left[\left(V_{t}(1-\beta)(1-\epsilon_{c}^{-1})\right)^{\frac{1}{1-\epsilon_{c}^{-1}}}+\theta\frac{\bar{{L}}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right]-1.
+\]
+We will analyze how $\hat{{V}_{t}^{c}}$ is affected by productivity
+shocks.
+
+\subsection{Vectorizations}
+
+In terms of programming, it will be useful to vectorize the equations
+that involve sums over sectoral variables. We will use variables in bold
+to denote vectors where each element represents the corresponding sectoral
+value, and use $\ast$ to denote element by element multiplication. When we raise a vector to the power of a parameter, we mean element-to-element exponentiation.
+Then, we get the following equations:
+\begin{align*}
+\boldsymbol{P_{t}^{m}} & =\left(\Gamma_{M}^{'}\boldsymbol{P_{t}}^{1-\sigma_{m}}\right)^{\frac{{1}}{1-\sigma_{m}}},\\
+\boldsymbol{M_{t}^{out}} & =\boldsymbol{P_{t}}^{-\sigma_{m}}\ast\Gamma_{M}\left(\boldsymbol{P_{t}^{m}}\right)^{\sigma_{m}}\ast\boldsymbol{M_{t}}\\
+\boldsymbol{\tilde{{P}}_{t}^{k}} & =\left(\Gamma_{I}^{'}\boldsymbol{P_{t}}^{1-\sigma_{I}}\right)^{\frac{{1}}{1-\sigma_{I}}},\\
+\boldsymbol{\tilde{{I}}_{t}^{out}} & =\boldsymbol{P_{t}}^{-\sigma_{I}}\ast\Gamma_{I}\left(\boldsymbol{P_{t}^{k}}\right)^{\sigma_{I}}\ast\boldsymbol{I_{t}}.
+\end{align*}
+
+
+%\subsection{Relevant Margins of Adjustment}
+
+%In order to interpret the response of aggregates to sectoral shocks, we will focus on a number of key adjustment mechanisms. We start with the factor reallocation mechanism. In particular, when a large shock hits a sector, the planner can reallocate labor and investment towards the affected sector. Since we are working with very low $\sigma_{m}$, demand for sectoral output is very inelastic. Hence, the price increases more than the reduction in marginal productivity, leading to an increase in the value of marginal productivity. We can see this mathematically in the first order condition for input usage. For example, for labor, we have 
+
+%\begin{align*}
+%\frac{\partial U(C_{t},L_{t})}{L_{t}}\frac{\partial L_{t}}{\partial L_{jt}} & =P_{jt}\frac{\partial Q_{jt}}{\partial L_{jt}}=P_{jt}\text{MP}L_{jt}\\
+% & =P_{jt}A_{jt}^{1-\sigma_{y}^{-1}}\left(\mu_{j}\frac{{Q_{jt}}}{Y_{jt}}\right)^{\sigma_{q}^{-1}}\left(\left(1-\alpha_{j}\right)\frac{{Y_{jt}}}{L_{jt}}\right)^{\sigma_{y}^{-1}}
+%\end{align*}
+
+%This margin of adjustment is attenuated with a low labor reallocation parameter $\sigma_l$. Another mechanism is substitution within the gross output aggregate. Specifically, the planer can substitute value-added production for intermediates. We see that as a response to value-added shocks, sectors increase their use of intermediates. We can reduce the elasticity of substitution between value-added and materials ($\sigma_{q}$). Our benchmark calibration uses $\sigma_{q}=0.8$. \citet{baqaee2019} uses $\sigma_{q}=0.5$. We can observe this in
+%the following equation:
+%\[
+%M_{jt}=\left(1-\mu_{j}\right)\left(\frac{P_{jt}^{m}}{P_{jt}}\right)^{-\sigma_{q}}Q_{jt}
+%\]
+
+%The last mechanism we want to emphasize is the output reallocation mechanism, by which the planer can reduce the supply of the affected sector to consumption and to investment
+%production so the supply of intermediates does not decrease as much.
+%The level of aggregation may explain this. Right now, every sector
+%supplies goods for consumption and for investment, there is no hard
+%specialization on the supply of intermediates. With more granularity,
+%we may get sectors that supply only intermediates. We may be able
+%to show this by changing the consumption and investment share of a
+%sector without the need to change our entire empirical part. We can
+%see this mechanism in the following equation:
+%\begin{align*}
+%Q_{jt} & =C_{jt}+M_{jt}^{out}+I_{jt}^{out}\\
+% & =C_{jt}+\sum_{i=1}^{N}\gamma_{ji}^{m}\left(\frac{{P_{jt}}}{P_{it}^{m}}\right)^{-\sigma_{m}}M_{it}+\sum_{i=1}^{N}\gamma_{ji}^{I}\left(\frac{{P_{jt}}}{P_{it}^{k}}\right)^{-\sigma_{I}}I_{it}\left(1-\phi\left(\frac{I_{it}}{K_{it}}-\delta_{i}\right)\right)^{\sigma_{I}}
+%\end{align*}
+
+
+\subsection{Steady state} \label{subsec:SteadyState}
+
+There are three dynamic equations in the model:
+\begin{align*}
+K_{jt+1} & =(1-\delta_{j})K_{jt}+I_{jt}-\frac{\phi}{2}\left(\frac{I_{jt}}{K_{jt}}-\delta_{j}\right)^{2}K_{jt},\\
+a_{jt+1} & =\rho_{j}a_{jt}+\epsilon_{jt},\\
+P_{jt}^{k} & =\beta\mathbb{E}_{t}\left[P_{jt+1}A_{jt+1}^{1-\sigma_{y}^{-1}}\left(\mu_{j}\frac{Q_{jt+1}}{Y_{jt+1}}\right)^{\sigma_{q}^{-1}}\left(\alpha_{j}\frac{Y_{jt+1}}{K_{jt+1}}\right)^{\sigma_{y}^{-1}} \right. \\
+& \quad \left. +P_{jt+1}^{k}\left((1-\delta_{j})+\frac{\phi}{2}\left(\frac{I_{jt+1}^{2}}{K_{jt+1}^{2}}-\delta_{j}^{2}\right)\right)\right].
+\end{align*}
+
+First, notice that $I_{jt}=\delta_{j}K_{jt}$ implies $K_{jt+1}=K_{jt}$ and makes the adjustment costs equal to zero. Then, in the steady
+state we have:
+
+\begin{align*}
+\bar{{K}} & =\bar{{I}}_{j}/\delta_{j},\\
+\bar{{P}}_{j}^{k} & =\frac{\beta}{1-\beta(1-\delta)}\bar{{P}}_{j}\left(\mu_{j}\frac{{\bar{{Q}}_{j}}}{\bar{{Y}}_{j}}\right)^{\sigma_{q}^{-1}}\left(\alpha\frac{{\bar{{Y}}_{j}}}{\bar{{K}}_{j}}\right)^{\sigma_{y}^{-1}}.
+\end{align*}
+
+
+\subsection{Intensity shares mapping to expenditure shares\label{subsec:expend_shares}}
+
+In sub-appendix \ref{subsec:Norm-CES-algebra}, we show that for standard
+CES aggregators, the intensity shares (e.g., $\xi_{j}$ for consumption
+bundle or $\alpha_{j}$ for value-added function) do not correspond
+to expenditure shares. In the same sub-appendix, we show that how
+to map expenditures shares to intensity shares once you know the steady
+state equilibrium variables. We use tilde notation to refer to expenditures,
+so $\tilde{{\xi}}_{j}$ is the consumption share of good $j$. Then,
+for a given steady state equilibrium the relation between the expenditure
+share in steady state and the intensity share used to calculate the
+steady state is:
+\begin{align*}
+\tilde{{\xi}}_{j} & =\xi_{j}^{\sigma_{c}^{-1}}\left(\frac{\bar{{C}}_{j}}{\bar{{C}}}\right)^{1-\sigma_{c}^{-1}},\\
+\tilde{{\mu}}_{j} & =\mu_{j}^{\sigma_{q}^{-1}}\left(\frac{\bar{{Y}}_{j}}{\bar{{Q}}_{j}}\right)^{1-\sigma_{q}^{-1}},\\
+\tilde{{\alpha}}_{j} & =\alpha_{j}^{\sigma_{y}^{-1}}\left(\frac{\bar{{K}}_{j}}{\bar{{Y}_{j}}}\right)^{1-\sigma_{y}^{-1}},\\
+\tilde{{\gamma}}_{ij}^{m} & =\left(\gamma_{ij}^{m}\right)^{\sigma_{m}^{-1}}\left(\frac{\bar{{M}}_{ij}}{\bar{{M}}_{j}}\right)^{1-\sigma_{m}^{-1}},\\
+\tilde{{\gamma}}_{ij}^{I} & =\left(\gamma_{ij}^{I}\right)^{\sigma_{I}^{-1}}\left(\frac{\bar{{I}}_{ij}}{\bar{{I}}_{j}}\right)^{1-\sigma_{I}^{-1}}.
+\end{align*}
+
+Since we do not solve explicitly for $\bar{{M}}_{ij}$ and $\bar{{I}}_{ij}$
+we are going to use the first order conditions to solve for $\bar{{M}_{ij}}/\bar{{M}}_{j}$
+and $\bar{{I}_{ij}}/\bar{{I}}_{j}$ . We get 
+\begin{align*}
+\tilde{{\gamma}}_{ij}^{m} & =\gamma_{ij}^{m}\left(\frac{{P_{it}}}{P_{jt}^{m}}\right)^{1-\sigma_{m}},\\
+\tilde{{\gamma}}_{ij}^{I} & =\gamma_{ij}^{I}\left(\frac{{P_{it}}}{P_{jt}^{k}}\right)^{1-\sigma_{I}}.
+\end{align*}
+
+Given this mapping, a naive approach would be simply to replace the
+intensity shares with the equations that map the empirical shares
+with the model shares. Nevertheless, if we use this mapping equations
+as endogenous equations in the steady state system of equations, the
+output of each aggregator become indeterminate. To see why, we can
+replace the mapping in the consumption aggregator and rearrange to
+obtain:
+\[
+C_{t}=\bar{{C}}\left(\sum_{j=1}^{N}\tilde{{\xi}}_{j}\left(\frac{C_{jt}}{\bar{{C}_{j}}}\right)^{1-\sigma_{c}^{-1}}\right)^{\frac{1}{1-\sigma_{c}^{-1}}}.
+\]
+
+This equation for aggregate $C$ cannot be used in steady state, since
+if we replace the time $t$ values for steady-state values we get
+a tautology ($\bar{{C}}=\bar{{C}}$). Given this, the correct approach
+is to include in the steady state system the difference between the
+model-implied expenditure shares as additional expressions to minimize.
+
+
+\subsection{CES algebra \label{subsec:Norm-CES-algebra}}
+
+The objective of this appendix is to obtain a mapping between the intensity
+shares (the primitive parameters that appear in the CES aggregator) and the expenditure shares (input expenditure/aggregate expenditure). We start with the common CES aggregator:
+
+\[
+X=A\left(\sum_{j=1}^{N}\xi_{j}^{\sigma_{x}^{-1}}X_{j}{}^{1-\sigma_{x}^{-1}}\right)^{\frac{1}{1-\sigma_{x}^{-1}}}.
+\]
+
+where $A$ is a constant (e.g., TFP in the value added aggregator).
+The derivative is:
+
+\begin{align*}
+\frac{\partial X}{\partial X_{j}} & =\frac{A}{1-\sigma_{x}^{-1}}\left(\sum_{j=1}^{N}\xi_{j}^{\sigma_{x}^{-1}}(X_{j})^{1-\sigma_{x}^{-1}}\right)^{\frac{\sigma_{x}^{-1}}{1-\sigma_{x}^{-1}}}\left(\xi_{j}^{\sigma_{x}^{-1}}\left(1-\sigma_{x}^{-1}\right)(X_{j})^{-\sigma_{x}^{-1}}\right),\\
+ & =\frac{A}{A^{\sigma_{x}^{-1}}}A^{\sigma_{x}^{-1}}\left(\sum_{j=1}^{N}\xi_{j}^{\sigma_{q}^{-1}}(X_{j})^{1-\sigma_{x}^{-1}}\right)^{\frac{\sigma_{x}^{-1}}{1-\sigma_{x}^{-1}}}\xi_{j}^{\sigma_{x}^{-1}}(X_{j})^{-\sigma_{x}^{-1}},\\
+ & =A^{1-\sigma_{x}^{-1}}\left(A\left(\sum_{j=1}^{N}\xi_{j}^{\sigma_{x}^{-1}}(X_{j})^{1-\sigma_{x}^{-1}}\right)^{\frac{{1}}{1-\sigma_{x}^{-1}}}\right)^{\sigma_{x}^{-1}}\xi_{j}^{\sigma_{x}^{-1}}(X_{j})^{-\sigma_{x}^{-1}}.
+\end{align*}
+
+Notice that we can now plug the definition of the aggregator. We
+get:
+\begin{align*}
+\frac{\partial X_{t}}{\partial X_{jt}} & =A^{1-\sigma_{x}^{-1}}X^{\sigma_{x}^{-1}}\xi_{j}^{\sigma_{x}^{-1}}(X_{j})^{-\sigma_{x}^{-1}},\\
+ & =A^{1-\sigma_{x}^{-1}}\left(\xi_{j}\frac{{X}}{X_{j}}\right)^{\sigma_{x}^{-1}}
+\end{align*}
+
+From this first-order condition, we are going to get a price aggregator. We start from the budget constraint:
+\[
+\sum_{j=1}^{N}P_{j}X_{j}=Y_{j}.
+\]
+
+where $Y_{jt}$ represents income. The optimization problem is
+\[
+\max_{\left\{ X_{j}\right\} _{j=1}^{N}}X\quad\text{{s.t.}\ensuremath{\quad\sum_{j=1}^{N}P_{j}X_{j}=Y_{j}}},
+\]
+
+The first-order conditions with respect to $X_{jt}$ are:
+\[
+\frac{\partial X}{\partial X_{j}}-\lambda P_{j}=0.
+\]
+
+So, for al goods $i\ne j$, we have:
+\begin{align*}
+\frac{\partial X}{\partial X_{j}}\frac{1}{P_{j}} & =\frac{\partial X}{\partial X_{i}}\frac{1}{P_{i}},\\
+A^{1-\sigma_{x}^{-1}}\left(\xi_{j}\frac{{X}}{X_{j}}\right)^{\sigma_{x}^{-1}}\frac{1}{P_{j}} & =A^{1-\sigma_{x}^{-1}}\left(\xi_{i}\frac{{X}}{X_{i}}\right)^{\sigma_{x}^{-1}}\frac{1}{P_{i}},
+\end{align*}
+
+and we get
+\[
+X_{j}=\left(\frac{P_{i}}{P_{j}}\right)^{\sigma_{x}}\frac{\xi_{j}}{\xi_{i}}X_{i}.
+\]
+
+Let's replace that into the aggregator:
+\begin{align*}
+X & =A\left(\sum_{j=1}^{N}\xi_{j}^{^{\sigma_{x}^{-1}}}\left(\left(\frac{P_{i}}{P_{j}}\right)^{\sigma_{x}}\frac{\xi_{j}}{\xi_{i}}X_{i}\right){}^{1-\sigma_{x}^{-1}}\right)^{\frac{1}{1-\sigma_{x}^{-1}}},\\
+ & =\frac{1}{\xi_{i}}\left(P_{i}\right)^{\sigma_{x}}X_{i}A\left(\sum_{j=1}^{N}\xi_{j}\left(P_{j}\right)^{1-\sigma_{x}}\right)^{\frac{1}{1-\sigma_{x}^{-1}}}.
+\end{align*}
+
+We get an expression for $X_{i}$ in terms of aggregates:
+\[
+X_{i}=\xi_{i}\left(\frac{1}{P_{i}}\right)^{\sigma_{x}}XA^{-1}\left(\sum_{j=1}^{N}\xi_{j}^{\sigma_{x}}\left(P_{j}\right)^{1-\sigma_{x}}\right)^{\frac{-1}{1-\sigma_{x}^{-1}}}.
+\]
+
+We calculate total expenditure:
+\[
+P_{i}X_{i}=P_{i}^{1-\sigma_{x}}\xi_{i}XA^{-1}\left(\sum_{j=1}^{N}\xi_{j}\left(P_{j}\right)^{1-\sigma_{x}}\right)^{\frac{-1}{1-\sigma_{x}^{-1}}}.
+\]
+
+Adding up all the goods:
+\begin{align*}
+Y & =XA^{-1}\left(\sum_{j=1}^{N}\xi_{j}\left(P_{j}\right)^{1-\sigma_{x}}\right)\left(\sum_{j=1}^{N}\xi_{j}\left(P_{j}\right)^{1-\sigma_{x}}\right)^{\frac{-1}{1-\sigma_{x}^{-1}}},\\
+ & =XA^{-1}\left(\sum_{j=1}^{N}\xi_{j}\left(P_{j}\right)^{1-\sigma_{x}}\right)^{\frac{1}{1-\sigma_{x}}}.
+\end{align*}
+
+We can define the price aggregator
+\[
+P=A^{-1}\left(\sum_{j=1}^{N}\xi_{j}\left(P_{j}\right)^{1-\sigma_{x}}\right)^{\frac{1}{1-\sigma_{x}}}.
+\]
+
+such that $Y_{t}=X_{t}P_{t}$. Also, we can plug in the price aggregator
+in our expression for $X_{it}$ to obtain:
+\begin{align*}
+X_{i} & =\xi_{i}\left(\frac{1}{P_{i}}\right)^{\sigma_{x}}XA^{-1}\left(\sum_{j=1}^{N}\xi_{j}\left(P_{j}\right)^{1-\sigma_{x}}\right)^{\frac{-1}{1-\sigma_{x}^{-1}}},\\
+ & =\xi_{i}\left(\frac{P}{P_{i}}\right)^{\sigma_{x}}X.
+\end{align*}
+
+The problem with the standard formulation of the CES is that the taste
+parameters $\xi_{i}$ do not correspond to expenditure shares unless
+$\sigma_{x}=1$:
+\[
+\xi_{i}=\left(\frac{X_{i}}{X}\right)\left(\frac{P_{i}}{P}\right)^{\sigma_{x}}
+\]
+
+Given this, we propose a mapping between intensity shares
+$\xi_{i}$ and expenditure shares $\tilde{{\xi}}_{i}$:
+
+\begin{align*}
+\xi_{i} & =\left(\frac{X_{i}}{X}\right)\left(\frac{P_{i}}{P}\right)^{\sigma_{x}},\\
+ & =\left(\frac{X_{i}}{X}\right)\left(\frac{X}{X_{i}}\frac{X_{i}}{X}\frac{P_{i}}{P}\right)^{\sigma_{x}},\\
+ & =\left(\frac{X_{i}}{X}\right)^{1-\sigma_{x}}\left(\tilde{{\xi}}_{i}\right)^{\sigma_{x}}.
+\end{align*}
+
+This implies the following mapping from intensity shares to expenditure
+shares:
+\[
+\tilde{{\xi}}_{i}=\xi_{i}^{\sigma_{x}^{-1}}\left(\frac{X_{i}}{X}\right)^{1-\sigma_{x}^{-1}}.
+\]
+

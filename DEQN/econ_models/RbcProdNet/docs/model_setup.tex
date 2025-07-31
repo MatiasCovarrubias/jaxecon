@@ -1,0 +1,101 @@
+\section{Quantitative Model \label{sec:Model}}
+
+We introduce here the full quantitative model. There are a finite number of perfectly competitive sectors indexed
+by $j={1,...,N}$. A representative household consumes
+ goods and supplies labor to firms in each sector. Time is discrete and infinite.
+
+\subsection{Households}
+
+The representative household has the following preferences over consumption
+of each good $j$, which we denote $C_{jt}$, and labor on industry
+$j$, which we denote $L_{jt}$:
+\begin{align*}
+U & =\sum_{t=0}^{\infty}\beta^{t}\left[\frac{1}{1-\epsilon_{c}^{-1}}\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{1-\epsilon_{c}^{-1}}\right]\quad\text{{where}}\\
+C_{t} & \text{ }=\left(\sum_{j=1}^{N}\xi_{j}^{\frac{{1}}{\sigma_{c}}}(C_{jt})^{1-\sigma_{c}^{-1}}\right)^{\frac{1}{1-\sigma_{c}^{-1}}}\text{{,}}\enskip\sum_{j=1}^{N}\xi_{j}=1\enskip\text{{and} \ensuremath{L_{t}}=\ensuremath{\left(\sum_{j=1}^{N}(L_{jt})^{1+\sigma_{l}^{-1}}\right)^{\frac{1}{1+\sigma_{l}^{-1}}}}}
+\end{align*}
+
+where $\beta$ is the discount factor, $\epsilon_{c}$ is the intertemporal
+elasticity of substitution (or the inverse of the relative risk aversion),
+$\epsilon_{l}$ is the Frisch elasticity of labor, $\xi_{j}$ captures
+the time-invariant preference for good $j$, $\sigma_{c}$ is the
+elasticity of substitution across goods, $\sigma_{l}$ controls
+the degree of labor reallocation between sectors, and $\theta$ is a normalization constant.% that we calibrate to ensure the aggregate price level is one in the deterministic steady state. At $\sigma_{l}=\infty$, we have perfect reallocation.
+
+\subsection{Firms}
+
+The representative firm in sector $j$ produces gross output $Q_{jt}$
+using capital $K_{jt}$, labor $L_{jt}$, and intermediate inputs
+$M_{jt}$.\footnote{This variable is also labeled as material in some papers. }
+The production function is:
+\begin{align*}
+Q_{jt} & =\left[(\mu_{j})^{\sigma_{q}^{-1}}\left(Y_{jt}\right)^{1-\sigma_{q}^{-1}}+\left(1-\mu_{j}\right)^{\sigma_{q}^{-1}}\left(M_{jt}\right)^{1-\sigma_{q}^{-1}}\right]^{\frac{1}{1-\sigma_{q}^{-1}}},\text{ {where} }\\
+Y_{jt} & =A_{jt}\left[(\alpha_{j})^{\sigma_{y}^{-1}}\left(K_{jt}\right)^{1-\sigma_{y}^{-1}}+\left(1-\alpha_{j}\right)^{\sigma_{y}^{-1}}\left(L_{jt}\right)^{1-\sigma_{y}^{-1}}\right]^{\frac{1}{1-\sigma_{y}^{-1}}}.
+\end{align*}
+
+Variable $Y_{jt}$ denotes value-added production, $\alpha_{j}$ captures
+the share of capital in value-added, $\mu_{j}$ parametrizes the share
+of materials in gross output, $\sigma_{q}$ is the elasticity of substitution
+between primary outputs (e.g. capital and labor) and materials, and
+$A_{jt}$ is an industry-specific shock to value added productivity
+that follows the process
+\[
+\log A_{jt+1}=\rho_{j}\log A_{jt}+\varepsilon_{jt+1}^{A}
+\]
+
+where $\rho_{j}$ represents industry-specific persistence and the
+shocks $\varepsilon_{jt+1}^{A}$ are distributed multivariate normal
+with mean $0$ and variance-covariance matrix $\Sigma^{A}$. The industry-specific
+productivity shocks may be correlated, that is, the variance-covariance
+matrix may not be diagonal. 
+
+Firms can accumulate capital by producing an industry-specific investment
+good $I_{jt}$ facing capital adjustment costs denoted by $\Phi_{jt}$:
+\begin{align*}
+K_{jt+1} & =(1-\delta_{j})K_{jt}+I_{jt}-\Phi_{jt},\\
+\Phi_{jt} & =\frac{\phi}{2}\left(\frac{{I_{jt}}}{K_{jt}}-\delta_{j}\right)^{2}K_{jt}
+\end{align*}
+
+where $\delta_{j}$ is the industry-specific depreciation rate, and
+$\phi$ parametrize the adjustment cost function. 
+
+The investment good is produced by bundling goods produced by other
+industries:
+\[
+I_{jt}=\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{I}\right)^{\sigma_{I}^{-1}}\left(I_{ijt}\right)^{1-\sigma_{I}^{-1}}\right)^{\frac{1}{1-\sigma_{I}^{-1}}},\quad\text{{where}}\quad\sum_{i=1}^{N}\gamma_{ij}^{I}=1
+\]
+
+where $\gamma_{ij}^{I}$ represents the importance of good $i$ in
+the production of the investment good for sector $j$, and $\sigma_{I}$
+is the elasticity of substitution between inputs of the investment
+bundle. In the same vein, the intermediate input is produced using
+the following bundle:
+\[
+M_{jt}=\left(\sum_{i=1}^{N}\left(\gamma_{ij}^{m}\right)^{\sigma_{m}^{-1}}\left(M_{ijt}\right)^{1-\sigma_{m}^{-1}}\right)^{\frac{1}{1-\sigma_{m}^{-1}}},\quad\text{{where}}\quad\sum_{i=1}^{N}\gamma_{ij}^{m}=1.
+\]
+
+Parameters $\gamma_{ij}^{m}$ and $\sigma_{m}$ are analogous to the parameters $\gamma_{ij}^{I}$ and $\sigma_{I}$
+discussed for the investment bundle.
+
+\subsection{Market Clearing and the Planner's First Order Conditions}
+
+The market clearing conditions for each good is:
+\[
+Q_{jt}=C_{jt}+\sum_{i=1}^{N}\left(M_{jit}+I_{jit}\right),
+\]
+which implies that gross output equals final consumption, intermediate inputs, and investment goods.
+
+In order to obtain the first order conditions, we will use the fact
+that the model satisfies the first welfare theorem, so we can formulate
+the problem as a planning problem. The planner's Lagragian is given by:
+
+\begin{align*}
+\mathcal{{L}} & =\mathbb{{E}}_{0}\sum_{t=0}^{\infty}\beta^{t}\left\{ \frac{1}{1-\epsilon_{c}^{-1}}\left(C_{t}-\theta\frac{L_{t}^{1+\epsilon_{l}^{-1}}}{1+\epsilon_{l}^{-1}}\right)^{1-\epsilon_{c}^{-1}}\right.\\
+ & \qquad+\sum_{j=1}^{N}P_{jt}^{\text{k}}\left[I_{jt}+(1-\delta_{j})K_{jt}-\Phi_{jt}-K_{jt+1}\right]\\
+ & \qquad\left.+\sum_{j=1}^{N}P_{jt}\left[Q_{jt}-C_{jt}-\sum_{i=1}^{N}\left[M_{jit}+I_{jit}\right]\right]\right\} 
+\end{align*}
+
+where $P_{jt}^{k}$ is the Lagrange multiplier associated to the capital accumulation
+constraint, $P_{jt}$ is the Lagrange multiplier associated to the market clearing
+condition.
+
+In Appendix \ref{sec:Algebraic-Appendix}, we provide a detailed derivation of all first-order conditions and the resulting system of equations. We also calculate welfare, the deterministic steady state, and the closed form solution for the expenditure shares, to be used for the calibration.

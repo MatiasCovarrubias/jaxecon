@@ -8,7 +8,7 @@ _(v 0.1 — July 2025)_
 
 Differentiable physics engines (Brax, MuJoCo‐AD, JAX MD) proved that giving agents _analytic gradients_ through their environment reduces sample complexity and stabilises learning.
 
-In the multi agent case,, If in the ‘environment’ we have differentiable rewards, transitions paths, and policy functions (e.g. neural nets) of other agents, we can keep the whole interaction loop differentiable—_provided the communication protocol itself is designed for gradient flow._
+In the multi agent case, If in the ‘environment’ we have differentiable rewards, transitions paths, and policy functions (e.g. neural nets) of other agents, we can keep the whole interaction loop differentiable—_provided the communication protocol itself is designed for gradient flow._
 
 That realisation launched the **Differentiable Communication Games (DCG)** project: co-design a language protocol _and_ a neural architecture that maximise the utility of pathwise gradients between agents.
 
@@ -21,9 +21,9 @@ That realisation launched the **Differentiable Communication Games (DCG)** proje
 
 Concretely, we aim to:
 
-1. Replace REINFORCE-style language RL with low-variance pathwise gradients.
-2. Think about how rational inattention can regulate the design of both the attention unit and the language. For exampl,e it can regulate how to poragate gradients. You can constraint the amount of gradient propagation flops. For example, you can choose to ignore the second order effects on irrelevant players.
-3. Produce protocols interpretable enough to audit or discretise _after_ training, but fully continuous during optimisation.
+1. Replace REINFORCE-style language RL with low-variance path-wise gradients.
+2. Think about how rational inattention can regulate the design of both the attention unit and the language. For example, it can regulate how to propagate gradients. You can constrain the amount of gradient propagation flops. For example, you can choose to ignore the second order effects on irrelevant players.
+3. Produce protocols interpretable enough to audit or discretize _after_ training, but fully continuous during optimization.
 
 ---
 

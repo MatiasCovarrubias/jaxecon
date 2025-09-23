@@ -1,5 +1,7 @@
-from jax import numpy as jnp, random, lax
 import jax
+from jax import lax, random
+from jax import numpy as jnp
+
 from .loss import create_episode_loss_fn
 
 
@@ -11,8 +13,10 @@ def get_apg_train_fn(env, config):
         loss_metrics, grads = grad_fn(train_state.params, train_state, epis_rng)
         grads = jax.lax.pmean(grads, axis_name="episodes")
         train_state = train_state.apply_gradients(grads=grads)
-        grad_mean = jnp.mean(jnp.array(jax.tree_util.tree_leaves(jax.tree_map(jnp.mean, grads))))
-        grad_max = jnp.max(jnp.array(jax.tree_util.tree_leaves(jax.tree_map(lambda x: jnp.max(jnp.abs(x)), grads))))
+        grad_mean = jnp.mean(jnp.array(jax.tree_util.tree_leaves(jax.tree_util.tree_map(jnp.mean, grads))))
+        grad_max = jnp.max(
+            jnp.array(jax.tree_util.tree_leaves(jax.tree_util.tree_map(lambda x: jnp.max(jnp.abs(x)), grads)))
+        )
         grad_metrics = (grad_mean, grad_max)
         episode_metrics = (loss_metrics, grad_metrics)
         return train_state, episode_metrics

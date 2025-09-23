@@ -1,1 +1,1 @@
-This subfolder contains the files that make up the algorithm. Each file contains a type of function, of which several versions can coexist in the same file. The types of functions are: get_simulation_fn(), get_loss_fn(), get_epoch_update_fn, and get_eval_fn().
+This subfolder contains the files that make up the algorithm. Each file contains a type of function, of which several versions can coexist in the same file. The types of functions are: create_simulation_fn(), create_loss_fn(), create_epoch_update_fn(), and create_eval_fn().

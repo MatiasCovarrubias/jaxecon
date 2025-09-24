@@ -304,7 +304,7 @@ class Model:
 
         return mean_loss, mean_accuracy, min_accuracy, mean_accuracies_focs, min_accuracies_focs
 
-    def get_aggregates(self, state, policies, P_weights, Pk_weights, Pm_weights):
+    def get_aggregates(self, state_logdev, policies_logdev, P_weights, Pk_weights, Pm_weights):
         """Calculate log deviations of aggregates from steady state"""
         # Denormalize weights from log deviations to levels
         # Get steady state prices in levels
@@ -318,17 +318,17 @@ class Model:
         Pm_weights_levels = Pm_ss * jnp.exp(Pm_weights)
 
         # Calculate current period aggregates in levels
-        policies_logdevs = policies * self.policies_sd
-        Cagg_logdev = policies_logdevs[11 * self.n_sectors]
-        Lagg_logdev = policies_logdevs[11 * self.n_sectors + 1]
+
+        Cagg_logdev = policies_logdev[11 * self.n_sectors]
+        Lagg_logdev = policies_logdev[11 * self.n_sectors + 1]
         # denormalize policy
-        policies_notnorm = policies_logdevs + self.policies_ss
+        policies_notnorm = policies_logdev + self.policies_ss
         policies_levels = jnp.exp(policies_notnorm)
         Cagg = policies_levels[11 * self.n_sectors]
         Lagg = policies_levels[11 * self.n_sectors + 1]
 
         # Get Kagg
-        state_notnorm = state * self.state_sd + self.state_ss  # denormalize state
+        state_notnorm = state_logdev + self.state_ss  # denormalize state
         K = jnp.exp(state_notnorm[: self.n_sectors])  # put in levels
         Kagg = K @ Pk_weights_levels
 

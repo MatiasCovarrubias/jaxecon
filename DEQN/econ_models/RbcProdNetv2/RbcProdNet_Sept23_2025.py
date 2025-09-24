@@ -305,7 +305,8 @@ class Model:
         return mean_loss, mean_accuracy, min_accuracy, mean_accuracies_focs, min_accuracies_focs
 
     def get_aggregates(self, state, policies, P_weights, Pk_weights, Pm_weights):
-        """Calculate aggregates from simulation policies"""
+        """Calculate log deviations of aggregates from steady state"""
+        # Calculate current period aggregates in levels
         policies_notnorm = policies * self.policies_sd + self.policies_ss  # denormalize policy
         policies_levels = jnp.exp(policies_notnorm)
         Cagg = policies_levels[11 * self.n_sectors]
@@ -329,7 +330,40 @@ class Model:
             Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))
         ) ** (1 - self.eps_c ** (-1))
 
-        aggregates_array = jnp.array([Cagg, Lagg, Kagg, Yagg, Magg, Iagg, utility])
+        # Calculate steady state aggregates in levels
+        policies_ss_levels = jnp.exp(self.policies_ss)
+        Cagg_ss = policies_ss_levels[11 * self.n_sectors]
+        Lagg_ss = policies_ss_levels[11 * self.n_sectors + 1]
+
+        # Get steady state Kagg
+        K_ss = jnp.exp(self.state_ss[: self.n_sectors])  # put in levels
+        Kagg_ss = K_ss @ Pk_weights
+
+        Y_ss = policies_ss_levels[10 * self.n_sectors : 11 * self.n_sectors]
+        Yagg_ss = Y_ss @ P_weights
+
+        M_ss = policies_ss_levels[4 * self.n_sectors : 5 * self.n_sectors]
+        Magg_ss = M_ss @ Pm_weights
+
+        Inv_ss = policies_ss_levels[6 * self.n_sectors : 7 * self.n_sectors]
+        Iagg_ss = Inv_ss @ Pk_weights
+
+        utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
+            Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg_ss ** (1 + self.eps_l ** (-1))
+        ) ** (1 - self.eps_c ** (-1))
+
+        # Calculate log deviations from steady state
+        Cagg_logdev = jnp.log(Cagg) - jnp.log(Cagg_ss)
+        Lagg_logdev = jnp.log(Lagg) - jnp.log(Lagg_ss)
+        Kagg_logdev = jnp.log(Kagg) - jnp.log(Kagg_ss)
+        Yagg_logdev = jnp.log(Yagg) - jnp.log(Yagg_ss)
+        Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)
+        Iagg_logdev = jnp.log(Iagg) - jnp.log(Iagg_ss)
+        utility_logdev = jnp.log(utility) - jnp.log(utility_ss)
+
+        aggregates_array = jnp.array(
+            [Cagg_logdev, Lagg_logdev, Kagg_logdev, Yagg_logdev, Magg_logdev, Iagg_logdev, utility_logdev]
+        )
 
         return aggregates_array
 

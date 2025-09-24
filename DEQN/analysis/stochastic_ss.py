@@ -1,5 +1,7 @@
 import jax
-from jax import numpy as jnp, lax, random
+from jax import lax, random
+from jax import numpy as jnp
+
 
 def create_stochss_fn(econ_model, config):
 
@@ -14,19 +16,23 @@ def create_stochss_fn(econ_model, config):
         def step(obs, shock):
             policy = train_state.apply_fn(train_state.params, obs)
             next_obs = econ_model.step(obs, policy, shock)
-            obs_pol_pair = (obs,policy)
+            obs_pol_pair = (obs, policy)
             return next_obs, obs_pol_pair
+
         final_obs, _ = lax.scan(step, obs_init, shocks)
         return final_obs
 
     def stochss_fn(simul_obs, train_state):
         sample_fromdist = random_draws(simul_obs, config["n_draws"], config["seed"])
-        zero_shocks = jnp.zeros(shape=(config["time_to_converge"],1))
-        stoch_ss = jax.vmap(simul_traject_lastobs, in_axes = (None,None,None,0))(econ_model,train_state,zero_shocks,sample_fromdist)
-        stoch_ss = jnp.mean(stoch_ss, axis=0)
-        policy_stoch_ss = train_state.apply_fn(train_state.params, stoch_ss)
+        zero_shocks = jnp.zeros(shape=(config["time_to_converge"], 1))
+        stoch_ss = jax.vmap(simul_traject_lastobs, in_axes=(None, None, None, 0))(
+            econ_model, train_state, zero_shocks, sample_fromdist
+        )
+        stoch_ss_mean = jnp.mean(stoch_ss, axis=0)
+        stoch_ss_std = jnp.std(stoch_ss, axis=0)
+        policy_stoch_ss = train_state.apply_fn(train_state.params, stoch_ss_mean)
         # aggs_stochss_dict = econ_model.get_aggregates(policy_stoch_ss_logdev)
         # return aggs_stochss_dict
-        return policy_stoch_ss, stoch_ss
+        return policy_stoch_ss, stoch_ss_mean, stoch_ss_std
 
     return stochss_fn

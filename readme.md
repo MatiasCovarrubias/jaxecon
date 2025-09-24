@@ -24,12 +24,4 @@ An implementation using Jax of the Deep Equilibrium Network (DEQN) in Jax adapte
 The implementation allows the user to input all the model logic in one simple class.
 All the version can be run in CPU, GPU and TPU backends.
 
-3. Pre-train (or Fit) a Neural Net to a pre-specified policy.
-
-Here I show how we can take an approximate solution
-and use it to "pre-train" a neural net.
-Our approach uses the first-order log linear approximation from dynare to pre-train the neural net.
-The code is simple, and it is optimized for GPU and TPUs.
-There are examples for a Real Business Cycle (Rbc) model and an Rbc with Production Networks (RbcProdNet).
-
-4. Analytical Policy Gradient (APG): A policy gradient algorithm for training neural networks to sole Markov Decision Processes (MDPs) and Strategic Games (SG). The key feature of this algorithm is that ist uses the fact that environmnets have differentiable spet and reward functions, so we can use those function to calculate the policty gradient.
+3. Analytical Policy Gradient (APG): A policy gradient algorithm for training neural networks to sole Markov Decision Processes (MDPs) and Strategic Games (SG). The key feature of this algorithm is that ist uses the fact that environmnets have differentiable spet and reward functions, so we can use those function to calculate the policy gradient.

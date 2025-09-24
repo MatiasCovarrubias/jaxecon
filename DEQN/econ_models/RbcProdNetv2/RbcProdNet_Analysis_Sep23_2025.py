@@ -18,7 +18,6 @@ Usage:
     Both methods require you to be in the repository root directory.
 """
 
-import json
 import os
 import sys
 
@@ -61,6 +60,7 @@ def create_analysis_config():
         # Welfare configuration
         "welfare_n_trajects": 100,
         "welfare_traject_length": 500,
+        "welfare_seed": 0,
         # JAX configuration
         "double_precision": True,
     }
@@ -81,16 +81,10 @@ def main():
         jax_config.update("jax_enable_x64", True)
 
     # Set up paths relative to script location
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(script_dir, "Model_Data")
-    save_dir = os.path.join(script_dir, "Experiments")
+    model_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(model_dir, "Model_Data")
+    save_dir = os.path.join(model_dir, "Experiments")
     model_name = "Feb21_24_baselinev3.mat"
-
-    # Verify required directories exist
-    if not os.path.exists(data_dir):
-        raise FileNotFoundError(f"Model data directory not found: {data_dir}")
-    if not os.path.exists(save_dir):
-        raise FileNotFoundError(f"Experiments directory not found: {save_dir}")
 
     model_file = f"RbcProdNet_SolData_{model_name}"
     model_path = os.path.join(data_dir, model_file)
@@ -143,9 +137,9 @@ def main():
     print("Running comparative analysis across experiments...")
 
     # Create simulation and stochastic steady state functions once
-    simulation_fn = create_episode_simulation_fn_verbose(econ_model, analysis_config)
-    stoch_ss_fn = create_stochss_fn(econ_model, analysis_config)
-    welfare_fn = get_welfare_fn(econ_model, analysis_config)
+    simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, analysis_config))
+    stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, analysis_config))
+    welfare_fn = jax.jit(get_welfare_fn(econ_model, analysis_config))
 
     analysis_results = {}
 
@@ -172,6 +166,7 @@ def main():
 
         # Test 1: the last observation of the simulation should be between -10 and 10
         max_dev = jnp.max(jnp.abs(simul_obs[-1, :]))
+        print(f"The max standadized dev in last obs of simulation is: {max_dev:.6f}")
         assert max_dev < 10, f"Last observation too large: {max_dev:.6f}"
 
         # Calculate stochastic steady state from simulation data
@@ -180,15 +175,30 @@ def main():
 
         # Test 2: Assert that stochastic steady state standard deviation is close to zero
         max_std = jnp.max(stoch_ss_obs_std)
+        print(f"The max std is:{max_std:.6f}")
         assert max_std < 0.01, f"Stochastic steady state std too large: {max_std:.6f}"
 
-        # Get aggregates from simulation data
-        P_stoch_ss = stoch_ss_policy[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
-        Pk_stoch_ss = stoch_ss_policy[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
-        Pm_stoch_ss = stoch_ss_policy[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
+        # Get mean prices from ergodic distribution to construct aggregates.
+        simul_policies_mean = jnp.mean(simul_policies, axis=0)
+        P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
+        Pk_mean = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
+
+        Pm_mean = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
+
+        # Get aggregates for stoch ss
+        stoch_ss_aggregates = econ_model.get_aggregates(stoch_ss_obs, stoch_ss_policy, P_mean, Pk_mean, Pm_mean)
+
+        # Get aggregates for simulation data
         simul_aggregates = jax.vmap(econ_model.get_aggregates, in_axes=(0, 0, None, None, None))(
-            simul_obs, simul_policies, P_stoch_ss, Pk_stoch_ss, Pm_stoch_ss
+            simul_obs, simul_policies, P_mean, Pk_mean, Pm_mean
         )
+
+        simul_aggregates_descstats = {
+            "mean": jnp.mean(simul_aggregates, axis=0).tolist(),
+            "std": jnp.std(simul_aggregates, axis=0).tolist(),
+            "min": jnp.min(simul_aggregates, axis=0).tolist(),
+            "max": jnp.max(simul_aggregates, axis=0).tolist(),
+        }
 
         # Get welfare loss from simulation data
         simul_utilities = simul_aggregates[:, -1]
@@ -200,40 +210,38 @@ def main():
         utility_ss = econ_model.get_aggregates(
             jnp.zeros_like(econ_model.state_ss),
             jnp.zeros_like(econ_model.policies_ss),
-            P_stoch_ss,
-            Pk_stoch_ss,
-            Pm_stoch_ss,
+            P_mean,
+            Pk_mean,
+            Pm_mean,
         )[-1]
-        welfare_ss = utility_ss / (1 - econ_model.beta)
 
-        welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(0))
+        print("Utility in ss:", utility_ss)
+        print("utility in stoch ss:", stoch_ss_aggregates[-1])
+        welfare_ss = utility_ss / (1 - econ_model.beta)
+        print("Welfare_ss:", welfare_ss)
+        welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(analysis_config["welfare_seed"]))
+        print("Welfare:", welfare)
         welfare_loss = 1 - welfare / welfare_ss
 
-        print(f"  Welfare loss for {experiment_label}: {welfare_loss:.6f}")
-
         # Store results including simulation data
-        experiment_analysis = {
-            "simul_aggregates": simul_aggregates,
-            "stoch_ss_obs": stoch_ss_obs,
-            "stoch_ss_policy": stoch_ss_policy,
-            "welfare_loss": welfare_loss,
-        }
-
-        analysis_results[experiment_label] = experiment_analysis
-
         # Convert JAX arrays to Python lists for JSON serialization
         experiment_analysis_json = {
-            "simul_aggregates": simul_aggregates.tolist(),
+            "simul_aggregates_descstats": simul_aggregates_descstats,
+            "stoch_ss_aggregates": stoch_ss_aggregates.tolist(),
             "stoch_ss_obs": stoch_ss_obs.tolist(),
             "stoch_ss_policy": stoch_ss_policy.tolist(),
             "welfare_loss": float(welfare_loss),
         }
 
+        print(f"  Experiment analysis for {experiment_label}: {experiment_analysis_json}")
+
+        analysis_results[experiment_label] = experiment_analysis_json
+
         # store in save_dir/experiment_label/analysis_results.json
-        experiment_dir = os.path.join(save_dir, experiment_name)
-        os.makedirs(experiment_dir, exist_ok=True)
-        with open(os.path.join(experiment_dir, "analysis_results.json"), "w") as f:
-            json.dump(experiment_analysis_json, f)
+        # experiment_dir = os.path.join(save_dir, experiment_name)
+        # os.makedirs(experiment_dir, exist_ok=True)
+        # with open(os.path.join(experiment_dir, "analysis_results.json"), "w") as f:
+        #     json.dump(experiment_analysis, f)
 
         print(f"  Analysis completed for {experiment_label}")
 

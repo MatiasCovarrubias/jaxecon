@@ -149,6 +149,9 @@ def plot_sectoral_capital_mean(
     """
     Create a publication-quality bar graph of mean sectoral capital across experiments.
 
+    Sectors are automatically sorted in descending order by their capital values
+    from the first experiment in the analysis results.
+
     Parameters:
     -----------
     analysis_results : dict
@@ -174,6 +177,17 @@ def plot_sectoral_capital_mean(
     for exp_name in experiments:
         capital_data[exp_name] = np.array(analysis_results[exp_name]["sectoral_capital_mean"])
 
+    # Sort sectors by capital values from the first experiment
+    first_experiment = experiments[0]
+    first_exp_capital = capital_data[first_experiment]
+    sorted_indices = np.argsort(first_exp_capital)[::-1]  # Sort in descending order
+
+    # Apply sorting to sector labels and all capital data
+    sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
+    sorted_capital_data = {}
+    for exp_name in experiments:
+        sorted_capital_data[exp_name] = capital_data[exp_name][sorted_indices]
+
     # Create figure and axis
     fig, ax = plt.subplots(figsize=figsize, dpi=300)
 
@@ -189,7 +203,7 @@ def plot_sectoral_capital_mean(
         offset = (i - (n_experiments - 1) / 2) * bar_width
         ax.bar(
             x + offset,
-            capital_data[exp_name],
+            sorted_capital_data[exp_name],
             bar_width,
             label=exp_name,
             color=plot_colors[i],
@@ -200,7 +214,7 @@ def plot_sectoral_capital_mean(
 
     # Add sector labels on x-axis
     ax.set_xticks(x)
-    ax.set_xticklabels(sector_labels, rotation=45, ha="right")
+    ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
 
     # Consistent tick styling
     ax.tick_params(axis="both", which="major")

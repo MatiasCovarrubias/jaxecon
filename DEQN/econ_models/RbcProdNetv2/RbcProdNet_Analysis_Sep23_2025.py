@@ -194,6 +194,7 @@ def main():
 
         simul_utilities = simul_aggregates[:, -1]
         print("Mean utility in simulation:", jnp.mean(simul_utilities))
+        print("welfare of permanent average utility:", jnp.mean(simul_utilities) / (1 - econ_model.beta))
         # Get welfare at steady state
         utility_ss = econ_model.get_aggregates(
             jnp.zeros_like(econ_model.state_ss),
@@ -206,7 +207,11 @@ def main():
         print("Utility in ss:", utility_ss)
         welfare_ss = utility_ss / (1 - econ_model.beta)
         print("Welfare_ss:", welfare_ss)
-        welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(analysis_config["welfare_seed"]))
+        welfare = welfare_fn(
+            simul_utilities,
+            jnp.mean(simul_utilities) / (1 - econ_model.beta),
+            random.PRNGKey(analysis_config["welfare_seed"]),
+        )
         print("Welfare:", welfare)
         welfare_loss = 1 - welfare / welfare_ss
 

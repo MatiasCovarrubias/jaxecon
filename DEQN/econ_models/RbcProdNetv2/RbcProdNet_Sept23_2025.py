@@ -318,7 +318,11 @@ class Model:
         Pm_weights_levels = Pm_ss * jnp.exp(Pm_weights)
 
         # Calculate current period aggregates in levels
-        policies_notnorm = policies * self.policies_sd + self.policies_ss  # denormalize policy
+        policies_logdevs = policies * self.policies_sd
+        Cagg_logdev = policies_logdevs[11 * self.n_sectors]
+        Lagg_logdev = policies_logdevs[11 * self.n_sectors + 1]
+        # denormalize policy
+        policies_notnorm = policies_logdevs + self.policies_ss
         policies_levels = jnp.exp(policies_notnorm)
         Cagg = policies_levels[11 * self.n_sectors]
         Lagg = policies_levels[11 * self.n_sectors + 1]
@@ -364,8 +368,6 @@ class Model:
         ) ** (1 - self.eps_c ** (-1))
 
         # Calculate log deviations from steady state
-        Cagg_logdev = jnp.log(Cagg) - jnp.log(Cagg_ss)
-        Lagg_logdev = jnp.log(Lagg) - jnp.log(Lagg_ss)
         Kagg_logdev = jnp.log(Kagg) - jnp.log(Kagg_ss)
         Yagg_logdev = jnp.log(Yagg) - jnp.log(Yagg_ss)
         Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)

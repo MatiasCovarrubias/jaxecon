@@ -306,6 +306,17 @@ class Model:
 
     def get_aggregates(self, state, policies, P_weights, Pk_weights, Pm_weights):
         """Calculate log deviations of aggregates from steady state"""
+        # Denormalize weights from log deviations to levels
+        # Get steady state prices in levels
+        P_ss = jnp.exp(self.policies_ss[8 * self.n_sectors : 9 * self.n_sectors])
+        Pk_ss = jnp.exp(self.policies_ss[2 * self.n_sectors : 3 * self.n_sectors])
+        Pm_ss = jnp.exp(self.policies_ss[3 * self.n_sectors : 4 * self.n_sectors])
+
+        # Convert weights from log deviations to levels
+        P_weights_levels = P_ss * jnp.exp(P_weights)
+        Pk_weights_levels = Pk_ss * jnp.exp(Pk_weights)
+        Pm_weights_levels = Pm_ss * jnp.exp(Pm_weights)
+
         # Calculate current period aggregates in levels
         policies_notnorm = policies * self.policies_sd + self.policies_ss  # denormalize policy
         policies_levels = jnp.exp(policies_notnorm)
@@ -315,38 +326,38 @@ class Model:
         # Get Kagg
         state_notnorm = state * self.state_sd + self.state_ss  # denormalize state
         K = jnp.exp(state_notnorm[: self.n_sectors])  # put in levels
-        Kagg = K @ Pk_weights
+        Kagg = K @ Pk_weights_levels
 
         Y = policies_levels[10 * self.n_sectors : 11 * self.n_sectors]
-        Yagg = Y @ P_weights
+        Yagg = Y @ P_weights_levels
 
         M = policies_levels[4 * self.n_sectors : 5 * self.n_sectors]
-        Magg = M @ Pm_weights
+        Magg = M @ Pm_weights_levels
 
         Inv = policies_levels[6 * self.n_sectors : 7 * self.n_sectors]
-        Iagg = Inv @ Pk_weights
+        Iagg = Inv @ Pk_weights_levels
 
         utility = (1 / (1 - self.eps_c ** (-1))) * (
             Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))
         ) ** (1 - self.eps_c ** (-1))
 
-        # Calculate steady state aggregates in levels
+        # Calculate steady state aggregates in levels using steady state weights (which are just the steady state prices)
         policies_ss_levels = jnp.exp(self.policies_ss)
         Cagg_ss = policies_ss_levels[11 * self.n_sectors]
         Lagg_ss = policies_ss_levels[11 * self.n_sectors + 1]
 
         # Get steady state Kagg
         K_ss = jnp.exp(self.state_ss[: self.n_sectors])  # put in levels
-        Kagg_ss = K_ss @ Pk_weights
+        Kagg_ss = K_ss @ Pk_ss
 
         Y_ss = policies_ss_levels[10 * self.n_sectors : 11 * self.n_sectors]
-        Yagg_ss = Y_ss @ P_weights
+        Yagg_ss = Y_ss @ P_ss
 
         M_ss = policies_ss_levels[4 * self.n_sectors : 5 * self.n_sectors]
-        Magg_ss = M_ss @ Pm_weights
+        Magg_ss = M_ss @ Pm_ss
 
         Inv_ss = policies_ss_levels[6 * self.n_sectors : 7 * self.n_sectors]
-        Iagg_ss = Inv_ss @ Pk_weights
+        Iagg_ss = Inv_ss @ Pk_ss
 
         utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
             Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg_ss ** (1 + self.eps_l ** (-1))

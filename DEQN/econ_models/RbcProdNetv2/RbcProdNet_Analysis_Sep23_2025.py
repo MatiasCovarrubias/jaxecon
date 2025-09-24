@@ -206,7 +206,7 @@ def main():
         )[-1]
         welfare_ss = utility_ss / (1 - econ_model.beta)
 
-        welfare = welfare_fn(simul_utilities, welfare_ss)
+        welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(0))
         welfare_loss = 1 - welfare / welfare_ss
 
         print(f"  Welfare loss for {experiment_label}: {welfare_loss:.6f}")
@@ -221,11 +221,19 @@ def main():
 
         analysis_results[experiment_label] = experiment_analysis
 
+        # Convert JAX arrays to Python lists for JSON serialization
+        experiment_analysis_json = {
+            "simul_aggregates": simul_aggregates.tolist(),
+            "stoch_ss_obs": stoch_ss_obs.tolist(),
+            "stoch_ss_policy": stoch_ss_policy.tolist(),
+            "welfare_loss": float(welfare_loss),
+        }
+
         # store in save_dir/experiment_label/analysis_results.json
         experiment_dir = os.path.join(save_dir, experiment_name)
         os.makedirs(experiment_dir, exist_ok=True)
         with open(os.path.join(experiment_dir, "analysis_results.json"), "w") as f:
-            json.dump(experiment_analysis, f)
+            json.dump(experiment_analysis_json, f)
 
         print(f"  Analysis completed for {experiment_label}")
 

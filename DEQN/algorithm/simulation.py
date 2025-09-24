@@ -7,7 +7,7 @@ def create_episode_simul_fn(econ_model, config):
 
     def sample_epis_obs(train_state, epis_rng):
         "sample obs of an episode"
-        init_obs = econ_model.initial_obs(epis_rng, config["init_range"])
+        init_obs = econ_model.initial_state(epis_rng, config["init_range"])
         period_rngs = random.split(epis_rng, config["periods_per_epis"])
 
         def period_step(env_obs, period_rng):
@@ -27,7 +27,7 @@ def create_episode_simulation_fn_verbose(econ_model, config):
 
     def sample_epis_obs_and_policies(train_state, epis_rng):
         """Sample observations and policies for an episode."""
-        init_obs = econ_model.initial_obs(epis_rng, config["init_range"])
+        init_obs = econ_model.initial_state(epis_rng, config["init_range"])
         period_rngs = random.split(epis_rng, config["periods_per_epis"])
 
         def period_step(env_obs, period_rng):
@@ -50,7 +50,7 @@ def create_episode_simul_fn_proxied(econ_model, config):
 
         def sample_epis_obs_proxied(epis_rng):
             "sample obs of an episode"
-            init_obs = econ_model.initial_obs(epis_rng, config["init_range"])
+            init_obs = econ_model.initial_state(epis_rng, config["init_range"])
             period_rngs = random.split(epis_rng, config["periods_per_epis"])
 
             def period_step(env_obs, period_rng):
@@ -67,7 +67,7 @@ def create_episode_simul_fn_proxied(econ_model, config):
 
         def sample_epis_obs_regular(train_state, epis_rng):
             "sample obs of an episode"
-            init_obs = econ_model.initial_obs(epis_rng, config["init_range"])
+            init_obs = econ_model.initial_state(epis_rng, config["init_range"])
             period_rngs = random.split(epis_rng, config["periods_per_epis"])
 
             def period_step(env_obs, period_rng):

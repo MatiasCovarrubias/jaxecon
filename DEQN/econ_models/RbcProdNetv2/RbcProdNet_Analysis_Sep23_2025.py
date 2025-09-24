@@ -209,6 +209,8 @@ def main():
         welfare = welfare_fn(simul_utilities, welfare_ss)
         welfare_loss = 1 - welfare / welfare_ss
 
+        print(f"  Welfare loss for {experiment_label}: {welfare_loss:.6f}")
+
         # Store results including simulation data
         experiment_analysis = {
             "simul_aggregates": simul_aggregates,

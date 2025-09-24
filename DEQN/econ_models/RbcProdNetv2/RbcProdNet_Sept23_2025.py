@@ -316,9 +316,6 @@ class Model:
         P_weights_levels = P_ss * jnp.exp(P_weights)
         Pk_weights_levels = Pk_ss * jnp.exp(Pk_weights)
         Pm_weights_levels = Pm_ss * jnp.exp(Pm_weights)
-        print(f"P_weights_levels: {P_weights_levels}")
-        print(f"Pk_weights_levels: {Pk_weights_levels}")
-        print(f"Pm_weights_levels: {Pm_weights_levels}")
 
         # Calculate current period aggregates in levels
         policies_notnorm = policies * self.policies_sd + self.policies_ss  # denormalize policy
@@ -330,7 +327,6 @@ class Model:
         state_notnorm = state * self.state_sd + self.state_ss  # denormalize state
         K = jnp.exp(state_notnorm[: self.n_sectors])  # put in levels
         Kagg = K @ Pk_weights_levels
-        print(f"Kagg: {Kagg}")
 
         Y = policies_levels[10 * self.n_sectors : 11 * self.n_sectors]
         Yagg = Y @ P_weights_levels
@@ -353,7 +349,6 @@ class Model:
         # Get steady state Kagg
         K_ss = jnp.exp(self.state_ss[: self.n_sectors])  # put in levels
         Kagg_ss = K_ss @ Pk_ss
-        print(f"Kagg_ss: {Kagg_ss}")
 
         Y_ss = policies_ss_levels[10 * self.n_sectors : 11 * self.n_sectors]
         Yagg_ss = Y_ss @ P_ss

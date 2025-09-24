@@ -130,3 +130,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Model data and experiments
+DEQN/econ_models/RbcProdNetv2/Model_Data/
+DEQN/econ_models/RbcProdNetv2/Experiments/

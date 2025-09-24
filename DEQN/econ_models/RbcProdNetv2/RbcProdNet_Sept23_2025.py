@@ -373,7 +373,7 @@ class Model:
         utility_logdev = 1 - utility_ss / utility
 
         aggregates_array = jnp.array(
-            [Cagg_logdev, Lagg_logdev, Kagg_logdev, Yagg_logdev, Magg_logdev, Iagg_logdev, utility_logdev]
+            [Cagg_logdev, Lagg_logdev, Kagg_logdev, Yagg_logdev, Magg_logdev, Iagg_logdev, utility_logdev, utility]
         )
 
         return aggregates_array

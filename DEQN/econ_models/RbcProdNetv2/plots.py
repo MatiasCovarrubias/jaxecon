@@ -138,3 +138,92 @@ def plot_upstreamness(
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
     return fig, ax
+
+
+def plot_sectoral_capital_mean(
+    analysis_results: Dict[str, Any],
+    sector_labels: list,
+    figsize: Tuple[float, float] = (12, 8),
+    save_path: Optional[str] = None,
+):
+    """
+    Create a publication-quality bar graph of mean sectoral capital across experiments.
+
+    Parameters:
+    -----------
+    analysis_results : dict
+        Dictionary containing experiment results with 'sectoral_capital_mean' for each experiment
+    sector_labels : list
+        List of sector labels (should match the number of sectors)
+    figsize : tuple, optional
+        Figure size (width, height) in inches
+    save_path : str, optional
+        If provided, save the figure to this path
+
+    Returns:
+    --------
+    fig, ax : matplotlib figure and axis objects
+    """
+    # Extract data for plotting
+    experiments = list(analysis_results.keys())
+    n_experiments = len(experiments)
+    n_sectors = len(sector_labels)
+
+    # Get the capital data for each experiment
+    capital_data = {}
+    for exp_name in experiments:
+        capital_data[exp_name] = np.array(analysis_results[exp_name]["sectoral_capital_mean"])
+
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=figsize, dpi=300)
+
+    # Set bar width and positions
+    bar_width = 0.8 / n_experiments  # Adjust width based on number of experiments
+    x = np.arange(n_sectors)
+
+    # Use colors from the global palette
+    plot_colors = colors[:n_experiments]
+
+    # Create bars for each experiment
+    for i, exp_name in enumerate(experiments):
+        offset = (i - (n_experiments - 1) / 2) * bar_width
+        ax.bar(
+            x + offset,
+            capital_data[exp_name],
+            bar_width,
+            label=exp_name,
+            color=plot_colors[i],
+            alpha=0.9,
+            edgecolor="black",
+            linewidth=0.5,
+        )
+
+    # Add sector labels on x-axis
+    ax.set_xticks(x)
+    ax.set_xticklabels(sector_labels, rotation=45, ha="right")
+
+    # Consistent tick styling
+    ax.tick_params(axis="both", which="major")
+
+    # Set labels and title using predefined font sizes
+    ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel("Average Capital (Log Deviations from SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
+
+    # Add legend using predefined font size
+    ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+
+    # Set title using predefined font size
+    ax.set_title("Mean Sectoral Capital Across Experiments", fontweight="bold", pad=20, fontsize=LARGE_SIZE)
+
+    # Add horizontal line at y=0 (steady state) - consistent with other plots
+    ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+
+    # Add grid consistent with other plots
+    ax.grid(True, alpha=0.3)
+
+    # Adjust layout and save if requested
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+
+    return fig, ax

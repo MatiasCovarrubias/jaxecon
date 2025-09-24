@@ -37,6 +37,7 @@ if repo_root not in sys.path:
 from DEQN.algorithm.simulation import create_episode_simulation_fn_verbose  # noqa: E402
 from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
+from DEQN.econ_models.RbcProdNetv2.plots import plot_sectoral_capital_mean  # noqa: E402
 from DEQN.econ_models.RbcProdNetv2.RbcProdNet_Sept23_2025 import Model  # noqa: E402
 from DEQN.utils import load_experiment_data, load_trained_model_GPU  # noqa: E402
 
@@ -159,38 +160,26 @@ def main():
         # Generate simulation data using verbose simulation (one long episode)
         print(f"  Generating simulation data for {experiment_label}...")
         episode_rng = random.PRNGKey(analysis_config["simul_seed"])
-        simul_obs, simul_policies = simulation_fn(train_state, episode_rng)
+        simul_state, simul_policies = simulation_fn(train_state, episode_rng)
         # Extract burn-in period
-        simul_obs = simul_obs[analysis_config["burn_in_periods"] :]
+        simul_state = simul_state[analysis_config["burn_in_periods"] :]
         simul_policies = simul_policies[analysis_config["burn_in_periods"] :]
 
         # Test 1: the last observation of the simulation should be between -10 and 10
-        max_dev = jnp.max(jnp.abs(simul_obs[-1, :]))
+        max_dev = jnp.max(jnp.abs(simul_state[-1, :]))
         print(f"The max standadized dev in last obs of simulation is: {max_dev:.6f}")
         assert max_dev < 10, f"Last observation too large: {max_dev:.6f}"
 
-        # Calculate stochastic steady state from simulation data
-        print(f"  Calculating stochastic steady state for {experiment_label}...")
-        stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
-
-        # Test 2: Assert that stochastic steady state standard deviation is close to zero
-        max_std = jnp.max(stoch_ss_obs_std)
-        print(f"The max std is:{max_std:.6f}")
-        assert max_std < 0.01, f"Stochastic steady state std too large: {max_std:.6f}"
-
-        # Get mean prices from ergodic distribution to construct aggregates.
+        # Get mean states and policies from ergodic distribution to construct aggregates.
+        simul_state_mean = jnp.mean(simul_state, axis=0)
         simul_policies_mean = jnp.mean(simul_policies, axis=0)
         P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
         Pk_mean = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
-
         Pm_mean = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
-
-        # Get aggregates for stoch ss
-        stoch_ss_aggregates = econ_model.get_aggregates(stoch_ss_obs, stoch_ss_policy, P_mean, Pk_mean, Pm_mean)
 
         # Get aggregates for simulation data
         simul_aggregates = jax.vmap(econ_model.get_aggregates, in_axes=(0, 0, None, None, None))(
-            simul_obs, simul_policies, P_mean, Pk_mean, Pm_mean
+            simul_state, simul_policies, P_mean, Pk_mean, Pm_mean
         )
 
         simul_aggregates_descstats = {
@@ -201,11 +190,10 @@ def main():
         }
 
         # Get welfare loss from simulation data
-        simul_utilities = simul_aggregates[:, -1]
-
-        # Calculate welfare
         print(f"  Calculating welfare for {experiment_label}...")
 
+        simul_utilities = simul_aggregates[:, -1]
+        print("Mean utility in simulation:", jnp.mean(simul_utilities))
         # Get welfare at steady state
         utility_ss = econ_model.get_aggregates(
             jnp.zeros_like(econ_model.state_ss),
@@ -216,21 +204,35 @@ def main():
         )[-1]
 
         print("Utility in ss:", utility_ss)
-        print("utility in stoch ss:", stoch_ss_aggregates[-1])
         welfare_ss = utility_ss / (1 - econ_model.beta)
         print("Welfare_ss:", welfare_ss)
         welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(analysis_config["welfare_seed"]))
         print("Welfare:", welfare)
         welfare_loss = 1 - welfare / welfare_ss
 
+        # Calculate stochastic steady state from simulation data
+        print(f"  Calculating stochastic steady state for {experiment_label}...")
+        stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_state, train_state)
+
+        # Test 2: Assert that stochastic steady state standard deviation is close to zero
+        max_std = jnp.max(stoch_ss_obs_std)
+        print(f"The max std is:{max_std:.6f}")
+        assert max_std < 0.01, f"Stochastic steady state std too large: {max_std:.6f}"
+        stoch_ss_aggregates = econ_model.get_aggregates(stoch_ss_obs, stoch_ss_policy, P_mean, Pk_mean, Pm_mean)
+
+        print("utility in stoch ss:", stoch_ss_aggregates[-1])
+
+        # Calculate mean sectoral capital (log deviations from steady state)
+        sectoral_capital_mean = simul_state_mean[: econ_model.n_sectors]
+
         # Store results including simulation data
         # Convert JAX arrays to Python lists for JSON serialization
         experiment_analysis_json = {
+            "simul_aggregates": simul_aggregates.tolist(),
             "simul_aggregates_descstats": simul_aggregates_descstats,
-            "stoch_ss_aggregates": stoch_ss_aggregates.tolist(),
-            "stoch_ss_obs": stoch_ss_obs.tolist(),
-            "stoch_ss_policy": stoch_ss_policy.tolist(),
             "welfare_loss": float(welfare_loss),
+            "sectoral_capital_mean": sectoral_capital_mean.tolist(),
+            "stoch_ss_aggregates": stoch_ss_aggregates.tolist(),
         }
 
         print(f"  Experiment analysis for {experiment_label}: {experiment_analysis_json}")
@@ -246,6 +248,15 @@ def main():
         print(f"  Analysis completed for {experiment_label}")
 
     print("\nAnalysis completed successfully!")
+
+    # Generate sectoral capital plot
+    print("Generating mean sectoral capital plot...")
+    fig, ax = plot_sectoral_capital_mean(
+        analysis_results=analysis_results,
+        sector_labels=econ_model.labels,
+        save_path=os.path.join(save_dir, "sectoral_capital_mean.png"),
+    )
+    print(f"Plot saved to: {os.path.join(save_dir, 'sectoral_capital_mean.png')}")
 
     return analysis_results
 

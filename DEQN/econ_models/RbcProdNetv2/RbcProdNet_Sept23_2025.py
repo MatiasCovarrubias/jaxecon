@@ -375,7 +375,7 @@ class Model:
         Yagg_logdev = jnp.log(Yagg) - jnp.log(Yagg_ss)
         Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)
         Iagg_logdev = jnp.log(Iagg) - jnp.log(Iagg_ss)
-        utility_logdev = jnp.log(utility) - jnp.log(utility_ss)
+        utility_logdev = 1 - utility_ss / utility
 
         aggregates_array = jnp.array(
             [Cagg_logdev, Lagg_logdev, Kagg_logdev, Yagg_logdev, Magg_logdev, Iagg_logdev, utility_logdev]

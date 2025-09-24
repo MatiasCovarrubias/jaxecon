@@ -353,7 +353,7 @@ class Model:
         # Get steady state Kagg
         K_ss = jnp.exp(self.state_ss[: self.n_sectors])  # put in levels
         Kagg_ss = K_ss @ Pk_ss
-        print(f"Kagg_ss: {Kagg_ss}")D
+        print(f"Kagg_ss: {Kagg_ss}")
 
         Y_ss = policies_ss_levels[10 * self.n_sectors : 11 * self.n_sectors]
         Yagg_ss = Y_ss @ P_ss

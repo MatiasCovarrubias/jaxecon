@@ -34,7 +34,7 @@ def create_episode_simulation_fn_verbose(econ_model, config):
             policy = train_state.apply_fn(train_state.params, env_obs)
             period_shock = config["simul_vol_scale"] * econ_model.sample_shock(period_rng)
             obs_next = econ_model.step(env_obs, policy, period_shock)
-            obs_next_logdev = obs_next * econ_model.obs_sd
+            obs_next_logdev = obs_next * econ_model.state_sd
             policy_logdev = policy * econ_model.policies_sd
             return obs_next, (obs_next_logdev, policy_logdev)
 

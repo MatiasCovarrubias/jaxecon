@@ -348,16 +348,16 @@ class Model:
 
         # Get steady state Kagg
         K_ss = jnp.exp(self.state_ss[: self.n_sectors])  # put in levels
-        Kagg_ss = K_ss @ Pk_ss
+        Kagg_ss = K_ss @ Pk_weights_levels
 
         Y_ss = policies_ss_levels[10 * self.n_sectors : 11 * self.n_sectors]
-        Yagg_ss = Y_ss @ P_ss
+        Yagg_ss = Y_ss @ P_weights_levels
 
         M_ss = policies_ss_levels[4 * self.n_sectors : 5 * self.n_sectors]
-        Magg_ss = M_ss @ Pm_ss
+        Magg_ss = M_ss @ Pm_weights_levels
 
         Inv_ss = policies_ss_levels[6 * self.n_sectors : 7 * self.n_sectors]
-        Iagg_ss = Inv_ss @ Pk_ss
+        Iagg_ss = Inv_ss @ Pk_weights_levels
 
         utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
             Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg_ss ** (1 + self.eps_l ** (-1))

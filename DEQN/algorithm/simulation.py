@@ -23,7 +23,7 @@ def create_episode_simul_fn(econ_model, config):
 
 
 def create_episode_simulation_fn_verbose(econ_model, config):
-    """Create simulation function that returns both observations and policies."""
+    """Create simulation function that returns both observations and policies in logdevs."""
 
     def sample_epis_obs_and_policies(train_state, epis_rng):
         """Sample observations and policies for an episode."""
@@ -34,7 +34,9 @@ def create_episode_simulation_fn_verbose(econ_model, config):
             policy = train_state.apply_fn(train_state.params, env_obs)
             period_shock = config["simul_vol_scale"] * econ_model.sample_shock(period_rng)
             obs_next = econ_model.step(env_obs, policy, period_shock)
-            return obs_next, (obs_next, policy)
+            obs_next_logdev = obs_next * econ_model.obs_sd
+            policy_logdev = policy * econ_model.policies_sd
+            return obs_next, (obs_next_logdev, policy_logdev)
 
         _, (epis_obs, epis_policies) = lax.scan(period_step, init_obs, jnp.stack(period_rngs))
         return epis_obs, epis_policies

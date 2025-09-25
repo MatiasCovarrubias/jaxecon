@@ -78,8 +78,8 @@ def _shock_diagnostics(simul_state: jnp.ndarray, econ_model) -> dict:
     """
     nS = econ_model.n_sectors
     # Denormalize states to get a_t
-    st_not = simul_state * econ_model.state_sd + econ_model.state_ss
-    a_t = st_not[:, nS:]
+    st_loglevel = simul_state + econ_model.state_ss
+    a_t = st_loglevel[:, nS:]
     eps = a_t[1:, :] - econ_model.rho * a_t[:-1, :]
     mean_eps = jnp.mean(eps, axis=0)
     cov_eps = jnp.cov(eps.T)

@@ -1,0 +1,100 @@
+\documentclass[12pt,english]{article}
+\usepackage[sc]{mathpazo}
+\usepackage[utf8]{inputenc}     
+\usepackage{geometry}
+\usepackage{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{parskip}
+
+% Basic geometry settings
+\geometry{left=6em, right=6em, top=6em, bottom=6em}
+
+% Spacing and paragraph settings
+\setlength{\parskip}{1em}
+\onehalfspacing
+
+% Hyperref setup
+\hypersetup{colorlinks,linkcolor={blue},citecolor={blue},urlcolor={black}}
+
+% Section title size adjustments
+\usepackage{titlesec}
+\titleformat*{\section}{\normalsize\bfseries}
+\titleformat*{\subsection}{\normalsize\bfseries}
+
+\title{Grid Simulation Analysis}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Seed--Length Grid Diagnostics}
+
+\subsection{Purpose and Setup}
+For each episode length $T$ and burn--in fraction $b\in(0,1)$, and for multiple random seeds $s$, we simulate an episode and drop the first $\lfloor bT\rfloor$ periods. The simulator returns states $s_t$ and policies $p_t$ as log--deviations from their deterministic steady states. Aggregates are then computed with \emph{fixed} steady--state price weights by passing zero log--deviation weights for $(P, P_k, P_m)$ so that the level weights equal their steady--state levels. Let
+\[\bigl(C^{\logdev}_t, L^{\logdev}_t, K^{\logdev}_t, Y^{\logdev}_t, M^{\logdev}_t, I^{\logdev}_t, u^{\logdev}_t, u_t\bigr)
+\]
+denote the outputs of the aggregation mapping. Here $u_t$ is the (level) period utility and $u^{\logdev}_t$ is the corresponding utility log--deviation.
+
+All diagnostics below are computed on the post--burn sample of length $n=T-\lfloor bT\rfloor$.
+
+\subsection{Per--Seed Diagnostics}
+\paragraph{Welfare.} Welfare is computed using the same methodology as the main analysis: random trajectory sampling with proper discounting. From the utility series $u_t$, we sample $N$ random trajectories of length $L$ and compute their discounted present values with terminal continuation value $W_{ss} = \mathbb{E}[u_t]/(1-\beta)$:
+\[ W \;=\; \frac{1}{N}\sum_{j=1}^{N} \left(\sum_{\ell=0}^{L-1} \beta^{\ell} u_{t_j+\ell} + \beta^L W_{ss}\right). \]
+This provides a more accurate welfare measure than simple permanent utility approximations.
+
+\paragraph{Mean sectoral capital (log deviations).} Let $n_S$ be the number of sectors and denote by $k_{t,i}$ the $i$-th sector's capital log--deviation (contained in $s_t$). The diagnostic stores
+\[ \bar{k}_i \;=\; \frac{1}{n}\sum_{t=1}^{n} k_{t,i},\qquad i=1,\dots,n_S. \]
+Large $|\bar{k}_i|$ suggests drift or insufficient burn--in.
+
+\paragraph{IACT for $K^{\logdev}$ and $u^{\logdev}$.} For a scalar series $x_t$ (either $K^{\logdev}_t$ or $u^{\logdev}_t$), define the batch--means estimator with $B$ batches (default $B=20$). Let the batch size be $m=\lfloor n/B\rfloor$ and $n_{\mathrm{eff}}=mB$. Split $x_{1:n_{\mathrm{eff}}}$ into $B$ contiguous batches and let $\bar{x}_b$ be batch means. With $\mathrm{Var}(x)$ the sample variance,
+\[ \widehat{\tau}(x) \;=\; \max\!\Bigl\{1,\; m\,\frac{\mathrm{Var}(\bar{x}_b)}{\mathrm{Var}(x_{1:n_{\mathrm{eff}}})}\Bigr\}. \]
+Values $\widehat{\tau}\gg 1$ indicate strong autocorrelation and fewer effective samples; smaller values indicate better mixing.
+
+\paragraph{Linear drift (OLS slope) for $K^{\logdev}$ and $u^{\logdev}$.} Regress $y_t$ on time $t\in\{0,\dots,n-1\}$. The reported slope per period is
+\[ b(y) \;=\; \frac{\mathrm{Cov}(t, y_t)}{\mathrm{Var}(t)}. \]
+Slopes near zero indicate stationarity; sizable positive/negative slopes indicate trending aggregates.
+
+\paragraph{Out--of--distribution (OOD) fraction.} For thresholds $\theta\in\{3,4,5\}$, with $z_{t,d}$ each element of the state vector (log deviations),
+\[ \mathrm{OOD}(\theta) \;=\; \frac{1}{nD}\sum_{t=1}^{n}\sum_{d=1}^{D} \mathbf{1}\{\,|z_{t,d}|>\theta\,\}. \]
+Larger fractions signal excursions far from the normalization range (potentially beyond the training distribution).
+
+\paragraph{Shock diagnostics.} Denormalize states via $s^{\mathrm{lev}}_t = s_t\odot\sigma_s + \mu_s$, and let $a_t$ be the shock state block. With AR(1) law $a_{t+1}=\rho a_t + \varepsilon_t$ and target covariance $\Sigma_A$, we compute
+\[ \|\mathbb{E}[\varepsilon_t]\|_2,\qquad \frac{\|\mathrm{Cov}(\varepsilon_t)-\Sigma_A\|_F}{\|\Sigma_A\|_F}. \]
+Small values indicate that simulated shocks match the intended statistical model.
+
+\subsection{Across--Seed Aggregation}
+\paragraph{Cross--seed dispersion.} With per--seed welfare $W^{(s)}$, the welfare dispersion is reported as a fraction of the mean:
+\[ \frac{\mathrm{sd}(W^{(s)})}{|\overline{W}|}, \qquad \overline{W} \;=\; \frac{1}{S}\sum_{s=1}^{S} W^{(s)}. \]
+The absolute value accounts for the fact that welfare (and utilities) are typically negative. For sectoral capital means, form $\mathrm{sd}_s(\bar{k}_{i}^{(s)})$ across seeds for each sector $i$, then report the average across sectors.
+
+\paragraph{Average diagnostics.} For IACTs, slopes, OOD fractions, and shock diagnostics, we report simple averages across seeds.
+
+\subsection{Scaling with Episode Length}
+For a fixed burn--in fraction, compute standard deviations across seeds at each $T$, say $\mathrm{sd}_T$, and regress $\log \mathrm{sd}_T$ on $\log T$ via the slope
+\[ b\bigl(\log T,\, \log \mathrm{sd}\bigr) \;=\; \frac{\mathrm{Cov}(\log T,\, \log \mathrm{sd}_T)}{\mathrm{Var}(\log T)}. \]
+Under pure sampling error with weak dependence, one expects roughly $\mathrm{sd}\propto T^{-1/2}$ so that the slope is near $-\tfrac{1}{2}$. Substantially different slopes suggest drift or other nonstationarities.
+
+\subsection{Interpretation Guide}
+\begin{itemize}
+  \item \textbf{Welfare}: higher is better; compare to steady--state benchmark when relevant.
+  \item \textbf{IACT}: high values indicate strong persistence; consider longer episodes or diagnostics of policy mixing.
+  \item \textbf{OLS slope}: significant nonzero slopes indicate trending aggregates (potential drift or misspecified aggregation).
+  \item \textbf{OOD fraction}: large values indicate states frequently outside typical range; adjust volatility or training coverage.
+  \item \textbf{Shock diagnostics}: large mean or covariance errors indicate mismatch with the intended AR(1) process.
+  \item \textbf{Cross--seed SD vs $T$}: slope near $-1/2$ supports sampling--error dominance; flatter slopes point to structural drift.
+\end{itemize}
+
+\subsection{Sanity Tests Outside the Grid}
+Two additional checks are used in the main analysis:
+\begin{itemize}
+  \item \textbf{Terminal state magnitude}: $\max_d |s_{T-1,d}|<10$ to rule out explosive trajectories.
+  \item \textbf{Stochastic steady state tightness}: the maximal standard deviation of the stochastic steady state observation is required to be $<0.01$, enforcing a well--defined stationary fixed point under the learned policy.
+\end{itemize}
+
+\end{document}

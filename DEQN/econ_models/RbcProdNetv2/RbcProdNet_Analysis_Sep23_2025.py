@@ -26,6 +26,7 @@ import scipy.io as sio
 from jax import config as jax_config
 from jax import numpy as jnp
 from jax import random
+from scipy.stats import kurtosis, skew
 
 # Add repository root to path for absolute imports when run directly
 # This MUST come before any DEQN imports
@@ -185,8 +186,8 @@ def main():
         simul_aggregates_descstats = {
             "mean": jnp.mean(simul_aggregates, axis=0).tolist(),
             "std": jnp.std(simul_aggregates, axis=0).tolist(),
-            "min": jnp.min(simul_aggregates, axis=0).tolist(),
-            "max": jnp.max(simul_aggregates, axis=0).tolist(),
+            "skewness": skew(simul_aggregates, axis=0).tolist(),
+            "kurtosis": kurtosis(simul_aggregates, axis=0).tolist(),
         }
 
         # Get welfare loss from simulation data
@@ -233,11 +234,13 @@ def main():
         # Store results including simulation data
         # Convert JAX arrays to Python lists for JSON serialization
         experiment_analysis_json = {
-            "simul_aggregates": simul_aggregates.tolist(),
-            "simul_aggregates_descstats": simul_aggregates_descstats,
             "welfare_loss": float(welfare_loss),
-            "sectoral_capital_mean": sectoral_capital_mean.tolist(),
+            "simul_aggregates_mean": simul_aggregates_descstats["mean"],
+            "simul_aggregates_std": simul_aggregates_descstats["std"],
+            "simul_aggregates_skewness": simul_aggregates_descstats["skewness"],
+            "simul_aggregates_kurtosis": simul_aggregates_descstats["kurtosis"],
             "stoch_ss_aggregates": stoch_ss_aggregates.tolist(),
+            "sectoral_capital_mean": sectoral_capital_mean.tolist(),
         }
 
         print(f"  Experiment analysis for {experiment_label}: {experiment_analysis_json}")

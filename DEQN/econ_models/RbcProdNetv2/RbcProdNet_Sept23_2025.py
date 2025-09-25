@@ -85,6 +85,11 @@ class Model:
             "Food Services",
             "Other",
         ]
+        self.Cagg_ss = jnp.exp(self.policies_ss[11 * self.n_sectors])
+        self.Lagg_ss = jnp.exp(self.policies_ss[11 * self.n_sectors + 1])
+        self.utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
+            self.Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.Lagg_ss ** (1 + self.eps_l ** (-1))
+        ) ** (1 - self.eps_c ** (-1))
 
     def initial_state(self, rng, range=1):
         """Get initial state by sampling uniformly from a range around the steady state"""
@@ -363,16 +368,12 @@ class Model:
         Inv_ss = policies_ss_levels[6 * self.n_sectors : 7 * self.n_sectors]
         Iagg_ss = Inv_ss @ Pk_weights_levels
 
-        utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
-            Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg_ss ** (1 + self.eps_l ** (-1))
-        ) ** (1 - self.eps_c ** (-1))
-
         # Calculate log deviations from steady state
         Kagg_logdev = jnp.log(Kagg) - jnp.log(Kagg_ss)
         Yagg_logdev = jnp.log(Yagg) - jnp.log(Yagg_ss)
         Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)
         Iagg_logdev = jnp.log(Iagg) - jnp.log(Iagg_ss)
-        utility_logdev = 1 - utility_ss / utility
+        utility_logdev = 1 - utility / self.utility_ss
 
         aggregates_array = jnp.array(
             [Cagg_logdev, Lagg_logdev, Kagg_logdev, Yagg_logdev, Magg_logdev, Iagg_logdev, utility_logdev, utility]

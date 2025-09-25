@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, Optional, Tuple
 
 import matplotlib.pyplot as plt
@@ -241,3 +242,116 @@ def plot_sectoral_capital_mean(
         plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
 
     return fig, ax
+
+
+def plot_ergodic_histograms(
+    aggregates_data: Dict[str, Any],
+    aggregate_labels: list = [
+        "Agg. Consumption",
+        "Agg. Labor",
+        "Agg. Capital",
+        "Agg. Production",
+        "Agg. Intermediate Goods",
+        "Agg. Investment",
+        "Utility",
+    ],
+    figsize: Tuple[float, float] = (15, 10),
+    save_dir: Optional[str] = None,
+):
+    """
+    Create publication-quality histograms of ergodic distributions for aggregate variables.
+
+    Parameters:
+    -----------
+    aggregates_data : dict
+        Dictionary where keys are experiment names and values are arrays of simulated aggregates
+        Each array should have shape (n_periods, n_aggregates) where n_aggregates >= 7
+    aggregate_labels : list, optional
+        Labels for the aggregate variables (first 7 will be used: C, L, K, Y, M, I, Utility)
+    figsize : tuple, optional
+        Figure size (width, height) in inches
+    save_dir : str, optional
+        Directory to save plots to. If None, plots are not saved.
+
+    Returns:
+    --------
+    list of (fig, ax) tuples for each aggregate variable
+    """
+    # Get experiment names and aggregate variable names
+    experiment_names = list(aggregates_data.keys())
+    n_experiments = len(experiment_names)
+    n_aggregates = min(7, len(aggregate_labels))  # Focus on first 7 aggregates (including utility)
+
+    # Use colors from the global palette
+    plot_colors = colors[:n_experiments]
+
+    # Variable short names for file saving
+    var_names = ["C_agg", "L_agg", "K_agg", "Y_agg", "M_agg", "I_agg", "Utility"]
+
+    figures = []
+
+    for agg_idx in range(n_aggregates):
+        # Extract data for this aggregate variable across all experiments
+        agg_data = {}
+        for exp_name in experiment_names:
+            agg_data[exp_name] = aggregates_data[exp_name][:, agg_idx]
+
+        # Determine global min and max across all experiments for consistent bin range
+        all_values = np.concatenate([agg_data[exp] for exp in experiment_names])
+        global_min = np.min(all_values)
+        global_max = np.max(all_values)
+
+        # Add padding (5%) to see beyond the extremes
+        padding = (global_max - global_min) * 0.05
+        bin_range = (global_min - padding, global_max + padding)
+
+        # Create bins using the global range
+        bins = np.linspace(bin_range[0], bin_range[1], 31)  # 31 edges for 30 bins
+        bin_centers = (bins[:-1] + bins[1:]) / 2
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
+
+        # Plot histogram for each experiment
+        for i, exp_name in enumerate(experiment_names):
+            # Calculate histogram
+            counts, _ = np.histogram(agg_data[exp_name], bins=bins)
+            freqs = counts / len(agg_data[exp_name])
+
+            # Plot the frequency line
+            ax.plot(bin_centers, freqs, label=exp_name, color=plot_colors[i], linewidth=2, alpha=0.9)
+
+        # Add vertical line at deterministic steady state (x=0)
+        ax.axvline(x=0, color="black", linestyle="--", linewidth=2, label="Deterministic SS", alpha=0.7)
+
+        # Styling
+        ax.set_xlabel(
+            f"{aggregate_labels[agg_idx]} (log deviations from deterministic SS)",
+            fontweight="bold",
+            fontsize=MEDIUM_SIZE,
+        )
+        ax.set_ylabel("Frequency", fontweight="bold", fontsize=MEDIUM_SIZE)
+        ax.set_title(
+            f"Ergodic Distribution: {aggregate_labels[agg_idx]}", fontweight="bold", pad=20, fontsize=LARGE_SIZE
+        )
+
+        # Legend
+        ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+
+        # Grid
+        ax.grid(True, alpha=0.3)
+
+        # Apply consistent styling
+        ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
+
+        # Adjust layout
+        plt.tight_layout()
+
+        # Save if directory provided
+        if save_dir:
+            save_path = os.path.join(save_dir, f"Histogram_{var_names[agg_idx]}_comparative.png")
+            plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+
+        figures.append((fig, ax))
+
+    return figures

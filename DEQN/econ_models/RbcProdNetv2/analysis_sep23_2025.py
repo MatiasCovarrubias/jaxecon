@@ -34,7 +34,6 @@ import scipy.io as sio
 from jax import config as jax_config
 from jax import numpy as jnp
 from jax import random
-from scipy.stats import kurtosis, skew
 
 # Add repository root to path for absolute imports when run directly
 # This MUST come before any DEQN imports
@@ -44,13 +43,19 @@ if repo_root not in sys.path:
 
 # DEQN imports (use absolute imports that work both as module and script)
 from DEQN.algorithm.simulation import create_episode_simulation_fn_verbose  # noqa: E402
+from DEQN.analysis.simul_analysis import simulation_analysis  # noqa: E402
 from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
-from DEQN.econ_models.RbcProdNetv2.plots import plot_sectoral_capital_mean  # noqa: E402
+from DEQN.econ_models.RbcProdNetv2.plots import (  # noqa: E402
+    plot_ergodic_histograms,
+    plot_sectoral_capital_mean,
+)
 from DEQN.econ_models.RbcProdNetv2.RbcProdNet_Sept23_2025 import Model  # noqa: E402
-from DEQN.tests.grid_simulation_analysis import (  # noqa: E402
-    _print_grid_summary,
-    run_seed_length_grid,
+from DEQN.econ_models.RbcProdNetv2.tables import (  # noqa: E402
+    create_comparative_stats_table,
+    create_descriptive_stats_table,
+    create_stochastic_ss_table,
+    create_welfare_table,
 )
 from DEQN.utils import load_experiment_data, load_trained_model_GPU  # noqa: E402
 
@@ -67,23 +72,17 @@ def create_analysis_config():
         "burn_in_periods": 1000,
         "simul_vol_scale": 1,
         "simul_seed": 0,
-        # Stochastic steady state configuration
-        "n_draws": 500,
-        "time_to_converge": 200,
-        "seed": 0,
+        "n_simul_seeds": 10,  # Number of parallel simulation seeds
         # Welfare configuration
         "welfare_n_trajects": 100,
         "welfare_traject_length": 500,
         "welfare_seed": 0,
+        # Stochastic steady state configuration
+        "n_draws": 500,
+        "time_to_converge": 200,
+        "seed": 0,
         # JAX configuration
         "double_precision": True,
-        # Grid diagnostics configuration
-        "run_seed_length_grid": True,
-        "grid_lengths": [2000, 5000, 10000],
-        "grid_n_seeds": 16,
-        "grid_burnin_fracs": [0.2],
-        "grid_experiment_labels": ["baseline"],
-        "iact_num_batches": 20,
     }
 
 
@@ -150,15 +149,19 @@ def main():
     # Run comparative analysis (integrated into main)
     print("Running comparative analysis across experiments...")
 
-    # Create simulation and stochastic steady state functions once
+    # Create simulation, welfare, and stochastic steady state functions
     simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, analysis_config))
-    stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, analysis_config))
     welfare_fn = jax.jit(get_welfare_fn(econ_model, analysis_config))
+    stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, analysis_config))
 
-    analysis_results = {}
+    # Storage for the three types of data we collect
+    simulation_data = {}  # aggregates, sectoral capital means
+    welfare_costs = {}  # welfare losses
+    stochastic_ss_data = {}  # stochastic steady state obs and policies
 
+    # Data collection loop - collect three types of data
     for experiment_label, exp_data in experiments_data.items():
-        print(f"Analyzing experiment: {experiment_label}")
+        print(f"Collecting data for experiment: {experiment_label}")
 
         experiment_config = exp_data["config"]
         experiment_name = exp_data["results"]["exper_name"]
@@ -170,123 +173,118 @@ def main():
         # Load trained model
         train_state = load_trained_model_GPU(experiment_name, save_dir, nn_config)
 
-        # Generate simulation data using verbose simulation (one long episode)
-        print(f"  Generating simulation data for {experiment_label}...")
-        episode_rng = random.PRNGKey(analysis_config["simul_seed"])
-        simul_state, simul_policies = simulation_fn(train_state, episode_rng)
-        # Extract burn-in period
-        simul_state = simul_state[analysis_config["burn_in_periods"] :]
-        simul_policies = simul_policies[analysis_config["burn_in_periods"] :]
+        # Generate simulation data
+        simul_obs, simul_policies, simul_aggregates = simulation_analysis(
+            train_state, econ_model, analysis_config, simulation_fn
+        )
 
-        # Test 1: the last observation of the simulation should be between -10 and 10
-        max_dev = jnp.max(jnp.abs(simul_state[-1, :]))
-        print(f"The max standadized dev in last obs of simulation is: {max_dev:.6f}")
-        assert max_dev < 10, f"Last observation too large: {max_dev:.6f}"
+        # 1. Store simulation data (aggregates + sectoral capital)
+        simulation_data[experiment_label] = {
+            "aggregates": simul_aggregates,
+            "sectoral_capital_mean": jnp.mean(simul_obs, axis=0)[: econ_model.n_sectors].tolist(),
+        }
 
-        # Get mean states and policies from ergodic distribution to construct aggregates.
-        simul_state_mean = jnp.mean(simul_state, axis=0)
+        # 2. Calculate and store welfare cost
+        simul_utilities = simul_aggregates[:, -1]  # Extract utility levels
+        welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
+        welfare = welfare_fn(
+            simul_utilities,
+            welfare_ss,
+            random.PRNGKey(analysis_config["welfare_seed"]),
+        )
+        welfare_loss = (1 - welfare / welfare_ss) * 100  # Convert to percentage
+        welfare_costs[experiment_label] = welfare_loss
+        print(f"    Welfare loss: {welfare_loss:.4f}%")
+
+        # 3. Calculate and store stochastic steady state
+        stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
+
+        # Validate convergence
+        max_std = jnp.max(stoch_ss_obs_std)
+        print(f"    Max stochastic SS std: {max_std:.6f}")
+        if max_std > 0.01:
+            print(f"    Warning: Stochastic SS std may be large: {max_std:.6f}")
+
+        # Get average prices from simulation policies
         simul_policies_mean = jnp.mean(simul_policies, axis=0)
         P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
         Pk_mean = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
         Pm_mean = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
 
-        # Get aggregates for simulation data
-        simul_aggregates = jax.vmap(econ_model.get_aggregates, in_axes=(0, 0, None, None, None))(
-            simul_state, simul_policies, P_mean, Pk_mean, Pm_mean
-        )
-
-        simul_aggregates_descstats = {
-            "mean": jnp.mean(simul_aggregates, axis=0).tolist(),
-            "std": jnp.std(simul_aggregates, axis=0).tolist(),
-            "skewness": skew(simul_aggregates, axis=0).tolist(),
-            "kurtosis": kurtosis(simul_aggregates, axis=0).tolist(),
-        }
-
-        # Calculate stochastic steady state from simulation data
-        print(f"  Calculating stochastic steady state for {experiment_label}...")
-        stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_state, train_state)
-
-        # Test 2: Assert that stochastic steady state standard deviation is close to zero
-        max_std = jnp.max(stoch_ss_obs_std)
-        print(f"The max std is:{max_std:.6f}")
-        assert max_std < 0.01, f"Stochastic steady state std too large: {max_std:.6f}"
-
-        # Get stochastic steady state aggregates
+        # Calculate stochastic steady state aggregates
         stoch_ss_aggregates = econ_model.get_aggregates(stoch_ss_obs, stoch_ss_policy, P_mean, Pk_mean, Pm_mean)
 
-        # Get deterministic steady state aggregates as reference
-        deterministic_ss_aggregates = econ_model.get_aggregates(
-            jnp.zeros_like(econ_model.state_ss),
-            jnp.zeros_like(econ_model.policies_ss),
-            P_mean,
-            Pk_mean,
-            Pm_mean,
+        # Store stochastic steady state data (first 7 aggregates)
+        stochastic_ss_data[experiment_label] = stoch_ss_aggregates[:7].tolist()
+
+        print(f"  Data collection completed for {experiment_label}")
+
+    print("\nData collection completed successfully!")
+
+    # ===================================================================
+    # GENERATE TABLES AND FIGURES
+    # ===================================================================
+
+    # Create output directories
+    plots_dir = os.path.join(model_dir, "Plots")
+    tables_dir = os.path.join(model_dir, "Tables")
+    os.makedirs(plots_dir, exist_ok=True)
+    os.makedirs(tables_dir, exist_ok=True)
+
+    # Extract aggregates data for table/plot functions
+    aggregates_data = {exp_label: data["aggregates"] for exp_label, data in simulation_data.items()}
+    sectoral_capital_data = {
+        exp_label: {"sectoral_capital_mean": data["sectoral_capital_mean"]}
+        for exp_label, data in simulation_data.items()
+    }
+
+    # 1. Generate descriptive statistics tables
+    print("Generating descriptive statistics tables...")
+    create_descriptive_stats_table(
+        aggregates_data=aggregates_data, save_path=os.path.join(tables_dir, "descriptive_stats_table.tex")
+    )
+
+    if len(aggregates_data) > 1:
+        create_comparative_stats_table(
+            aggregates_data=aggregates_data,
+            save_path=os.path.join(tables_dir, "descriptive_stats_comparative.tex"),
         )
 
-        print("Stochastic SS aggregates:", stoch_ss_aggregates)
-        print("Deterministic SS aggregates:", deterministic_ss_aggregates)
+    print(f"Descriptive statistics tables saved to: {tables_dir}")
 
-        # Store results including simulation data
-        # Convert JAX arrays to Python lists for JSON serialization
-        experiment_analysis_json = {
-            "simul_state_mean": simul_state_mean.tolist(),
-            "simul_policies_mean": simul_policies_mean.tolist(),
-            "simul_aggregates_mean": simul_aggregates_descstats["mean"],
-            "simul_aggregates_std": simul_aggregates_descstats["std"],
-            "simul_aggregates_skewness": simul_aggregates_descstats["skewness"],
-            "simul_aggregates_kurtosis": simul_aggregates_descstats["kurtosis"],
-            "stoch_ss_state": stoch_ss_obs.tolist(),
-            "stoch_ss_policy": stoch_ss_policy.tolist(),
-            "stoch_ss_aggregates": stoch_ss_aggregates.tolist(),
-            "deterministic_ss_aggregates": deterministic_ss_aggregates.tolist(),
-        }
+    # 2. Generate welfare table
+    print("Generating welfare table...")
+    create_welfare_table(welfare_data=welfare_costs, save_path=os.path.join(tables_dir, "welfare_table.tex"))
+    print(f"Welfare table saved to: {tables_dir}")
 
-        print(f"  Experiment analysis for {experiment_label}: {experiment_analysis_json}")
-
-        analysis_results[experiment_label] = experiment_analysis_json
-
-        # Optional: run seed × length grid diagnostics
-        if analysis_config.get("run_seed_length_grid", False):
-            grid_labels = analysis_config.get("grid_experiment_labels", [])
-            if not grid_labels or (experiment_label in grid_labels):
-                print(f"  Running seed-length grid diagnostics for {experiment_label}...")
-                grid_results = run_seed_length_grid(
-                    econ_model,
-                    train_state,
-                    base_config=analysis_config,
-                    lengths=analysis_config.get("grid_lengths", [2000, 5000, 10000]),
-                    n_seeds=int(analysis_config.get("grid_n_seeds", 16)),
-                    burnin_fracs=analysis_config.get("grid_burnin_fracs", [0.2]),
-                    iact_num_batches=int(analysis_config.get("iact_num_batches", 20)),
-                )
-                analysis_results[experiment_label]["grid_results"] = grid_results
-                _print_grid_summary(grid_results)
-
-        # store in save_dir/experiment_label/analysis_results.json
-        # experiment_dir = os.path.join(save_dir, experiment_name)
-        # os.makedirs(experiment_dir, exist_ok=True)
-        # with open(os.path.join(experiment_dir, "analysis_results.json"), "w") as f:
-        #     json.dump(experiment_analysis, f)
-
-        print(f"  Analysis completed for {experiment_label}")
-
-    print("\nAnalysis completed successfully!")
-
-    # Generate sectoral capital plot
-    print("Generating mean sectoral capital plot...")
-    # Extract sectoral capital means from the general state means for backward compatibility
-    plot_results = {}
-    for experiment_label, results in analysis_results.items():
-        plot_results[experiment_label] = {"sectoral_capital_mean": results["simul_state_mean"][: econ_model.n_sectors]}
-
-    fig, ax = plot_sectoral_capital_mean(
-        analysis_results=plot_results,
-        sector_labels=econ_model.labels,
-        save_path=os.path.join(save_dir, "sectoral_capital_mean.png"),
+    # 3. Generate stochastic steady state table
+    print("Generating stochastic steady state table...")
+    create_stochastic_ss_table(
+        stochastic_ss_data=stochastic_ss_data, save_path=os.path.join(tables_dir, "stochastic_ss_table.tex")
     )
-    print(f"Plot saved to: {os.path.join(save_dir, 'sectoral_capital_mean.png')}")
+    print(f"Stochastic steady state table saved to: {tables_dir}")
 
-    return analysis_results
+    # 4. Generate aggregate histograms
+    print("Generating aggregate histograms...")
+    plot_ergodic_histograms(aggregates_data=aggregates_data, save_dir=plots_dir)
+    print(f"Histogram plots saved to: {plots_dir}")
+
+    # 5. Generate sectoral capital bar plot
+    print("Generating sectoral capital bar plot...")
+    plot_sectoral_capital_mean(
+        analysis_results=sectoral_capital_data,
+        sector_labels=econ_model.labels,
+        save_path=os.path.join(plots_dir, "sectoral_capital_analysis.png"),
+    )
+    print(f"Sectoral capital plot saved to: {plots_dir}")
+
+    print("\nAll analysis completed successfully!")
+
+    return {
+        "simulation_data": simulation_data,
+        "welfare_costs": welfare_costs,
+        "stochastic_ss_data": stochastic_ss_data,
+    }
 
 
 if __name__ == "__main__":

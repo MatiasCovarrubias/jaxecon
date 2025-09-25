@@ -24,7 +24,7 @@ def create_stochss_fn(econ_model, config):
 
     def stochss_fn(simul_obs, train_state):
         sample_fromdist = random_draws(simul_obs, config["n_draws"], config["seed"])
-        zero_shocks = jnp.zeros(shape=(config["time_to_converge"], 1))
+        zero_shocks = jnp.zeros(shape=(config["time_to_converge"], econ_model.n_sectors))
         stoch_ss = jax.vmap(simul_traject_lastobs, in_axes=(None, None, None, 0))(
             econ_model, train_state, zero_shocks, sample_fromdist
         )

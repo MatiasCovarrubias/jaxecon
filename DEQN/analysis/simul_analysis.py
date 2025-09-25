@@ -1,74 +1,64 @@
-import pandas as pd
-from jax import lax, random
+import jax
 from jax import numpy as jnp
-from scipy.stats import kurtosis, skew
+from jax import random
 
 
-def create_episode_simul_verbose_fn(econ_model, config):
-    """Create a function that simulates an episode of the environment.
-    It differes from basic simulation function in that returns both observations and policies."""
+def simulation_analysis(train_state, econ_model, analysis_config, simulation_fn):
+    """
+    Run parallel simulations and compute aggregates.
 
-    def sample_epis_obs(train_state, epis_rng):
-        "sample obs of an episode"
-        init_obs = econ_model.initial_obs(epis_rng, config["init_range"])
-        period_rngs = random.split(epis_rng, config["periods_per_epis"])
+    Parameters:
+    -----------
+    train_state : Training state with trained neural network parameters
+    econ_model : Economic model instance
+    analysis_config : Dictionary containing simulation configuration
+    simulation_fn : JIT-compiled simulation function
 
-        def period_step(obs, period_rng):
-            policy = train_state.apply_fn(train_state.params, obs)
-            period_shock = config["simul_vol_scale"] * econ_model.sample_shock(period_rng)  # Sample next obs
-            obs_next = econ_model.step(obs, policy, period_shock)  # apply period steps.
-            return obs_next, (obs_next, policy)  # we pass it two times because of the syntax of the lax.scan loop
+    Returns:
+    --------
+    simul_obs : JAX array of shape (n_seeds * n_periods, n_state_vars)
+        Combined simulation observations after burn-in
+    simul_policies : JAX array of shape (n_seeds * n_periods, n_policy_vars)
+        Combined simulation policies after burn-in
+    simul_aggregates : JAX array of shape (n_seeds * n_periods, n_aggregates)
+        Computed aggregate variables for each observation
+    """
+    print(f"  Generating simulation data with {analysis_config['n_simul_seeds']} seeds...")
 
-        _, (epis_obs, policies) = lax.scan(period_step, init_obs, jnp.stack(period_rngs))  # we get the obs_batch
-        return epis_obs, policies
+    # Generate random seeds for parallel simulations
+    base_rng = random.PRNGKey(analysis_config["simul_seed"])
+    episode_rngs = random.split(base_rng, analysis_config["n_simul_seeds"])
 
-    return sample_epis_obs
+    # Run simulations in parallel using vmap
+    multi_simulation_fn = jax.vmap(simulation_fn, in_axes=(None, 0))
+    simul_state_multi, simul_policies_multi = multi_simulation_fn(train_state, episode_rngs)
 
+    # Extract burn-in period: shape (n_seeds, T, n_obs) -> (n_seeds, T-burn_in, n_obs)
+    simul_state_multi = simul_state_multi[:, analysis_config["burn_in_periods"] :, :]
+    simul_policies_multi = simul_policies_multi[:, analysis_config["burn_in_periods"] :, :]
 
-def create_descstats_fn(econ_model, config):
-    """Create a function that calculates descriptive statistics of the simulation results."""
+    # Reshape to combine seed and time dimensions: (n_seeds, T-burn_in, n_obs) -> (n_seeds*(T-burn_in), n_obs)
+    n_seeds, n_periods, n_state_vars = simul_state_multi.shape
+    _, _, n_policy_vars = simul_policies_multi.shape
+    simul_obs = simul_state_multi.reshape(n_seeds * n_periods, n_state_vars)
+    simul_policies = simul_policies_multi.reshape(n_seeds * n_periods, n_policy_vars)
 
-    def autocorrelation(x, lag):
-        x = x - jnp.mean(x)
-        x_lag = x[lag:]
-        x_orig = x[:-lag]
-        acf = jnp.dot(x_orig, x_lag) / jnp.dot(x, x)
-        return acf
+    # Validation test: the last observation should be reasonable (between -10 and 10)
+    max_dev = jnp.max(jnp.abs(simul_obs[-1, :]))
+    print(f"  Max standardized deviation in last obs of simulation: {max_dev:.6f}")
+    assert max_dev < 10, f"Last observation too large: {max_dev:.6f}"
 
-    def statistic(var):
+    print(f"  Using {simul_obs.shape[0]} total observations ({n_seeds} seeds × {n_periods} periods) for statistics")
 
-        means = float(jnp.mean(var))
-        sd = float(jnp.std(var))
-        skewness = skew(var)
-        kurt = kurtosis(var)
-        percentiles = jnp.quantile(var, jnp.array([0.01, 0.25, 0.5, 0.75, 0.99]))
-        autocorrelations = [autocorrelation(var, lag) for lag in range(1, 6)]
+    # Get mean states and policies from ergodic distribution to construct aggregates
+    simul_policies_mean = jnp.mean(simul_policies, axis=0)
+    P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
+    Pk_mean = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
+    Pm_mean = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
 
-        desc_stats = [means, sd, skewness, kurt] + percentiles.tolist()
-        stats = {"desc_stats": desc_stats, "autocorrelations": autocorrelations}
+    # Get aggregates for simulation data
+    simul_aggregates = jax.vmap(econ_model.get_aggregates, in_axes=(0, 0, None, None, None))(
+        simul_obs, simul_policies, P_mean, Pk_mean, Pm_mean
+    )
 
-        return stats
-
-    def descstat(simul_policies, simul_obs):
-
-        desc_stats = {}
-        autocorrs = {}
-        aggregates_dict = econ_model.get_aggregates(simul_policies)
-        keys = econ_model.get_aggregates_keys()
-        for agg_name in keys:
-            agg_value = aggregates_dict[agg_name]
-            statistics = statistic(agg_value)
-            desc_stats[agg_name] = statistics["desc_stats"]
-            autocorrs[agg_name] = statistics["autocorrelations"]
-        stat_names = ["Mean", "Sd", "Skewness", "Kurtosis", "Q1", "Q25", "Q50", "Q75", "Q99"]
-        autocorr_names = ["Lag 1", "Lag 2", "Lag 3", "Lag 4", "Lag 5"]
-        desc_stats_df = pd.DataFrame(desc_stats, index=stat_names)
-        # desc_stats_df = desc_stats_df.transpose()
-        desc_stats_df = desc_stats_df.round(5)
-        autocorrs_df = pd.DataFrame(autocorrs, index=autocorr_names)
-        # autocorrs_df = autocorrs_df.transpose()
-        autocorrs_df = autocorrs_df.round(5)
-
-        return desc_stats_df, autocorrs_df
-
-    return descstat
+    return simul_obs, simul_policies, simul_aggregates

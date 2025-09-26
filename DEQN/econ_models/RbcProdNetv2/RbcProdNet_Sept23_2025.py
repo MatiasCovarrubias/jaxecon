@@ -425,7 +425,6 @@ class Model:
             u_lhs = latin_hypercube_sample(key1, n_base, self.n_sectors)
 
             # Transform to standard normal
-            u_lhs = jnp.clip(u_lhs, 1e-6, 1 - 1e-6)
             z_base = jax.scipy.stats.norm.ppf(u_lhs)
 
             # Create antithetic pairs (works well even for nonlinear functions)
@@ -434,7 +433,6 @@ class Model:
         else:
             # Full Latin Hypercube Sampling
             u_lhs = latin_hypercube_sample(rng, mc_draws, self.n_sectors)
-            u_lhs = jnp.clip(u_lhs, 1e-6, 1 - 1e-6)
             z = jax.scipy.stats.norm.ppf(u_lhs)
 
         # Optional: Add controlled noise for highly discontinuous functions

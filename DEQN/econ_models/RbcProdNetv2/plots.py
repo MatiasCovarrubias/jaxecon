@@ -317,7 +317,7 @@ def plot_ergodic_histograms(
         bin_range = (-0.1, 0.1)
 
         # Create bins using the fixed range
-        bins = np.linspace(bin_range[0], bin_range[1], 41)  # 41 edges for 40 bins
+        bins = np.linspace(bin_range[0], bin_range[1], 31)  # 31 edges for 30 bins
         bin_centers = (bins[:-1] + bins[1:]) / 2
 
         # Create figure

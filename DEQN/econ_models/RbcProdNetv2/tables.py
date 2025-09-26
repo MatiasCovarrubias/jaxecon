@@ -86,6 +86,9 @@ def create_descriptive_stats_table(
         with open(final_save_path, "w") as file:
             file.write(latex_code)
 
+    # Print the table
+    print(latex_code)
+
     return latex_code
 
 
@@ -219,6 +222,9 @@ def create_comparative_stats_table(
         with open(final_save_path, "w") as file:
             file.write(latex_code)
 
+    # Print the table
+    print(latex_code)
+
     return latex_code
 
 
@@ -309,6 +315,9 @@ def create_welfare_table(
         with open(final_save_path, "w") as file:
             file.write(latex_code)
 
+    # Print the table
+    print(latex_code)
+
     return latex_code
 
 
@@ -393,6 +402,9 @@ def create_stochastic_ss_table(
 
         with open(final_save_path, "w") as file:
             file.write(latex_code)
+
+    # Print the table
+    print(latex_code)
 
     return latex_code
 

@@ -28,6 +28,7 @@ def create_descriptive_stats_table(
     aggregates_data : dict
         Dictionary where keys are experiment names and values are arrays of simulated aggregates
         Each array should have shape (n_periods, n_aggregates) where n_aggregates >= 7
+        Values should be in decimal form (e.g., 0.001 for 0.1%) - mean and std will be converted to percentages
     aggregate_labels : list, optional
         Labels for the aggregate variables
     save_path : str, optional
@@ -105,7 +106,7 @@ def _generate_latex_table(df: pd.DataFrame) -> str:
     latex_code = (
         r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
-        r"\textbf{Variable} & \textbf{Mean} & \textbf{Sd} & \textbf{Skewness} & \textbf{Kurtosis} \\" + "\n"
+        r"\textbf{Variable} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Kurtosis} \\" + "\n"
         r"\midrule" + "\n"
         r"\cmidrule(lr){1-1} \cmidrule(lr){2-5}" + "\n"
     )
@@ -149,6 +150,7 @@ def create_comparative_stats_table(
     -----------
     aggregates_data : dict
         Dictionary where keys are experiment names and values are arrays of simulated aggregates
+        Values should be in decimal form (e.g., 0.001 for 0.1%) - mean and std will be converted to percentages
     aggregate_labels : list, optional
         Labels for the aggregate variables
     save_path : str, optional
@@ -172,7 +174,13 @@ def create_comparative_stats_table(
     # Process each aggregate variable
     for agg_idx, agg_label in enumerate(aggregate_labels):
         for stat_label in stats_labels:
-            row_data: Dict[str, Any] = {"Variable": f"{agg_label} ({stat_label})"}
+            # Add percentage notation for Mean and Sd
+            if stat_label in ["Mean", "Sd"]:
+                variable_label = f"{agg_label} ({stat_label} %)"
+            else:
+                variable_label = f"{agg_label} ({stat_label})"
+
+            row_data: Dict[str, Any] = {"Variable": variable_label}
 
             # Calculate statistic for each experiment
             for exp_name in experiment_names:
@@ -362,6 +370,7 @@ def create_stochastic_ss_table(
     -----------
     stochastic_ss_data : dict
         Dictionary where keys are experiment names and values are lists of stochastic steady state aggregates
+        Values should be in decimal form (e.g., 0.001 for 0.1%) and will be converted to percentages for display
     aggregate_labels : list, optional
         Labels for the aggregate variables
     save_path : str, optional
@@ -403,6 +412,7 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, list], agg
     -----------
     stochastic_ss_data : dict
         Dictionary with experiment names as keys and stochastic steady state aggregates as values
+        Values are expected in decimal form and will be converted to percentages for display
     aggregate_labels : list
         Labels for the aggregate variables
 
@@ -418,7 +428,7 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, list], agg
         f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_experiments}}}{{X}}}}\n"
         + r"\toprule"
         + "\n"
-        + r"\textbf{Aggregate}"
+        + r"\textbf{Aggregate (\%)}"
     )
 
     # Add experiment headers
@@ -435,8 +445,9 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, list], agg
         for exp_name in experiment_names:
             ss_values = stochastic_ss_data[exp_name]
             if agg_idx < len(ss_values):
-                value = ss_values[agg_idx]
-                latex_code += f" & {value:.4f}"
+                # Convert to percentage for display
+                value_pct = ss_values[agg_idx] * 100
+                latex_code += f" & {value_pct:.2f}"
             else:
                 latex_code += " & —"
 

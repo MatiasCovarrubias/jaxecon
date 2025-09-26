@@ -79,6 +79,9 @@ def plot_upstreamness(
     --------
     fig, ax : matplotlib figure and axis objects
     """
+    # Print what's being plotted
+    print("📊 Plotting: Sector Upstreamness Measures")
+
     # Use the global color palette
     plot_colors = colors[:3]  # Use first 3 colors from the seaborn palette
     # Extract data
@@ -186,6 +189,9 @@ def plot_sectoral_capital_mean(
     --------
     fig, ax : matplotlib figure and axis objects
     """
+    # Print what's being plotted
+    print("📊 Plotting: Mean Sectoral Capital Across Experiments")
+
     # Extract data for plotting
     experiments = list(analysis_results.keys())
     n_experiments = len(experiments)
@@ -308,6 +314,9 @@ def plot_ergodic_histograms(
     --------
     list of (fig, ax) tuples for each aggregate variable
     """
+    # Print what's being plotted
+    print("📊 Plotting: Ergodic Distribution Histograms")
+
     # Get experiment names and aggregate variable names
     experiment_names = list(aggregates_data.keys())
     n_experiments = len(experiment_names)
@@ -322,6 +331,9 @@ def plot_ergodic_histograms(
     figures = []
 
     for agg_idx in range(n_aggregates):
+        # Print which specific histogram is being plotted
+        print(f"  📈 Creating histogram for: {aggregate_labels[agg_idx]}")
+
         # Extract data for this aggregate variable across all experiments and convert to percentages
         agg_data = {}
         for exp_name in experiment_names:
@@ -430,6 +442,9 @@ def plot_gir_responses(
     --------
     list of (fig, ax) tuples for each sector-aggregate combination
     """
+    # Print what's being plotted
+    print("📊 Plotting: Generalized Impulse Response Functions")
+
     # Get experiment names
     experiment_names = list(gir_data.keys())
     n_experiments = len(experiment_names)
@@ -463,6 +478,9 @@ def plot_gir_responses(
     # Loop through each sector first, then each aggregate
     for sector_name in sectors_to_plot:
         for agg_idx in aggregate_indices:
+            # Print which specific GIR plot is being created
+            print(f"  📈 Creating GIR plot: {aggregate_labels[agg_idx]} response to {sector_name} shock")
+
             # Create figure for this sector-aggregate combination
             fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
@@ -571,6 +589,9 @@ def plot_gir_heatmap(
     --------
     fig, ax : matplotlib figure and axis objects
     """
+    # Print what's being plotted
+    print(f"📊 Plotting: GIR Cross-Sector Heatmap - {aggregate_labels[aggregate_idx]} at Period {time_slice}")
+
     # Get experiment names (assuming single experiment for heatmap)
     experiment_names = list(gir_data.keys())
     first_experiment = experiment_names[0]

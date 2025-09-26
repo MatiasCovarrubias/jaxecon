@@ -146,6 +146,7 @@ def plot_sectoral_capital_mean(
     sector_labels: list,
     figsize: Tuple[float, float] = (12, 8),
     save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
 ):
     """
     Create a publication-quality bar graph of mean sectoral capital across experiments.
@@ -162,7 +163,10 @@ def plot_sectoral_capital_mean(
     figsize : tuple, optional
         Figure size (width, height) in inches
     save_path : str, optional
-        If provided, save the figure to this path
+        If provided, save the figure to this path. If analysis_name is provided, it will modify
+        the filename to include the analysis name.
+    analysis_name : str, optional
+        Name of the analysis to include in the filename. If None, uses default filename.
 
     Returns:
     --------
@@ -239,7 +243,17 @@ def plot_sectoral_capital_mean(
     # Adjust layout and save if requested
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        # Modify filename to include analysis name if provided
+        if analysis_name:
+            # Extract directory and extension
+            save_dir = os.path.dirname(save_path)
+            base_filename = os.path.basename(save_path)
+            ext = os.path.splitext(base_filename)[1] or ".png"
+            new_filename = f"sectoral_capital_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+        plt.savefig(final_save_path, dpi=300, bbox_inches="tight", format="png")
 
     return fig, ax
 
@@ -257,6 +271,7 @@ def plot_ergodic_histograms(
     ],
     figsize: Tuple[float, float] = (15, 10),
     save_dir: Optional[str] = None,
+    analysis_name: Optional[str] = None,
 ):
     """
     Create publication-quality histograms of ergodic distributions for aggregate variables.
@@ -272,6 +287,8 @@ def plot_ergodic_histograms(
         Figure size (width, height) in inches
     save_dir : str, optional
         Directory to save plots to. If None, plots are not saved.
+    analysis_name : str, optional
+        Name of the analysis to include in the filename. If None, no analysis name is added.
 
     Returns:
     --------
@@ -349,7 +366,12 @@ def plot_ergodic_histograms(
 
         # Save if directory provided
         if save_dir:
-            save_path = os.path.join(save_dir, f"Histogram_{var_names[agg_idx]}_comparative.png")
+            # Create filename with analysis name if provided
+            if analysis_name:
+                filename = f"Histogram_{var_names[agg_idx]}_{analysis_name}.png"
+            else:
+                filename = f"Histogram_{var_names[agg_idx]}_comparative.png"
+            save_path = os.path.join(save_dir, filename)
             plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
 
         figures.append((fig, ax))

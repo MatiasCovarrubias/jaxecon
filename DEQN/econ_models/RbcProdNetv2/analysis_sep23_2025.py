@@ -40,6 +40,7 @@ from jax import random
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
+model_dir = os.path.join(repo_root, "DEQN", "econ_models", "RbcProdNetv2")
 
 # DEQN imports (use absolute imports that work both as module and script)
 from DEQN.algorithm.simulation import create_episode_simulation_fn_verbose  # noqa: E402
@@ -66,6 +67,8 @@ jax_config.update("jax_debug_nans", True)
 def create_analysis_config():
     """Create configuration for analysis."""
     return {
+        # Analysis identification
+        "analysis_name": "baseline_analysis",  # Name for this specific analysis run
         # Simulation configuration
         "init_range": 0,
         "periods_per_epis": 6000,
@@ -87,7 +90,6 @@ def create_analysis_config():
 
 
 def main():
-    model_dir = os.path.join(repo_root, "DEQN", "econ_models", "RbcProdNetv2")
     print("RBC Production Network Model Analysis")
     print("=" * 60)
 
@@ -124,17 +126,21 @@ def main():
 
     # Load model data and create economic model
     print("Loading economic model data...")
+
     model_data = sio.loadmat(model_path, simplify_cells=True)
+    # Create state_ss from k_ss and a_ss (zeros) and initialize model directly
+    n_sectors = model_data["SolData"]["parameters"]["parn_sectors"]
+    a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
+    state_ss = jnp.concatenate([model_data["SolData"]["k_ss"], a_ss])
 
     econ_model = Model(
         parameters=model_data["SolData"]["parameters"],
-        state_ss=model_data["SolData"]["state_ss"],
+        state_ss=state_ss,
         policies_ss=model_data["SolData"]["policies_ss"],
         state_sd=model_data["SolData"]["states_sd"],
         policies_sd=model_data["SolData"]["policies_sd"],
         double_precision=double_precision,
     )
-
     # Load experiment data
     print("Loading experiment data...")
     experiments_data = load_experiment_data(experiments_to_analyze, save_dir)
@@ -241,32 +247,43 @@ def main():
     # 1. Generate descriptive statistics tables
     print("Generating descriptive statistics tables...")
     create_descriptive_stats_table(
-        aggregates_data=aggregates_data, save_path=os.path.join(tables_dir, "descriptive_stats_table.tex")
+        aggregates_data=aggregates_data,
+        save_path=os.path.join(tables_dir, "descriptive_stats_table.tex"),
+        analysis_name=analysis_config["analysis_name"],
     )
 
     if len(aggregates_data) > 1:
         create_comparative_stats_table(
             aggregates_data=aggregates_data,
             save_path=os.path.join(tables_dir, "descriptive_stats_comparative.tex"),
+            analysis_name=analysis_config["analysis_name"],
         )
 
     print(f"Descriptive statistics tables saved to: {tables_dir}")
 
     # 2. Generate welfare table
     print("Generating welfare table...")
-    create_welfare_table(welfare_data=welfare_costs, save_path=os.path.join(tables_dir, "welfare_table.tex"))
+    create_welfare_table(
+        welfare_data=welfare_costs,
+        save_path=os.path.join(tables_dir, "welfare_table.tex"),
+        analysis_name=analysis_config["analysis_name"],
+    )
     print(f"Welfare table saved to: {tables_dir}")
 
     # 3. Generate stochastic steady state table
     print("Generating stochastic steady state table...")
     create_stochastic_ss_table(
-        stochastic_ss_data=stochastic_ss_data, save_path=os.path.join(tables_dir, "stochastic_ss_table.tex")
+        stochastic_ss_data=stochastic_ss_data,
+        save_path=os.path.join(tables_dir, "stochastic_ss_table.tex"),
+        analysis_name=analysis_config["analysis_name"],
     )
     print(f"Stochastic steady state table saved to: {tables_dir}")
 
     # 4. Generate aggregate histograms
     print("Generating aggregate histograms...")
-    plot_ergodic_histograms(aggregates_data=aggregates_data, save_dir=plots_dir)
+    plot_ergodic_histograms(
+        aggregates_data=aggregates_data, save_dir=plots_dir, analysis_name=analysis_config["analysis_name"]
+    )
     print(f"Histogram plots saved to: {plots_dir}")
 
     # 5. Generate sectoral capital bar plot
@@ -275,6 +292,7 @@ def main():
         analysis_results=sectoral_capital_data,
         sector_labels=econ_model.labels,
         save_path=os.path.join(plots_dir, "sectoral_capital_analysis.png"),
+        analysis_name=analysis_config["analysis_name"],
     )
     print(f"Sectoral capital plot saved to: {plots_dir}")
 

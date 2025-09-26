@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -17,6 +18,7 @@ def create_descriptive_stats_table(
         "Utility",
     ],
     save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
 ) -> str:
     """
     Create a LaTeX table with descriptive statistics for aggregate variables across experiments.
@@ -29,7 +31,10 @@ def create_descriptive_stats_table(
     aggregate_labels : list, optional
         Labels for the aggregate variables
     save_path : str, optional
-        If provided, save the LaTeX table to this path
+        If provided, save the LaTeX table to this path. If analysis_name is provided, it will
+        modify the filename to include the analysis name.
+    analysis_name : str, optional
+        Name of the analysis to include in the filename. If None, uses default filename.
 
     Returns:
     --------
@@ -67,7 +72,18 @@ def create_descriptive_stats_table(
 
     # Save if path provided
     if save_path:
-        with open(save_path, "w") as file:
+        # Modify filename to include analysis name if provided
+        if analysis_name:
+            save_dir = os.path.dirname(save_path)
+            base_filename = os.path.basename(save_path)
+            name_without_ext = os.path.splitext(base_filename)[0]
+            ext = os.path.splitext(base_filename)[1] or ".tex"
+            new_filename = f"descriptive_stats_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+
+        with open(final_save_path, "w") as file:
             file.write(latex_code)
 
     return latex_code
@@ -124,6 +140,7 @@ def create_comparative_stats_table(
         "Utility",
     ],
     save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
 ) -> str:
     """
     Create a comparative LaTeX table with descriptive statistics organized by variable
@@ -136,7 +153,10 @@ def create_comparative_stats_table(
     aggregate_labels : list, optional
         Labels for the aggregate variables
     save_path : str, optional
-        If provided, save the LaTeX table to this path
+        If provided, save the LaTeX table to this path. If analysis_name is provided, it will
+        modify the filename to include the analysis name.
+    analysis_name : str, optional
+        Name of the analysis to include in the filename. If None, uses default filename.
 
     Returns:
     --------
@@ -186,7 +206,17 @@ def create_comparative_stats_table(
 
     # Save if path provided
     if save_path:
-        with open(save_path, "w") as file:
+        # Modify filename to include analysis name if provided
+        if analysis_name:
+            save_dir = os.path.dirname(save_path)
+            base_filename = os.path.basename(save_path)
+            ext = os.path.splitext(base_filename)[1] or ".tex"
+            new_filename = f"descriptive_stats_comparative_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+
+        with open(final_save_path, "w") as file:
             file.write(latex_code)
 
     return latex_code
@@ -242,6 +272,7 @@ def _generate_comparative_latex_table(df: pd.DataFrame, experiment_names: list) 
 def create_welfare_table(
     welfare_data: Dict[str, float],
     save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
 ) -> str:
     """
     Create a LaTeX table with welfare costs for different experiments.
@@ -251,7 +282,10 @@ def create_welfare_table(
     welfare_data : dict
         Dictionary where keys are experiment names and values are welfare losses (in percentage)
     save_path : str, optional
-        If provided, save the LaTeX table to this path
+        If provided, save the LaTeX table to this path. If analysis_name is provided, it will
+        modify the filename to include the analysis name.
+    analysis_name : str, optional
+        Name of the analysis to include in the filename. If None, uses default filename.
 
     Returns:
     --------
@@ -262,7 +296,17 @@ def create_welfare_table(
 
     # Save if path provided
     if save_path:
-        with open(save_path, "w") as file:
+        # Modify filename to include analysis name if provided
+        if analysis_name:
+            save_dir = os.path.dirname(save_path)
+            base_filename = os.path.basename(save_path)
+            ext = os.path.splitext(base_filename)[1] or ".tex"
+            new_filename = f"welfare_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+
+        with open(final_save_path, "w") as file:
             file.write(latex_code)
 
     return latex_code
@@ -311,6 +355,7 @@ def create_stochastic_ss_table(
         "Utility",
     ],
     save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
 ) -> str:
     """
     Create a LaTeX table with stochastic steady state values for key aggregates across experiments.
@@ -322,7 +367,10 @@ def create_stochastic_ss_table(
     aggregate_labels : list, optional
         Labels for the aggregate variables
     save_path : str, optional
-        If provided, save the LaTeX table to this path
+        If provided, save the LaTeX table to this path. If analysis_name is provided, it will
+        modify the filename to include the analysis name.
+    analysis_name : str, optional
+        Name of the analysis to include in the filename. If None, uses default filename.
 
     Returns:
     --------
@@ -333,7 +381,17 @@ def create_stochastic_ss_table(
 
     # Save if path provided
     if save_path:
-        with open(save_path, "w") as file:
+        # Modify filename to include analysis name if provided
+        if analysis_name:
+            save_dir = os.path.dirname(save_path)
+            base_filename = os.path.basename(save_path)
+            ext = os.path.splitext(base_filename)[1] or ".tex"
+            new_filename = f"stochastic_ss_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+
+        with open(final_save_path, "w") as file:
             file.write(latex_code)
 
     return latex_code

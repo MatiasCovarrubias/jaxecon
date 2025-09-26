@@ -76,7 +76,6 @@ def create_descriptive_stats_table(
         if analysis_name:
             save_dir = os.path.dirname(save_path)
             base_filename = os.path.basename(save_path)
-            name_without_ext = os.path.splitext(base_filename)[0]
             ext = os.path.splitext(base_filename)[1] or ".tex"
             new_filename = f"descriptive_stats_{analysis_name}{ext}"
             final_save_path = os.path.join(save_dir, new_filename)
@@ -163,7 +162,6 @@ def create_comparative_stats_table(
     str : The LaTeX table code
     """
     experiment_names = list(aggregates_data.keys())
-    n_experiments = len(experiment_names)
 
     # Create multi-index for statistics x experiments
     stats_labels = ["Mean", "Sd", "Skewness", "Kurtosis"]
@@ -174,7 +172,7 @@ def create_comparative_stats_table(
     # Process each aggregate variable
     for agg_idx, agg_label in enumerate(aggregate_labels):
         for stat_label in stats_labels:
-            row_data = {"Variable": f"{agg_label} ({stat_label})"}
+            row_data: Dict[str, Any] = {"Variable": f"{agg_label} ({stat_label})"}
 
             # Calculate statistic for each experiment
             for exp_name in experiment_names:
@@ -183,17 +181,17 @@ def create_comparative_stats_table(
                     agg_values = simul_aggregates[:, agg_idx]
 
                     if stat_label == "Mean":
-                        value = np.mean(agg_values) * 100
+                        value = float(np.mean(agg_values) * 100)
                     elif stat_label == "Sd":
-                        value = np.std(agg_values) * 100
+                        value = float(np.std(agg_values) * 100)
                     elif stat_label == "Skewness":
-                        value = skew(agg_values)
+                        value = float(skew(agg_values))
                     elif stat_label == "Kurtosis":
-                        value = kurtosis(agg_values)
+                        value = float(kurtosis(agg_values))
 
                     row_data[exp_name] = value
                 else:
-                    row_data[exp_name] = np.nan
+                    row_data[exp_name] = float(np.nan)
 
             table_data.append(row_data)
 

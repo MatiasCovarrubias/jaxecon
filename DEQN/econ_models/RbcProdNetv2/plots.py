@@ -44,10 +44,22 @@ plt.rc("figure", titlesize=LARGE_SIZE)
 plt.rc("mathtext", fontset="dejavusans")  # DejaVu math fonts
 
 
+def configure_for_colab():
+    """
+    Configure matplotlib settings for optimal display in Google Colab.
+
+    This function sets lower DPI for display while keeping high DPI for saved figures.
+    Call this function at the beginning of your Colab notebook.
+    """
+    plt.rcParams["figure.dpi"] = 100  # Lower DPI for Colab display
+    plt.rcParams["savefig.dpi"] = 300  # High DPI for saved figures
+
+
 def plot_upstreamness(
     upstreamness_data: Dict[str, Any],
     figsize: Tuple[float, float] = (14, 8),
     save_path: Optional[str] = None,
+    display_dpi: int = 100,
 ):
     """
     Create a publication-quality bar graph of upstreamness measures.
@@ -60,6 +72,8 @@ def plot_upstreamness(
         Figure size (width, height) in inches
     save_path : str, optional
         If provided, save the figure to this path
+    display_dpi : int, optional
+        DPI for display (default 100). Saved figures always use 300 DPI.
 
     Returns:
     --------
@@ -81,7 +95,7 @@ def plot_upstreamness(
     sorted_U_simple = U_simple[sorted_indices]
 
     # Create figure and axis
-    fig, ax = plt.subplots(figsize=figsize, dpi=300)
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
     # Set bar width and positions
     bar_width = 0.25
@@ -123,20 +137,17 @@ def plot_upstreamness(
     ax.set_xticks(x)
     ax.set_xticklabels(sorted_sectors, rotation=45, ha="right")
 
-    # Set labels and title
+    # Set labels
     ax.set_xlabel("Sector", fontweight="bold")
     ax.set_ylabel("Upstreamness Measure", fontweight="bold")
 
     # Add legend
     ax.legend(frameon=True, framealpha=0.9, loc="upper right")
 
-    # Set title
-    ax.set_title("Sector Upstreamness Measures", fontweight="bold", pad=20)
-
     # Adjust layout and save if requested
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")  # Keep high DPI for saved files
 
     return fig, ax
 
@@ -147,6 +158,7 @@ def plot_sectoral_capital_mean(
     figsize: Tuple[float, float] = (12, 8),
     save_path: Optional[str] = None,
     analysis_name: Optional[str] = None,
+    display_dpi: int = 100,
 ):
     """
     Create a publication-quality bar graph of mean sectoral capital across experiments.
@@ -167,6 +179,8 @@ def plot_sectoral_capital_mean(
         the filename to include the analysis name.
     analysis_name : str, optional
         Name of the analysis to include in the filename. If None, uses default filename.
+    display_dpi : int, optional
+        DPI for display (default 100). Saved figures always use 300 DPI.
 
     Returns:
     --------
@@ -194,7 +208,7 @@ def plot_sectoral_capital_mean(
         sorted_capital_data[exp_name] = capital_data[exp_name][sorted_indices]
 
     # Create figure and axis
-    fig, ax = plt.subplots(figsize=figsize, dpi=300)
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
     # Set bar width and positions
     bar_width = 0.8 / n_experiments  # Adjust width based on number of experiments
@@ -224,15 +238,12 @@ def plot_sectoral_capital_mean(
     # Consistent tick styling
     ax.tick_params(axis="both", which="major")
 
-    # Set labels and title using predefined font sizes
+    # Set labels using predefined font sizes
     ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
     ax.set_ylabel("Average Capital (% Deviations from SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
 
     # Add legend using predefined font size
     ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
-
-    # Set title using predefined font size
-    ax.set_title("Mean Sectoral Capital Across Experiments", fontweight="bold", pad=20, fontsize=LARGE_SIZE)
 
     # Add horizontal line at y=0 (steady state) - consistent with other plots
     ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
@@ -272,6 +283,7 @@ def plot_ergodic_histograms(
     figsize: Tuple[float, float] = (15, 10),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
+    display_dpi: int = 100,
 ):
     """
     Create publication-quality histograms of ergodic distributions for aggregate variables.
@@ -289,6 +301,8 @@ def plot_ergodic_histograms(
         Directory to save plots to. If None, plots are not saved.
     analysis_name : str, optional
         Name of the analysis to include in the filename. If None, no analysis name is added.
+    display_dpi : int, optional
+        DPI for display (default 100). Saved figures always use 300 DPI.
 
     Returns:
     --------
@@ -321,7 +335,7 @@ def plot_ergodic_histograms(
         bin_centers = (bins[:-1] + bins[1:]) / 2
 
         # Create figure
-        fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=display_dpi)
 
         # Plot histogram for each experiment
         for i, exp_name in enumerate(experiment_names):
@@ -342,9 +356,6 @@ def plot_ergodic_histograms(
             fontsize=MEDIUM_SIZE,
         )
         ax.set_ylabel("Frequency", fontweight="bold", fontsize=MEDIUM_SIZE)
-        ax.set_title(
-            f"Ergodic Distribution: {aggregate_labels[agg_idx]}", fontweight="bold", pad=20, fontsize=LARGE_SIZE
-        )
 
         # Legend
         ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
@@ -389,6 +400,7 @@ def plot_gir_responses(
     figsize: Tuple[float, float] = (12, 8),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
+    display_dpi: int = 100,
 ):
     """
     Create publication-quality plots of Generalized Impulse Responses over time.
@@ -411,6 +423,8 @@ def plot_gir_responses(
         Directory to save plots to. If None, plots are not saved.
     analysis_name : str, optional
         Name of the analysis to include in the filename.
+    display_dpi : int, optional
+        DPI for display (default 100). Saved figures always use 300 DPI.
 
     Returns:
     --------
@@ -450,7 +464,7 @@ def plot_gir_responses(
     for sector_name in sectors_to_plot:
         for agg_idx in aggregate_indices:
             # Create figure for this sector-aggregate combination
-            fig, ax = plt.subplots(figsize=figsize, dpi=300)
+            fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
             # Plot for each experiment (if multiple)
             for j, exp_name in enumerate(experiment_names):
@@ -480,12 +494,6 @@ def plot_gir_responses(
             # Styling
             ax.set_xlabel("Time Periods", fontweight="bold", fontsize=MEDIUM_SIZE)
             ax.set_ylabel(f"{aggregate_labels[agg_idx]} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
-            ax.set_title(
-                f"GIR: {aggregate_labels[agg_idx]} - {sector_name} Shock",
-                fontweight="bold",
-                pad=20,
-                fontsize=LARGE_SIZE,
-            )
 
             # Legend
             if n_experiments > 1:
@@ -535,6 +543,7 @@ def plot_gir_heatmap(
     figsize: Tuple[float, float] = (14, 10),
     save_path: Optional[str] = None,
     analysis_name: Optional[str] = None,
+    display_dpi: int = 100,
 ):
     """
     Create a heatmap showing GIR responses across sectors at a specific time period.
@@ -555,6 +564,8 @@ def plot_gir_heatmap(
         If provided, save the figure to this path
     analysis_name : str, optional
         Name of the analysis to include in the filename
+    display_dpi : int, optional
+        DPI for display (default 100). Saved figures always use 300 DPI.
 
     Returns:
     --------
@@ -584,7 +595,7 @@ def plot_gir_heatmap(
     response_matrix = np.array(responses).reshape(1, -1)
 
     # Create figure
-    fig, ax = plt.subplots(figsize=figsize, dpi=300)
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
     # Create heatmap
     im = ax.imshow(response_matrix, cmap="RdBu_r", aspect="auto")
@@ -598,14 +609,6 @@ def plot_gir_heatmap(
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax)
     cbar.set_label(f"{aggregate_labels[aggregate_idx]} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
-
-    # Styling
-    ax.set_title(
-        f"GIR Cross-Sector Response: {aggregate_labels[aggregate_idx]} at Period {time_slice}",
-        fontweight="bold",
-        pad=20,
-        fontsize=LARGE_SIZE,
-    )
 
     # Apply consistent styling
     ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)

@@ -371,3 +371,257 @@ def plot_ergodic_histograms(
         figures.append((fig, ax))
 
     return figures
+
+
+def plot_gir_responses(
+    gir_data: Dict[str, Any],
+    aggregate_indices: list = [0, 3, 5],  # Default: Consumption, Output, Investment
+    aggregate_labels: list = [
+        "Agg. Consumption",
+        "Agg. Labor",
+        "Agg. Capital",
+        "Agg. Output",
+        "Agg. Intermediate Goods",
+        "Agg. Investment",
+        "Utility Welfare",
+    ],
+    sectors_to_plot: Optional[list] = None,  # If None, plots first 6 sectors
+    figsize: Tuple[float, float] = (12, 8),
+    save_dir: Optional[str] = None,
+    analysis_name: Optional[str] = None,
+):
+    """
+    Create publication-quality plots of Generalized Impulse Responses over time.
+
+    Parameters:
+    -----------
+    gir_data : dict
+        Dictionary containing GIR results from analysis
+        Structure: {experiment_name: {sector_name: {"gir_aggregates": array, "sector_idx": int}}}
+    aggregate_indices : list, optional
+        Which aggregate variables to plot (indices 0-6). Default plots C, Y, I.
+    aggregate_labels : list, optional
+        Labels for the aggregate variables
+    sectors_to_plot : list, optional
+        Which sectors to plot. If None, plots first 6 sectors to avoid overcrowding.
+    figsize : tuple, optional
+        Figure size (width, height) in inches
+    save_dir : str, optional
+        Directory to save plots to. If None, plots are not saved.
+    analysis_name : str, optional
+        Name of the analysis to include in the filename.
+
+    Returns:
+    --------
+    list of (fig, ax) tuples for each aggregate variable
+    """
+    # Get experiment names
+    experiment_names = list(gir_data.keys())
+    n_experiments = len(experiment_names)
+
+    # Get first experiment to determine sectors and time length
+    first_experiment = experiment_names[0]
+    first_exp_data = gir_data[first_experiment]
+
+    # Get sector names and limit to sectors_to_plot
+    all_sector_names = list(first_exp_data.keys())
+    if sectors_to_plot is None:
+        # Default to first 6 sectors to avoid overcrowding
+        sectors_to_plot = all_sector_names[:6]
+    else:
+        # Filter to requested sectors
+        sectors_to_plot = [s for s in sectors_to_plot if s in all_sector_names]
+
+    # Get time length from first sector's GIR data
+    first_sector = sectors_to_plot[0]
+    time_length = first_exp_data[first_sector]["gir_aggregates"].shape[0]
+    time_periods = np.arange(time_length)
+
+    # Use colors from the global palette
+    plot_colors = colors
+
+    # Variable short names for file saving
+    var_names = ["C_agg", "L_agg", "K_agg", "Y_agg", "M_agg", "I_agg", "Utility_welfare"]
+
+    figures = []
+
+    for agg_idx in aggregate_indices:
+        # Create figure
+        fig, ax = plt.subplots(figsize=figsize, dpi=300)
+
+        # Plot each sector's response for this aggregate
+        for i, sector_name in enumerate(sectors_to_plot):
+            # Plot for each experiment (if multiple)
+            for j, exp_name in enumerate(experiment_names):
+                gir_aggregates = gir_data[exp_name][sector_name]["gir_aggregates"]
+
+                # Convert to percentages and extract specific aggregate
+                response_pct = gir_aggregates[:, agg_idx] * 100
+
+                # Create label
+                if n_experiments > 1:
+                    label = f"{sector_name} ({exp_name})"
+                    color = plot_colors[(i * n_experiments + j) % len(plot_colors)]
+                    linestyle = "-" if j == 0 else "--"
+                else:
+                    label = sector_name
+                    color = plot_colors[i % len(plot_colors)]
+                    linestyle = "-"
+
+                # Plot the impulse response
+                ax.plot(
+                    time_periods, response_pct, label=label, color=color, linewidth=2, linestyle=linestyle, alpha=0.8
+                )
+
+        # Add horizontal line at zero
+        ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+
+        # Styling
+        ax.set_xlabel("Time Periods", fontweight="bold", fontsize=MEDIUM_SIZE)
+        ax.set_ylabel(f"{aggregate_labels[agg_idx]} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
+        ax.set_title(
+            f"Generalized Impulse Response: {aggregate_labels[agg_idx]}", fontweight="bold", pad=20, fontsize=LARGE_SIZE
+        )
+
+        # Legend - place outside if many sectors
+        if len(sectors_to_plot) > 4:
+            ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=SMALL_SIZE)
+        else:
+            ax.legend(frameon=True, framealpha=0.9, loc="best", fontsize=SMALL_SIZE)
+
+        # Grid
+        ax.grid(True, alpha=0.3)
+
+        # Apply consistent styling
+        ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
+
+        # Set x-axis to start from 0
+        ax.set_xlim(0, time_length - 1)
+
+        # Adjust layout
+        plt.tight_layout()
+
+        # Save if directory provided
+        if save_dir:
+            # Create filename with analysis name if provided
+            if analysis_name:
+                filename = f"GIR_{var_names[agg_idx]}_{analysis_name}.png"
+            else:
+                filename = f"GIR_{var_names[agg_idx]}.png"
+            save_path = os.path.join(save_dir, filename)
+            plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+
+        figures.append((fig, ax))
+
+    return figures
+
+
+def plot_gir_heatmap(
+    gir_data: Dict[str, Any],
+    aggregate_idx: int = 0,  # Default: Consumption
+    aggregate_labels: list = [
+        "Agg. Consumption",
+        "Agg. Labor",
+        "Agg. Capital",
+        "Agg. Output",
+        "Agg. Intermediate Goods",
+        "Agg. Investment",
+        "Utility Welfare",
+    ],
+    time_slice: int = 10,  # Which time period to show (default: period 10)
+    figsize: Tuple[float, float] = (14, 10),
+    save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
+):
+    """
+    Create a heatmap showing GIR responses across sectors at a specific time period.
+
+    Parameters:
+    -----------
+    gir_data : dict
+        Dictionary containing GIR results from analysis
+    aggregate_idx : int, optional
+        Which aggregate variable to plot (index 0-6). Default is consumption.
+    aggregate_labels : list, optional
+        Labels for the aggregate variables
+    time_slice : int, optional
+        Which time period to show in the heatmap
+    figsize : tuple, optional
+        Figure size (width, height) in inches
+    save_path : str, optional
+        If provided, save the figure to this path
+    analysis_name : str, optional
+        Name of the analysis to include in the filename
+
+    Returns:
+    --------
+    fig, ax : matplotlib figure and axis objects
+    """
+    # Get experiment names (assuming single experiment for heatmap)
+    experiment_names = list(gir_data.keys())
+    first_experiment = experiment_names[0]
+    exp_data = gir_data[first_experiment]
+
+    # Get all sector names and their responses
+    sector_names = list(exp_data.keys())
+    n_sectors = len(sector_names)
+
+    # Extract responses at the specified time slice
+    responses = []
+    sector_labels = []
+
+    for sector_name in sector_names:
+        gir_aggregates = exp_data[sector_name]["gir_aggregates"]
+        # Convert to percentage and get specific aggregate at time slice
+        response_pct = gir_aggregates[time_slice, aggregate_idx] * 100
+        responses.append(response_pct)
+        sector_labels.append(sector_name)
+
+    # Create matrix for heatmap (single row)
+    response_matrix = np.array(responses).reshape(1, -1)
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=figsize, dpi=300)
+
+    # Create heatmap
+    im = ax.imshow(response_matrix, cmap="RdBu_r", aspect="auto")
+
+    # Set ticks and labels
+    ax.set_xticks(range(n_sectors))
+    ax.set_xticklabels(sector_labels, rotation=45, ha="right")
+    ax.set_yticks([0])
+    ax.set_yticklabels([f"Period {time_slice}"])
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label(f"{aggregate_labels[aggregate_idx]} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
+
+    # Styling
+    ax.set_title(
+        f"GIR Cross-Sector Response: {aggregate_labels[aggregate_idx]} at Period {time_slice}",
+        fontweight="bold",
+        pad=20,
+        fontsize=LARGE_SIZE,
+    )
+
+    # Apply consistent styling
+    ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
+
+    # Adjust layout
+    plt.tight_layout()
+
+    # Save if path provided
+    if save_path:
+        # Modify filename to include analysis name if provided
+        if analysis_name:
+            save_dir = os.path.dirname(save_path)
+            base_filename = os.path.basename(save_path)
+            ext = os.path.splitext(base_filename)[1] or ".png"
+            var_names = ["C_agg", "L_agg", "K_agg", "Y_agg", "M_agg", "I_agg", "Utility_welfare"]
+            new_filename = f"GIR_heatmap_{var_names[aggregate_idx]}_period{time_slice}_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+        plt.savefig(final_save_path, dpi=300, bbox_inches="tight", format="png")
+
+    return fig, ax

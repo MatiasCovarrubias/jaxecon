@@ -27,6 +27,7 @@ Usage:
 """
 
 import os
+import pickle
 import sys
 
 import jax
@@ -44,11 +45,13 @@ model_dir = os.path.join(repo_root, "DEQN", "econ_models", "RbcProdNetv2")
 
 # DEQN imports (use absolute imports that work both as module and script)
 from DEQN.algorithm.simulation import create_episode_simulation_fn_verbose  # noqa: E402
+from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
 from DEQN.analysis.simul_analysis import simulation_analysis  # noqa: E402
 from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
 from DEQN.econ_models.RbcProdNetv2.plots import (  # noqa: E402
     plot_ergodic_histograms,
+    plot_gir_responses,
     plot_sectoral_capital_mean,
 )
 from DEQN.econ_models.RbcProdNetv2.RbcProdNet_Sept23_2025 import Model  # noqa: E402
@@ -90,6 +93,12 @@ def create_analysis_config():
         "n_draws": 500,
         "time_to_converge": 200,
         "seed": 0,
+        # GIR configuration
+        "gir_n_draws": 100,
+        "gir_trajectory_length": 50,
+        "gir_tfp_shock_size": 0.2,
+        "gir_sectors_to_shock": None,  # None for all sectors, or [0, 5, 10] for specific
+        "gir_seed": 42,
         # JAX configuration
         "double_precision": True,
     }
@@ -157,17 +166,28 @@ def main():
     # Run comparative analysis (integrated into main)
     print("Running comparative analysis across experiments...")
 
-    # Create simulation, welfare, and stochastic steady state functions
+    # Create simulation, welfare, stochastic steady state, and GIR functions
     simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, analysis_config))
     welfare_fn = jax.jit(get_welfare_fn(econ_model, analysis_config))
     stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, analysis_config))
 
-    # Storage for the three types of data we collect
+    # Create GIR configuration and function
+    gir_config = {
+        "n_draws": analysis_config["gir_n_draws"],
+        "trajectory_length": analysis_config["gir_trajectory_length"],
+        "tfp_shock_size": analysis_config["gir_tfp_shock_size"],
+        "sectors_to_shock": analysis_config["gir_sectors_to_shock"],
+        "seed": analysis_config["gir_seed"],
+    }
+    gir_fn = jax.jit(create_GIR_fn(econ_model, gir_config))
+
+    # Storage for the four types of data we collect
     simulation_data = {}  # aggregates, sectoral capital means
     welfare_costs = {}  # welfare losses
     stochastic_ss_data = {}  # stochastic steady state obs and policies
+    gir_data = {}  # generalized impulse responses
 
-    # Data collection loop - collect three types of data
+    # Data collection loop - collect four types of data
     for experiment_label, exp_data in experiments_data.items():
         print(f"Collecting data for experiment: {experiment_label}")
 
@@ -224,6 +244,21 @@ def main():
 
         # Store stochastic steady state data (first 7 aggregates)
         stochastic_ss_data[experiment_label] = stoch_ss_aggregates[:7].tolist()
+
+        # 4. Calculate and store GIR
+        print("    Calculating GIR...")
+        gir_results = gir_fn(simul_obs, train_state, simul_policies)
+        gir_data[experiment_label] = gir_results
+
+        # Print summary of GIR results
+        n_sectors_shocked = len(gir_results)
+        print(f"    GIR computed for {n_sectors_shocked} sectors")
+
+        # Example: Print maximum impulse response magnitude for first sector
+        if gir_results:
+            first_sector = list(gir_results.keys())[0]
+            max_response = jnp.max(jnp.abs(gir_results[first_sector]["gir_aggregates"]))
+            print(f"    Max response magnitude for {first_sector}: {max_response:.6f}")
 
         print(f"  Data collection completed for {experiment_label}")
 
@@ -310,12 +345,38 @@ def main():
     )
     print(f"Sectoral capital plot saved to: {plots_dir}")
 
+    # 6. Generate GIR plots
+    print("Generating GIR plots...")
+
+    # Plot impulse responses for all aggregates except utility level
+    # Get sector names from GIR results (same sectors that were shocked)
+    first_experiment = list(gir_data.keys())[0]
+    sectors_shocked = list(gir_data[first_experiment].keys())
+
+    plot_gir_responses(
+        gir_data=gir_data,
+        aggregate_indices=list(range(7)),  # All aggregates except utility level (0-6)
+        sectors_to_plot=sectors_shocked,  # Same sectors that were shocked
+        save_dir=plots_dir,
+        analysis_name=analysis_config["analysis_name"],
+    )
+    n_sectors_shocked = len(sectors_shocked)
+    print(f"GIR time series plots saved to: {plots_dir} (7 aggregates × {n_sectors_shocked} sectors)")
+
+    # 7. Save GIR results
+    print("Saving GIR results...")
+    gir_save_path = os.path.join(tables_dir, "gir_results.pkl")
+    with open(gir_save_path, "wb") as f:
+        pickle.dump(gir_data, f)
+    print(f"GIR results saved to: {gir_save_path}")
+
     print("\nAll analysis completed successfully!")
 
     return {
         "simulation_data": simulation_data,
         "welfare_costs": welfare_costs,
         "stochastic_ss_data": stochastic_ss_data,
+        "gir_data": gir_data,
     }
 
 

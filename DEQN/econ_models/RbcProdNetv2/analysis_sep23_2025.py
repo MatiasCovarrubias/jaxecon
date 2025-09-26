@@ -27,7 +27,6 @@ Usage:
 """
 
 import os
-import pickle
 import sys
 
 import jax
@@ -354,14 +353,10 @@ def main():
         analysis_name=analysis_config["analysis_name"],
     )
     n_sectors_shocked = len(sectors_shocked)
-    print(f"GIR time series plots saved to: {plots_dir} (7 aggregates × {n_sectors_shocked} sectors)")
-
-    # 7. Save GIR results
-    print("Saving GIR results...")
-    gir_save_path = os.path.join(tables_dir, "gir_results.pkl")
-    with open(gir_save_path, "wb") as f:
-        pickle.dump(gir_data, f)
-    print(f"GIR results saved to: {gir_save_path}")
+    n_plots_created = n_sectors_shocked * 7  # Each sector gets separate plots for each aggregate
+    print(
+        f"GIR time series plots saved to: {plots_dir} ({n_plots_created} individual plots: {n_sectors_shocked} sectors × 7 aggregates)"
+    )
 
     print("\nAll analysis completed successfully!")
 

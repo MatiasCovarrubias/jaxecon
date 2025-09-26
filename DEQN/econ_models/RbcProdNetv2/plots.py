@@ -385,13 +385,14 @@ def plot_gir_responses(
         "Agg. Investment",
         "Utility Welfare",
     ],
-    sectors_to_plot: Optional[list] = None,  # If None, plots first 6 sectors
+    sectors_to_plot: Optional[list] = None,  # If None, plots all sectors
     figsize: Tuple[float, float] = (12, 8),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
 ):
     """
     Create publication-quality plots of Generalized Impulse Responses over time.
+    Each sector gets its own separate plot for each aggregate variable.
 
     Parameters:
     -----------
@@ -403,7 +404,7 @@ def plot_gir_responses(
     aggregate_labels : list, optional
         Labels for the aggregate variables
     sectors_to_plot : list, optional
-        Which sectors to plot. If None, plots first 6 sectors to avoid overcrowding.
+        Which sectors to plot. If None, plots all sectors.
     figsize : tuple, optional
         Figure size (width, height) in inches
     save_dir : str, optional
@@ -413,7 +414,7 @@ def plot_gir_responses(
 
     Returns:
     --------
-    list of (fig, ax) tuples for each aggregate variable
+    list of (fig, ax) tuples for each sector-aggregate combination
     """
     # Get experiment names
     experiment_names = list(gir_data.keys())
@@ -423,11 +424,11 @@ def plot_gir_responses(
     first_experiment = experiment_names[0]
     first_exp_data = gir_data[first_experiment]
 
-    # Get sector names and limit to sectors_to_plot
+    # Get sector names
     all_sector_names = list(first_exp_data.keys())
     if sectors_to_plot is None:
-        # Default to first 6 sectors to avoid overcrowding
-        sectors_to_plot = all_sector_names[:6]
+        # Default to all sectors
+        sectors_to_plot = all_sector_names
     else:
         # Filter to requested sectors
         sectors_to_plot = [s for s in sectors_to_plot if s in all_sector_names]
@@ -445,12 +446,12 @@ def plot_gir_responses(
 
     figures = []
 
-    for agg_idx in aggregate_indices:
-        # Create figure
-        fig, ax = plt.subplots(figsize=figsize, dpi=300)
+    # Loop through each sector first, then each aggregate
+    for sector_name in sectors_to_plot:
+        for agg_idx in aggregate_indices:
+            # Create figure for this sector-aggregate combination
+            fig, ax = plt.subplots(figsize=figsize, dpi=300)
 
-        # Plot each sector's response for this aggregate
-        for i, sector_name in enumerate(sectors_to_plot):
             # Plot for each experiment (if multiple)
             for j, exp_name in enumerate(experiment_names):
                 gir_aggregates = gir_data[exp_name][sector_name]["gir_aggregates"]
@@ -460,12 +461,12 @@ def plot_gir_responses(
 
                 # Create label
                 if n_experiments > 1:
-                    label = f"{sector_name} ({exp_name})"
-                    color = plot_colors[(i * n_experiments + j) % len(plot_colors)]
+                    label = exp_name
+                    color = plot_colors[j % len(plot_colors)]
                     linestyle = "-" if j == 0 else "--"
                 else:
-                    label = sector_name
-                    color = plot_colors[i % len(plot_colors)]
+                    label = f"{sector_name} Response"
+                    color = plot_colors[0]
                     linestyle = "-"
 
                 # Plot the impulse response
@@ -473,45 +474,47 @@ def plot_gir_responses(
                     time_periods, response_pct, label=label, color=color, linewidth=2, linestyle=linestyle, alpha=0.8
                 )
 
-        # Add horizontal line at zero
-        ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+            # Add horizontal line at zero
+            ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
 
-        # Styling
-        ax.set_xlabel("Time Periods", fontweight="bold", fontsize=MEDIUM_SIZE)
-        ax.set_ylabel(f"{aggregate_labels[agg_idx]} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
-        ax.set_title(
-            f"Generalized Impulse Response: {aggregate_labels[agg_idx]}", fontweight="bold", pad=20, fontsize=LARGE_SIZE
-        )
+            # Styling
+            ax.set_xlabel("Time Periods", fontweight="bold", fontsize=MEDIUM_SIZE)
+            ax.set_ylabel(f"{aggregate_labels[agg_idx]} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
+            ax.set_title(
+                f"GIR: {aggregate_labels[agg_idx]} - {sector_name} Shock",
+                fontweight="bold",
+                pad=20,
+                fontsize=LARGE_SIZE,
+            )
 
-        # Legend - place outside if many sectors
-        if len(sectors_to_plot) > 4:
-            ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=SMALL_SIZE)
-        else:
-            ax.legend(frameon=True, framealpha=0.9, loc="best", fontsize=SMALL_SIZE)
+            # Legend
+            if n_experiments > 1:
+                ax.legend(frameon=True, framealpha=0.9, loc="best", fontsize=SMALL_SIZE)
 
-        # Grid
-        ax.grid(True, alpha=0.3)
+            # Grid
+            ax.grid(True, alpha=0.3)
 
-        # Apply consistent styling
-        ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
+            # Apply consistent styling
+            ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
 
-        # Set x-axis to start from 0
-        ax.set_xlim(0, time_length - 1)
+            # Set x-axis to start from 0
+            ax.set_xlim(0, time_length - 1)
 
-        # Adjust layout
-        plt.tight_layout()
+            # Adjust layout
+            plt.tight_layout()
 
-        # Save if directory provided
-        if save_dir:
-            # Create filename with analysis name if provided
-            if analysis_name:
-                filename = f"GIR_{var_names[agg_idx]}_{analysis_name}.png"
-            else:
-                filename = f"GIR_{var_names[agg_idx]}.png"
-            save_path = os.path.join(save_dir, filename)
-            plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+            # Save if directory provided
+            if save_dir:
+                # Create filename with sector and aggregate names
+                safe_sector_name = sector_name.replace(" ", "_").replace("/", "_")
+                if analysis_name:
+                    filename = f"GIR_{var_names[agg_idx]}_{safe_sector_name}_{analysis_name}.png"
+                else:
+                    filename = f"GIR_{var_names[agg_idx]}_{safe_sector_name}.png"
+                save_path = os.path.join(save_dir, filename)
+                plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
 
-        figures.append((fig, ax))
+            figures.append((fig, ax))
 
     return figures
 

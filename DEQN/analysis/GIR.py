@@ -10,12 +10,16 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
     Args:
         econ_model: Economic model instance
         config: Dictionary with parameters:
-            - n_draws: Number of points to sample from ergodic distribution
-            - trajectory_length: Length of trajectories to simulate
-            - tfp_shock_size: Size of TFP shock (default 0.2 for 20% decrease)
-            - sectors_to_shock: List of sector indices to shock (if None, shocks all sectors)
-            - seed: Random seed
+            - gir_n_draws: Number of points to sample from ergodic distribution
+            - gir_trajectory_length: Length of trajectories to simulate
+            - gir_tfp_shock_size: Size of TFP shock (default 0.2 for 20% decrease)
+            - gir_sectors_to_shock: List of sector indices to shock (if None, shocks all sectors)
+            - gir_seed: Random seed
         simul_policies: Simulation policies for extracting price weights (optional, can be passed in GIR_fn)
+                       Should be in logdev form when using simulation_verbose_fn
+
+    Note: This function expects inputs from simulation_verbose_fn which returns states and policies
+          in log deviation form (not normalized by standard deviations).
     """
 
     def random_draws(simul_obs, n_draws, seed=0):
@@ -35,20 +39,20 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         Pm_weights = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
         return P_weights, Pk_weights, Pm_weights
 
-    def create_counterfactual_state(state, sector_idx, shock_size):
+    def create_counterfactual_state(state_logdev, sector_idx, shock_size):
         """
         Create counterfactual initial state with TFP decreased in specified sector.
 
         Args:
-            state: Normalized state vector
+            state_logdev: State in log deviation form (not normalized)
             sector_idx: Index of sector to shock
             shock_size: Size of negative shock to apply (positive value)
 
         Returns:
-            counterfactual_state: Modified normalized state
+            counterfactual_state_logdev: Modified state in log deviation form
         """
-        # Denormalize state
-        state_notnorm = state * econ_model.state_sd + econ_model.state_ss
+        # Convert logdevs to actual log levels
+        state_notnorm = state_logdev + econ_model.state_ss
 
         # Extract TFP component (second half of state vector)
         a = state_notnorm[econ_model.n_sectors :].copy()
@@ -61,12 +65,14 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         K_part = state_notnorm[: econ_model.n_sectors]
         state_counterfactual_notnorm = jnp.concatenate([K_part, a])
 
-        # Renormalize
-        state_counterfactual = (state_counterfactual_notnorm - econ_model.state_ss) / econ_model.state_sd
+        # Convert back to logdevs
+        state_counterfactual_logdev = state_counterfactual_notnorm - econ_model.state_ss
 
-        return state_counterfactual
+        return state_counterfactual_logdev
 
-    def simul_trajectory_aggregates(econ_model, train_state, shocks, obs_init, P_weights, Pk_weights, Pm_weights):
+    def simul_trajectory_aggregates(
+        econ_model, train_state, shocks, obs_init_logdev, P_weights, Pk_weights, Pm_weights
+    ):
         """
         Simulate full trajectory and return aggregates at each step.
 
@@ -74,25 +80,36 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             econ_model: Economic model
             train_state: Trained neural network state
             shocks: Sequence of shocks
-            obs_init: Initial observation
+            obs_init_logdev: Initial observation in log deviation form
             P_weights, Pk_weights, Pm_weights: Price weights for aggregation
 
         Returns:
             trajectory_aggregates: Aggregates for each time step [T+1, n_aggregates]
         """
 
-        def step(obs, shock):
-            policy = train_state.apply_fn(train_state.params, obs)
-            next_obs = econ_model.step(obs, policy, shock)
-            # Compute aggregates for current period
-            aggregates = econ_model.get_aggregates(obs, policy, P_weights, Pk_weights, Pm_weights)
-            return next_obs, aggregates
+        def step(obs_logdev, shock):
+            # Convert logdevs to normalized state for neural network and econ_model calls
+            obs_normalized = obs_logdev / econ_model.state_sd
+            policy_normalized = train_state.apply_fn(train_state.params, obs_normalized)
+            next_obs_normalized = econ_model.step(obs_normalized, policy_normalized, shock)
 
-        final_obs, trajectory_aggregates = lax.scan(step, obs_init, shocks)
+            # Convert back to logdevs for consistency
+            next_obs_logdev = next_obs_normalized * econ_model.state_sd
+            policy_logdev = policy_normalized * econ_model.policies_sd
+
+            # Compute aggregates using logdevs (get_aggregates expects logdevs as input)
+            aggregates = econ_model.get_aggregates(obs_logdev, policy_logdev, P_weights, Pk_weights, Pm_weights)
+            return next_obs_logdev, aggregates
+
+        final_obs_logdev, trajectory_aggregates = lax.scan(step, obs_init_logdev, shocks)
 
         # Compute aggregates for the final observation (using last policy)
-        final_policy = train_state.apply_fn(train_state.params, final_obs)
-        final_aggregates = econ_model.get_aggregates(final_obs, final_policy, P_weights, Pk_weights, Pm_weights)
+        final_obs_normalized = final_obs_logdev / econ_model.state_sd
+        final_policy_normalized = train_state.apply_fn(train_state.params, final_obs_normalized)
+        final_policy_logdev = final_policy_normalized * econ_model.policies_sd
+        final_aggregates = econ_model.get_aggregates(
+            final_obs_logdev, final_policy_logdev, P_weights, Pk_weights, Pm_weights
+        )
 
         # Add final aggregates to trajectory
         trajectory_aggregates_full = jnp.concatenate([trajectory_aggregates, final_aggregates[None, :]], axis=0)
@@ -109,7 +126,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         Compute GIR for a specific sector using aggregates.
 
         Args:
-            simul_obs: Simulation observations from ergodic distribution
+            simul_obs: Simulation observations from ergodic distribution (in logdev form)
             train_state: Trained neural network state
             sector_idx: Index of sector to shock
             P_weights, Pk_weights, Pm_weights: Price weights for aggregation
@@ -121,24 +138,24 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         sample_points = random_draws(simul_obs, config["gir_n_draws"], config["gir_seed"])
 
         # Function to compute impulse response for a single initial point
-        def single_point_IR(i, obs_init):
+        def single_point_IR(i, obs_init_logdev):
             # Generate same future shocks for both paths
             key_i = random.fold_in(random.PRNGKey(config["gir_seed"]), i)
             shocks = generate_shocks_for_T(key_i, config["gir_trajectory_length"], econ_model.n_sectors)
 
             # Original trajectory aggregates
             traj_agg_orig = simul_trajectory_aggregates(
-                econ_model, train_state, shocks, obs_init, P_weights, Pk_weights, Pm_weights
+                econ_model, train_state, shocks, obs_init_logdev, P_weights, Pk_weights, Pm_weights
             )
 
             # Create counterfactual initial state
-            obs_counterfactual = create_counterfactual_state(
-                obs_init, sector_idx, config.get("gir_tfp_shock_size", 0.2)
+            obs_counterfactual_logdev = create_counterfactual_state(
+                obs_init_logdev, sector_idx, config.get("gir_tfp_shock_size", 0.2)
             )
 
             # Counterfactual trajectory aggregates (using same shocks)
             traj_agg_counter = simul_trajectory_aggregates(
-                econ_model, train_state, shocks, obs_counterfactual, P_weights, Pk_weights, Pm_weights
+                econ_model, train_state, shocks, obs_counterfactual_logdev, P_weights, Pk_weights, Pm_weights
             )
 
             # Impulse response is difference
@@ -160,9 +177,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         Main GIR function that computes aggregate impulse responses for specified sectors.
 
         Args:
-            simul_obs: Simulation observations from ergodic distribution
+            simul_obs: Simulation observations from ergodic distribution (in logdev form)
             train_state: Trained neural network state
-            simul_policies_data: Simulation policies for extracting price weights
+            simul_policies_data: Simulation policies for extracting price weights (in logdev form)
 
         Returns:
             gir_results: Dictionary with aggregate impulse responses for each sector

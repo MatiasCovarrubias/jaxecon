@@ -313,17 +313,11 @@ def plot_ergodic_histograms(
         for exp_name in experiment_names:
             agg_data[exp_name] = aggregates_data[exp_name][:, agg_idx]
 
-        # Determine global min and max across all experiments for consistent bin range
-        all_values = np.concatenate([agg_data[exp] for exp in experiment_names])
-        global_min = np.min(all_values)
-        global_max = np.max(all_values)
+        # Use fixed range from -0.05 to 0.05
+        bin_range = (-0.05, 0.05)
 
-        # Add padding (5%) to see beyond the extremes
-        padding = (global_max - global_min) * 0.05
-        bin_range = (global_min - padding, global_max + padding)
-
-        # Create bins using the global range
-        bins = np.linspace(bin_range[0], bin_range[1], 31)  # 31 edges for 30 bins
+        # Create bins using the fixed range with more bins
+        bins = np.linspace(bin_range[0], bin_range[1], 51)  # 51 edges for 50 bins
         bin_centers = (bins[:-1] + bins[1:]) / 2
 
         # Create figure

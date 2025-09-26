@@ -69,6 +69,12 @@ def create_analysis_config():
     return {
         # Analysis identification
         "analysis_name": "baseline_analysis",  # Name for this specific analysis run
+        # Experiments to analyze
+        "experiments_to_analyze": {
+            # "High Volatility": "baseline_nostateaug_high",
+            "Baseline": "baseline_nostateaug_finetunev2",
+            # "Low Volatility": "baseline_nostateaug_lower",
+        },
         # Simulation configuration
         "init_range": 0,
         "periods_per_epis": 6000,
@@ -117,12 +123,8 @@ def main():
     print(f"Using experiments directory: {save_dir}")
     print(f"Using model file: {model_file}")
 
-    # Define experiments to analyze
-    experiments_to_analyze = {
-        # "High Volatility": "baseline_nostateaug_high",
-        "Baseline": "baseline_nostateaug_finetunev2",
-        # "Low Volatility": "baseline_nostateaug_lower",
-    }
+    # Get experiments to analyze from configuration
+    experiments_to_analyze = analysis_config["experiments_to_analyze"]
 
     # Load model data and create economic model
     print("Loading economic model data...")
@@ -246,37 +248,49 @@ def main():
 
     # 1. Generate descriptive statistics tables
     print("Generating descriptive statistics tables...")
-    create_descriptive_stats_table(
+    descriptive_table = create_descriptive_stats_table(
         aggregates_data=aggregates_data,
         save_path=os.path.join(tables_dir, "descriptive_stats_table.tex"),
         analysis_name=analysis_config["analysis_name"],
     )
+    print("Descriptive Statistics Table:")
+    print(descriptive_table)
+    print("-" * 80)
 
     if len(aggregates_data) > 1:
-        create_comparative_stats_table(
+        comparative_table = create_comparative_stats_table(
             aggregates_data=aggregates_data,
             save_path=os.path.join(tables_dir, "descriptive_stats_comparative.tex"),
             analysis_name=analysis_config["analysis_name"],
         )
+        print("Comparative Statistics Table:")
+        print(comparative_table)
+        print("-" * 80)
 
     print(f"Descriptive statistics tables saved to: {tables_dir}")
 
     # 2. Generate welfare table
     print("Generating welfare table...")
-    create_welfare_table(
+    welfare_table = create_welfare_table(
         welfare_data=welfare_costs,
         save_path=os.path.join(tables_dir, "welfare_table.tex"),
         analysis_name=analysis_config["analysis_name"],
     )
+    print("Welfare Table:")
+    print(welfare_table)
+    print("-" * 80)
     print(f"Welfare table saved to: {tables_dir}")
 
     # 3. Generate stochastic steady state table
     print("Generating stochastic steady state table...")
-    create_stochastic_ss_table(
+    stochastic_ss_table = create_stochastic_ss_table(
         stochastic_ss_data=stochastic_ss_data,
         save_path=os.path.join(tables_dir, "stochastic_ss_table.tex"),
         analysis_name=analysis_config["analysis_name"],
     )
+    print("Stochastic Steady State Table:")
+    print(stochastic_ss_table)
+    print("-" * 80)
     print(f"Stochastic steady state table saved to: {tables_dir}")
 
     # 4. Generate aggregate histograms

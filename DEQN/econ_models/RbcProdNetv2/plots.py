@@ -313,11 +313,11 @@ def plot_ergodic_histograms(
         for exp_name in experiment_names:
             agg_data[exp_name] = aggregates_data[exp_name][:, agg_idx]
 
-        # Use fixed range from -0.05 to 0.05
-        bin_range = (-0.05, 0.05)
+        # Use fixed range from -0.1 to 0.1
+        bin_range = (-0.1, 0.1)
 
-        # Create bins using the fixed range with more bins
-        bins = np.linspace(bin_range[0], bin_range[1], 51)  # 51 edges for 50 bins
+        # Create bins using the fixed range
+        bins = np.linspace(bin_range[0], bin_range[1], 41)  # 41 edges for 40 bins
         bin_centers = (bins[:-1] + bins[1:]) / 2
 
         # Create figure

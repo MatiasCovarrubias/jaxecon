@@ -14,9 +14,12 @@ class Model:
         state_sd,
         policies_sd,
         double_precision=True,
+        volatility_scale=1,
     ):
         # Set precision based on boolean parameter
         precision = jnp.float64 if double_precision else jnp.float32
+
+        self.volatility_scale = jnp.array(volatility_scale, dtype=precision)
 
         self.alpha = jnp.array(parameters["paralpha"], dtype=precision)
         self.beta = jnp.array(parameters["parbeta"], dtype=precision)
@@ -383,7 +386,8 @@ class Model:
 
     def sample_shock(self, rng):
         """sample one realization of the shock"""
-        return jax.random.multivariate_normal(rng, jnp.zeros((self.n_sectors,)), self.Sigma_A)
+        shock = jax.random.multivariate_normal(rng, jnp.zeros((self.n_sectors,)), self.Sigma_A)
+        return self.volatility_scale * shock
 
     def mc_shocks(self, rng=random.PRNGKey(0), mc_draws=8):
         """
@@ -446,7 +450,7 @@ class Model:
             L_cholesky = jnp.linalg.cholesky(self.Sigma_A)
             mc_shocks = jax.vmap(lambda zi: L_cholesky @ zi)(z)
 
-        return mc_shocks
+        return self.volatility_scale * mc_shocks
 
     def utility(self, C, L):
         C_notnorm = C * jnp.exp(self.policies_ss[11 * self.n_sectors])

@@ -97,6 +97,11 @@ def create_analysis_config():
         "gir_trajectory_length": 50,
         "gir_tfp_shock_size": 0.2,
         "gir_sectors_to_shock": None,  # None for all sectors, or [0, 5, 10] for specific
+        "gir_aggregate_indices": [
+            0,
+            3,
+            5,
+        ],  # Which aggregates to plot: 0=Consumption, 1=Labor, 2=Capital, 3=Output, 4=Intermediate, 5=Investment, 6=Utility
         "gir_seed": 42,
         # JAX configuration
         "double_precision": True,
@@ -347,15 +352,16 @@ def main():
 
     plot_gir_responses(
         gir_data=gir_data,
-        aggregate_indices=list(range(7)),  # All aggregates except utility level (0-6)
+        aggregate_indices=analysis_config["gir_aggregate_indices"],  # Configure which aggregates to plot
         sectors_to_plot=sectors_shocked,  # Same sectors that were shocked
         save_dir=plots_dir,
         analysis_name=analysis_config["analysis_name"],
     )
     n_sectors_shocked = len(sectors_shocked)
-    n_plots_created = n_sectors_shocked * 7  # Each sector gets separate plots for each aggregate
+    n_aggregates_plotted = len(analysis_config["gir_aggregate_indices"])
+    n_plots_created = n_sectors_shocked * n_aggregates_plotted
     print(
-        f"GIR time series plots saved to: {plots_dir} ({n_plots_created} individual plots: {n_sectors_shocked} sectors × 7 aggregates)"
+        f"GIR time series plots saved to: {plots_dir} ({n_plots_created} individual plots: {n_sectors_shocked} sectors × {n_aggregates_plotted} aggregates)"
     )
 
     print("\nAll analysis completed successfully!")

@@ -171,15 +171,8 @@ def main():
     welfare_fn = jax.jit(get_welfare_fn(econ_model, analysis_config))
     stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, analysis_config))
 
-    # Create GIR configuration and function
-    gir_config = {
-        "n_draws": analysis_config["gir_n_draws"],
-        "trajectory_length": analysis_config["gir_trajectory_length"],
-        "tfp_shock_size": analysis_config["gir_tfp_shock_size"],
-        "sectors_to_shock": analysis_config["gir_sectors_to_shock"],
-        "seed": analysis_config["gir_seed"],
-    }
-    gir_fn = jax.jit(create_GIR_fn(econ_model, gir_config))
+    # Create GIR function
+    gir_fn = jax.jit(create_GIR_fn(econ_model, analysis_config))
 
     # Storage for the four types of data we collect
     simulation_data = {}  # aggregates, sectoral capital means

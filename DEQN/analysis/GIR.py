@@ -118,13 +118,13 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             gir_aggregates: Averaged impulse response for aggregates [T+1, n_aggregates]
         """
         # Sample points from ergodic distribution
-        sample_points = random_draws(simul_obs, config["n_draws"], config["seed"])
+        sample_points = random_draws(simul_obs, config["gir_n_draws"], config["gir_seed"])
 
         # Function to compute impulse response for a single initial point
         def single_point_IR(i, obs_init):
             # Generate same future shocks for both paths
-            key_i = random.fold_in(random.PRNGKey(config["seed"]), i)
-            shocks = generate_shocks_for_T(key_i, config["trajectory_length"], econ_model.n_sectors)
+            key_i = random.fold_in(random.PRNGKey(config["gir_seed"]), i)
+            shocks = generate_shocks_for_T(key_i, config["gir_trajectory_length"], econ_model.n_sectors)
 
             # Original trajectory aggregates
             traj_agg_orig = simul_trajectory_aggregates(
@@ -132,7 +132,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             )
 
             # Create counterfactual initial state
-            obs_counterfactual = create_counterfactual_state(obs_init, sector_idx, config.get("tfp_shock_size", 0.2))
+            obs_counterfactual = create_counterfactual_state(
+                obs_init, sector_idx, config.get("gir_tfp_shock_size", 0.2)
+            )
 
             # Counterfactual trajectory aggregates (using same shocks)
             traj_agg_counter = simul_trajectory_aggregates(
@@ -145,7 +147,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             return ir_aggregates
 
         # Vectorize over all sample points with their indices
-        idxs = jnp.arange(config["n_draws"])
+        idxs = jnp.arange(config["gir_n_draws"])
         all_ir_aggregates = jax.vmap(single_point_IR)(idxs, sample_points)
 
         # Average across sample points
@@ -176,7 +178,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         P_weights, Pk_weights, Pm_weights = extract_price_weights(simul_policies_data)
 
         # Determine which sectors to shock
-        sectors_to_shock = config.get("sectors_to_shock", None)
+        sectors_to_shock = config.get("gir_sectors_to_shock", None)
         if sectors_to_shock is None:
             sectors_to_shock = list(range(econ_model.n_sectors))
 

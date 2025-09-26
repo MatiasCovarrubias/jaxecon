@@ -208,7 +208,7 @@ def plot_sectoral_capital_mean(
         offset = (i - (n_experiments - 1) / 2) * bar_width
         ax.bar(
             x + offset,
-            sorted_capital_data[exp_name],
+            sorted_capital_data[exp_name] * 100,  # Convert to percentages
             bar_width,
             label=exp_name,
             color=plot_colors[i],
@@ -226,7 +226,7 @@ def plot_sectoral_capital_mean(
 
     # Set labels and title using predefined font sizes
     ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
-    ax.set_ylabel("Average Capital (Log Deviations from SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel("Average Capital (% Deviations from SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
 
     # Add legend using predefined font size
     ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
@@ -308,13 +308,13 @@ def plot_ergodic_histograms(
     figures = []
 
     for agg_idx in range(n_aggregates):
-        # Extract data for this aggregate variable across all experiments
+        # Extract data for this aggregate variable across all experiments and convert to percentages
         agg_data = {}
         for exp_name in experiment_names:
-            agg_data[exp_name] = aggregates_data[exp_name][:, agg_idx]
+            agg_data[exp_name] = aggregates_data[exp_name][:, agg_idx] * 100
 
-        # Use fixed range from -0.1 to 0.1
-        bin_range = (-0.1, 0.1)
+        # Use fixed range from -10 to 10 (percentages)
+        bin_range = (-10, 10)
 
         # Create bins using the fixed range
         bins = np.linspace(bin_range[0], bin_range[1], 31)  # 31 edges for 30 bins
@@ -337,7 +337,7 @@ def plot_ergodic_histograms(
 
         # Styling
         ax.set_xlabel(
-            f"{aggregate_labels[agg_idx]} (log deviations from deterministic SS)",
+            f"{aggregate_labels[agg_idx]} (% deviations from deterministic SS)",
             fontweight="bold",
             fontsize=MEDIUM_SIZE,
         )

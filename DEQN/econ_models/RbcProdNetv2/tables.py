@@ -50,9 +50,9 @@ def create_descriptive_stats_table(
             if agg_idx < simul_aggregates.shape[1]:  # Check if aggregate exists
                 agg_values = simul_aggregates[:, agg_idx]
 
-                # Calculate statistics
-                mean_val = np.mean(agg_values)
-                std_val = np.std(agg_values)
+                # Calculate statistics and convert to percentages
+                mean_val = np.mean(agg_values) * 100
+                std_val = np.std(agg_values) * 100
                 skew_val = skew(agg_values)
                 kurt_val = kurtosis(agg_values)
 
@@ -116,8 +116,8 @@ def _generate_latex_table(df: pd.DataFrame) -> str:
 
     # Add data rows
     for index, row in df.iterrows():
-        # Format numbers with three decimals
-        formatted_row = [f"{float(value):.3f}" for value in row]
+        # Format numbers with two decimals
+        formatted_row = [f"{float(value):.2f}" for value in row]
         latex_code += r"\textbf{" + str(index) + r"} & " + " & ".join(formatted_row) + r" \\" + "\n"
 
         # Add separator lines for different experiments (optional)
@@ -186,9 +186,9 @@ def create_comparative_stats_table(
                     agg_values = simul_aggregates[:, agg_idx]
 
                     if stat_label == "Mean":
-                        value = np.mean(agg_values)
+                        value = np.mean(agg_values) * 100
                     elif stat_label == "Sd":
-                        value = np.std(agg_values)
+                        value = np.std(agg_values) * 100
                     elif stat_label == "Skewness":
                         value = skew(agg_values)
                     elif stat_label == "Kurtosis":
@@ -261,8 +261,8 @@ def _generate_comparative_latex_table(df: pd.DataFrame, experiment_names: list) 
 
     # Add data rows
     for index, row in df.iterrows():
-        # Format numbers with three decimals
-        formatted_row = [f"{float(value):.3f}" if not np.isnan(value) else "—" for value in row]
+        # Format numbers with two decimals
+        formatted_row = [f"{float(value):.2f}" if not np.isnan(value) else "—" for value in row]
         latex_code += r"\textbf{" + str(index) + r"} & " + " & ".join(formatted_row) + r" \\" + "\n"
 
         # Add separator lines between variables

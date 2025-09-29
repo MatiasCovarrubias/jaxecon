@@ -18,7 +18,8 @@ from algorithm.epoch_train import create_epoch_train_fn
 from algorithm.eval import create_eval_fn
 from algorithm.loss import create_batch_loss_fn
 from algorithm.simulation import create_episode_simul_fn
-from analysis.simul_analysis import create_descstats_fn, create_episode_simul_verbose_fn
+
+# from analysis.simul_analysis import create_descstats_fn, create_episode_simul_verbose_fn
 from analysis.stochastic_ss import create_stochss_fn
 from econ_models.rbc_ces import RbcCES, RbcCES_SteadyState
 from flax.training.train_state import TrainState
@@ -125,7 +126,6 @@ def create_config():
         "steps_per_epoch": 100,
         "n_epochs": 10,
         "batch_size": 16,
-        
         "checkpoint_frequency": 1000,
         "config_eval": {
             "periods_per_epis": 64,
@@ -311,7 +311,7 @@ def run_analysis(econ_model, trained_train_state):
     rng_analysis = random.PRNGKey(4)
 
     # create functions
-    simul_fn_verbose = jax.jit(create_episode_simul_verbose_fn(econ_model, config_analysis))
+    # simul_fn_verbose = jax.jit(create_episode_simul_verbose_fn(econ_model, config_analysis))
     descstats_fn = create_descstats_fn(econ_model, config_analysis)
     stochss_fn = jax.jit(create_stochss_fn(econ_model, config_stochss))
 

@@ -182,12 +182,11 @@ class RbcCES:
 
         losses_array = jnp.array([C_loss, L_loss, K_loss, I_loss, P_loss, Pk_loss, Y_loss])
         mean_loss = jnp.mean(losses_array**2)
-        max_loss = jnp.max(losses_array**2)  # here there is just one, but more gemore generally.
         mean_accuracy = jnp.mean(1 - jnp.abs(losses_array))
         min_accuracy = jnp.min(1 - jnp.abs(losses_array))
         mean_accuracies_foc = 1 - jnp.abs(losses_array)
         min_accuracies_foc = 1 - jnp.abs(losses_array)
-        return mean_loss, max_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, min_accuracies_foc
+        return mean_loss, mean_accuracy, min_accuracy, mean_accuracies_foc, min_accuracies_foc
 
     def sample_shock(self, rng, n_draws=1):
         """sample one realization of the shock.

@@ -43,9 +43,11 @@ if repo_root not in sys.path:
 model_dir = os.path.join(repo_root, "DEQN", "econ_models", "RbcProdNetv2")
 
 # DEQN imports (use absolute imports that work both as module and script)
-from DEQN.algorithm.simulation import create_episode_simulation_fn_verbose  # noqa: E402
 from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
-from DEQN.analysis.simul_analysis import simulation_analysis  # noqa: E402
+from DEQN.analysis.simul_analysis import (
+    create_episode_simulation_fn_verbose,  # noqa: E402
+    simulation_analysis,  # noqa: E402
+)
 from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
 from DEQN.econ_models.RbcProdNetv2.plots import (  # noqa: E402

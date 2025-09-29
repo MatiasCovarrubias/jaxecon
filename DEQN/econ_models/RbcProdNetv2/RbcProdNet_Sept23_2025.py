@@ -153,7 +153,7 @@ class Model:
             (1 - self.delta) + self.phi / 2 * (I_next**2 / K_next**2 - self.delta**2)
         )
 
-        return jax.lax.stop_gradient(expect_realization)
+        return expect_realization
 
     def loss(self, state, expect, policy):
         """Calculate equilibrium condition losses for given state, policy, and expectations."""

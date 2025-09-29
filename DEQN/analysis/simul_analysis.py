@@ -1,6 +1,28 @@
 import jax
+from jax import lax, random
 from jax import numpy as jnp
-from jax import random
+
+
+def create_episode_simulation_fn_verbose(econ_model, config):
+    """Create simulation function that returns both observations and policies in logdevs."""
+
+    def sample_epis_obs_and_policies(train_state, epis_rng):
+        """Sample observations and policies for an episode."""
+        init_obs = econ_model.initial_state(epis_rng, config["init_range"])
+        period_rngs = random.split(epis_rng, config["periods_per_epis"])
+
+        def period_step(env_obs, period_rng):
+            policy = train_state.apply_fn(train_state.params, env_obs)
+            period_shock = config["simul_vol_scale"] * econ_model.sample_shock(period_rng)
+            obs_next = econ_model.step(env_obs, policy, period_shock)
+            obs_next_logdev = obs_next * econ_model.state_sd
+            policy_logdev = policy * econ_model.policies_sd
+            return obs_next, (obs_next_logdev, policy_logdev)
+
+        _, (epis_obs, epis_policies) = lax.scan(period_step, init_obs, jnp.stack(period_rngs))
+        return epis_obs, epis_policies
+
+    return sample_epis_obs_and_policies
 
 
 def simulation_analysis(train_state, econ_model, analysis_config, simulation_fn):

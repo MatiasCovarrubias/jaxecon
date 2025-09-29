@@ -16,7 +16,7 @@ import numpy as np
 from jax import numpy as jnp
 from jax import random
 
-from DEQN.algorithm.simulation import create_episode_simulation_fn_verbose
+from DEQN.analysis.simul_analysis import create_episode_simulation_fn_verbose
 
 
 def _estimate_iact_batch_means(x: jnp.ndarray, num_batches: int = 20) -> float:

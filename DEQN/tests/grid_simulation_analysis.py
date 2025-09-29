@@ -56,17 +56,37 @@ def _ols_slope_per_period(y: jnp.ndarray) -> float:
     return float(slope)
 
 
-def _ood_fraction(z: jnp.ndarray, thresholds=(3.0, 4.0, 5.0)) -> dict:
+def _ood_fraction(
+    states: jnp.ndarray,
+    policies: jnp.ndarray,
+    state_sd: jnp.ndarray,
+    policies_sd: jnp.ndarray,
+    thresholds=(2.0, 3.0, 4.0),
+) -> dict:
     """
-    Compute fraction of |z| exceeding thresholds.
-    z: (T, D)
+    Compute fraction of normalized |deviations| exceeding sigma thresholds.
+
+    Args:
+        states: (T, n_states) - log deviations of states
+        policies: (T, n_policies) - log deviations of policies
+        state_sd: (n_states,) - standard deviations for state normalization
+        policies_sd: (n_policies,) - standard deviations for policy normalization
+        thresholds: sigma levels to test (e.g., 2, 3, 4 sigmas)
+
     Returns: dict {thr: fraction}
     """
+    # Normalize states and policies by their standard deviations
+    states_normalized = states / state_sd
+    policies_normalized = policies / policies_sd
+
+    # Combine all normalized deviations
+    all_normalized = jnp.concatenate([states_normalized.flatten(), policies_normalized.flatten()])
+    all_normalized_abs = jnp.abs(all_normalized)
+
     res = {}
-    z_abs = jnp.abs(z)
-    total = z_abs.size
+    total = all_normalized_abs.size
     for thr in thresholds:
-        frac = jnp.sum(z_abs > thr) / total
+        frac = jnp.sum(all_normalized_abs > thr) / total
         res[float(thr)] = float(frac)
     return res
 
@@ -117,7 +137,8 @@ def run_seed_length_grid(
     error from drift and out-of-distribution behavior.
 
     Uses fixed steady-state weights for aggregate computation to ensure stationarity.
-    Computes IACT, linear trends, cross-seed dispersion, and scaling relationships
+    Computes IACT, linear trends, cross-seed dispersion, scaling relationships,
+    and sigma-normalized out-of-distribution fractions (at 2σ, 3σ, 4σ levels)
     for all variables rather than focusing on specific measures.
 
     Args:
@@ -174,7 +195,7 @@ def run_seed_length_grid(
                 slope_aggregates = [_ols_slope_per_period(aggs_ts[:, i]) for i in range(aggs_ts.shape[1])]
 
                 # OOD and shocks
-                ood = _ood_fraction(simul_state)
+                ood = _ood_fraction(simul_state, simul_policies, econ_model.state_sd, econ_model.policies_sd)
                 shocks = _shock_diagnostics(simul_state, econ_model)
 
                 per_seed.append(
@@ -305,10 +326,10 @@ def _print_grid_summary(grid_results: dict):
             shock_mean = r.get("avg_shock_mean_norm", float("nan"))
             shock_cov = r.get("avg_shock_cov_diff", float("nan"))
 
-            # Build OOD fraction line in ascending threshold order
+            # Build OOD fraction line in ascending threshold order (now sigma-based)
             if isinstance(ood, dict) and len(ood) > 0:
                 thr_sorted = sorted(list(ood.keys()), key=float)
-                ood_str = ", ".join([f">{float(th):g}: {float(ood[th]):.4f}" for th in thr_sorted])
+                ood_str = ", ".join([f">{float(th):g}σ: {float(ood[th]):.4f}" for th in thr_sorted])
             else:
                 ood_str = "(none)"
 
@@ -335,5 +356,5 @@ def _print_grid_summary(grid_results: dict):
                 print(f"      trend slopes: {slope_str}")
 
             print(
-                f"      OOD fractions: {ood_str} | shock mean norm={shock_mean:.3e}, cov diff (rel Fro)={shock_cov:.3e}"
+                f"      OOD fractions (σ-normalized): {ood_str} | shock mean norm={shock_mean:.3e}, cov diff (rel Fro)={shock_cov:.3e}"
             )

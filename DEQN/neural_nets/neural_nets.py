@@ -55,3 +55,36 @@ class NeuralNet_dropout(nn.Module):
         # Last layer with softplus activation
         x = nn.softplus(nn.Dense(self.features[-1], param_dtype=self.precision)(x))
         return x
+
+
+def create_neural_net_builder(dim_policies: int, precision: jnp.dtype = jnp.float32):
+    """
+    Create a builder function for neural networks.
+
+    This function returns a callable that can build neural networks,
+    allowing you to pre-configure a builder and then call it to create networks.
+
+    Args:
+        dim_policies: Dimension of policy outputs
+        precision: Numerical precision for parameters
+
+    Returns:
+        A callable that takes layers and returns a NeuralNet instance
+    """
+
+    def builder(layers: Sequence[int]) -> NeuralNet:
+        """
+        Build a neural network with the specified layer structure.
+
+        Args:
+            layers: List of hidden layer sizes
+
+        Returns:
+            Configured NeuralNet instance
+        """
+        return NeuralNet(
+            features=list(layers) + [dim_policies],
+            precision=precision,
+        )
+
+    return builder

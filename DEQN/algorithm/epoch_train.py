@@ -3,7 +3,12 @@ from jax import lax, random
 from jax import numpy as jnp
 
 
-def create_epoch_train_fn(econ_model, config, episode_simul_fn, batch_loss_fn):
+def create_epoch_train_fn(econ_model, config):
+    from DEQN.algorithm.loss import create_batch_loss_fn
+    from DEQN.algorithm.simulation import create_episode_simul_fn
+
+    episode_simul_fn = create_episode_simul_fn(econ_model, config)
+    batch_loss_fn = create_batch_loss_fn(econ_model, config)
 
     def batch_train_fn(train_state, batch_obs, loss_rng):
         grad_fn = jax.value_and_grad(batch_loss_fn, has_aux=True)

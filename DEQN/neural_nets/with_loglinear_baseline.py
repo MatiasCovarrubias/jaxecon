@@ -38,3 +38,42 @@ class NeuralNet(nn.Module):
             output = output.reshape(-1)
 
         return output
+
+
+def create_neural_net_loglinear_builder(
+    C: jnp.ndarray, policies_sd: jnp.ndarray, dim_policies: int, param_dtype: jnp.dtype = jnp.float64
+):
+    """
+    Create a builder function for log-linear baseline neural networks.
+
+    This function returns a callable that can build log-linear neural networks
+    with a baseline policy.
+
+    Args:
+        C: Linear coefficient matrix, shape (n_states, n_states)
+        policies_sd: Policy standard deviations, shape (n_policies,)
+        dim_policies: Dimension of policy outputs
+        param_dtype: Numerical precision for parameters
+
+    Returns:
+        A callable that takes layers and returns a NeuralNet instance with log-linear baseline
+    """
+
+    def builder(layers: Sequence[int]) -> NeuralNet:
+        """
+        Build a log-linear neural network with the specified layer structure.
+
+        Args:
+            layers: List of hidden layer sizes
+
+        Returns:
+            Configured NeuralNet instance with log-linear baseline
+        """
+        return NeuralNet(
+            features=list(layers) + [dim_policies],
+            C=C,
+            policies_sd=policies_sd,
+            param_dtype=param_dtype,
+        )
+
+    return builder

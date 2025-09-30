@@ -16,28 +16,83 @@ The testing framework uses grid simulation analysis to systematically evaluate
 model behavior across different simulation parameters and random seeds.
 
 Usage:
-    # Method 1: Run as module (from repository root):
-    python -m DEQN.econ_models.RbcProdNetv2.test_sep23_2025
+    LOCAL:
+        # Method 1: Run as module (from repository root):
+        python -m DEQN.econ_models.RbcProdNetv2.test_sep23_2025
 
-    # Method 2: Run directly as script (from repository root):
-    python DEQN/econ_models/RbcProdNetv2/test_sep23_2025.py
+        # Method 2: Run directly as script (from repository root):
+        python DEQN/econ_models/RbcProdNetv2/test_sep23_2025.py
 
-    Both methods require you to be in the repository root directory.
+        Both methods require you to be in the repository root directory.
+
+    COLAB:
+        Simply run all cells in order. The script will automatically detect the Colab
+        environment, install dependencies, clone the repository, and mount Google Drive.
 """
 
 import os
 import sys
 
-import scipy.io as sio
-from jax import config as jax_config
-from jax import numpy as jnp
+# ============================================================================
+# ENVIRONMENT DETECTION AND SETUP
+# ============================================================================
 
-# Add repository root to path for absolute imports when run directly
-# This MUST come before any DEQN imports
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-if repo_root not in sys.path:
-    sys.path.insert(0, repo_root)
-model_dir = os.path.join(repo_root, "DEQN", "econ_models", "RbcProdNetv2")
+# Automatically detect if we're running in Google Colab
+try:
+    import google.colab  # type: ignore  # noqa: F401
+
+    IN_COLAB = True
+except ImportError:
+    IN_COLAB = False
+
+print(f"Environment: {'Google Colab' if IN_COLAB else 'Local'}")
+
+if IN_COLAB:
+    # ========================================================================
+    # COLAB SETUP
+    # ========================================================================
+
+    # Install JAX with CUDA support
+    print("Installing JAX with CUDA support...")
+    import subprocess
+
+    subprocess.run(["pip", "install", "--upgrade", "jax[cuda12]"], check=True)
+
+    # Clone repository
+    print("Cloning jaxecon repository...")
+    if not os.path.exists("/content/jaxecon"):
+        subprocess.run(["git", "clone", "https://github.com/MatiasCovarrubias/jaxecon"], check=True)
+
+    # Add to Python path
+    sys.path.insert(0, "/content/jaxecon")
+
+    # Mount Google Drive
+    print("Mounting Google Drive...")
+    from google.colab import drive  # type: ignore
+
+    drive.mount("/content/drive")
+
+    # Set model directory to Google Drive location
+    model_dir = "/content/drive/MyDrive/Jaxecon/RbcProdNet/"
+
+else:
+    # ========================================================================
+    # LOCAL SETUP
+    # ========================================================================
+
+    # Add repository root to path for absolute imports when run directly
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    model_dir = os.path.join(repo_root, "DEQN", "econ_models", "RbcProdNetv2")
+
+# ============================================================================
+# IMPORTS (same for both environments)
+# ============================================================================
+
+import scipy.io as sio  # noqa: E402
+from jax import config as jax_config  # noqa: E402
+from jax import numpy as jnp  # noqa: E402
 
 # DEQN imports (use absolute imports that work both as module and script)
 from DEQN.econ_models.RbcProdNetv2.plots import (  # noqa: E402

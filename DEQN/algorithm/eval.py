@@ -17,9 +17,8 @@ def create_eval_fn(config, episode_simul_fn, batch_loss_fn):
     def eval_fn(train_state, step_rng):
         epis_rng = random.split(step_rng, config["eval_n_epis"])
         loss_metrics, obs_metrics = jax.vmap(episode_eval_fn, in_axes=(None, 0))(train_state, jnp.stack(epis_rng))
-        mean_losses, max_losses, mean_accuracies, min_accuracies, mean_accs_focs, min_accs_focs = loss_metrics
+        mean_losses, mean_accuracies, min_accuracies, mean_accs_focs, min_accs_focs = loss_metrics
         mean_loss = jnp.mean(mean_losses)
-        max_loss = jnp.max(max_losses)
         mean_accuracy = jnp.mean(mean_accuracies)
         min_accuracy = jnp.min(min_accuracies)
         mean_accs_focs = jnp.mean(mean_accs_focs, axis=0)
@@ -31,7 +30,6 @@ def create_eval_fn(config, episode_simul_fn, batch_loss_fn):
         max_obs_terminal = jnp.max(max_obsses_terminal)
         return (
             mean_loss,
-            max_loss,
             mean_accuracy,
             min_accuracy,
             mean_accs_focs,

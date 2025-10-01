@@ -22,11 +22,11 @@ def create_epoch_train_fn(econ_model, config):
         loss_rng = random.split(step_rng, config["n_batches"])
         step_obs = jax.vmap(episode_simul_fn, in_axes=(None, 0))(train_state, jnp.stack(epis_rng))
         step_obs = step_obs.reshape(
-            config["periods_per_step"], econ_model.obs_ss.shape[0]
+            config["periods_per_step"], econ_model.state_ss.shape[0]
         )  # combine all periods in one axis
         step_obs = random.permutation(step_rng, step_obs, axis=0)  # reshuffle obs at random
         step_obs = step_obs.reshape(
-            config["n_batches"], config["batch_size"], econ_model.obs_ss.shape[0]
+            config["n_batches"], config["batch_size"], econ_model.state_ss.shape[0]
         )  # reshape to into batches
         train_state, step_metrics = jax.vmap(
             batch_train_fn, in_axes=(None, 0, 0), out_axes=(None, 0), axis_name="batch"

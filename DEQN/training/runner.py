@@ -53,7 +53,7 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn):
     print(f"Running on {n_cores} device(s)")
 
     # CREATE RNGS, TRAIN_STATE
-    rng_pol, rng_epoch, rng_eval = random.split(random.PRNGKey(config["seed"]), num=5)
+    rng_pol, rng_epoch, rng_eval = random.split(random.PRNGKey(config["seed"]), num=3)
 
     # CREATE LR SCHEDULE
     lr_schedule = optax.join_schedules(

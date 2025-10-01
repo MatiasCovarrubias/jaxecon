@@ -355,8 +355,6 @@ class Model:
 
         # Calculate steady state aggregates in levels using steady state weights (which are just the steady state prices)
         policies_ss_levels = jnp.exp(self.policies_ss)
-        Cagg_ss = policies_ss_levels[11 * self.n_sectors]
-        Lagg_ss = policies_ss_levels[11 * self.n_sectors + 1]
 
         # Get steady state Kagg
         K_ss = jnp.exp(self.state_ss[: self.n_sectors])  # put in levels

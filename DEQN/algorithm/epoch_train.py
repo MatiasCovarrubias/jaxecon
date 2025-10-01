@@ -47,6 +47,82 @@ def create_epoch_train_fn(econ_model, config):
     return epoch_train_fn
 
 
+def create_optimal_fast_epoch_train_fn(econ_model, config):
+
+    from DEQN.algorithm.simulation import create_episode_simul_fn
+
+    episode_simul_fn = create_episode_simul_fn(econ_model, config)
+
+    def step_train_fn(train_state, step_rng):
+        apply_fn = train_state.apply_fn
+
+        simul_key, mc_key = random.split(step_rng)
+
+        epis_keys = random.split(simul_key, config["epis_per_step"])  # keys per episode
+
+        # Simulate all episodes for this step (outside the gradient path)
+        step_obs = jax.vmap(episode_simul_fn, in_axes=(None, 0))(train_state, jnp.stack(epis_keys))
+
+        # Flatten episodes × periods into a single batch of observations
+        periods_per_step = config.get("periods_per_step", config["epis_per_step"] * config["periods_per_epis"])
+        step_obs = step_obs.reshape(periods_per_step, econ_model.state_ss.shape[0])
+
+        def step_loss(params):
+            # Policies for all observations in one batched call
+            policies = apply_fn(params, step_obs)
+
+            # Shared MC shocks for expectation (centralized MC)
+            mc_shocks = econ_model.mc_shocks(mc_key, config["mc_draws"])  # (mc_draws, shock_dim)
+
+            # Compute next observations for all obs under each MC shock
+            def step_with_shock(shock):
+                return jax.vmap(
+                    lambda obs, pol: econ_model.step(
+                        jax.lax.stop_gradient(obs),
+                        jax.lax.stop_gradient(pol),
+                        shock,
+                    )
+                )(step_obs, policies)
+
+            mc_nextobs = jax.vmap(step_with_shock)(mc_shocks)  # (mc_draws, batch, obs_dim)
+
+            # Policies at next observations in a single batched call
+            batch_size = mc_nextobs.shape[1]
+            obs_dim = mc_nextobs.shape[2]
+            mc_nextobs_2d = mc_nextobs.reshape(config["mc_draws"] * batch_size, obs_dim)
+            mc_nextpols_2d = apply_fn(params, mc_nextobs_2d)
+            mc_nextpols = mc_nextpols_2d.reshape(mc_nextobs.shape[0], mc_nextobs.shape[1], -1)
+
+            # Expected objects (stop gradient through expectation/dynamics)
+            expect_real = jax.vmap(jax.vmap(econ_model.expect_realization))(
+                mc_nextobs, mc_nextpols
+            )  # (mc_draws, batch, ...)
+            expect = jax.lax.stop_gradient(jnp.mean(expect_real, axis=0))  # (batch, ...)
+
+            # Per-observation losses/accuracies; differentiate w.r.t. policy/params only
+            mean_loss_i, mean_acc_i, min_acc_i, _, _ = jax.vmap(lambda o, e, p: econ_model.loss(o, e, p))(
+                step_obs, expect, policies
+            )
+
+            mean_loss = jnp.mean(mean_loss_i)
+            mean_accuracy = jnp.mean(mean_acc_i)
+            min_accuracy = jnp.min(min_acc_i)
+            metrics = mean_loss, mean_accuracy, min_accuracy
+            return mean_loss, metrics
+
+        grad_fn = jax.value_and_grad(step_loss, has_aux=True)
+        (_, metrics), grads = grad_fn(train_state.params)
+        train_state = train_state.apply_gradients(grads=grads)
+        return train_state, metrics
+
+    def epoch_train_fn(train_state, epoch_rng):
+        epoch_rng, *step_rngs = random.split(epoch_rng, config["steps_per_epoch"] + 1)
+        train_state, epoch_metrics = lax.scan(step_train_fn, train_state, jnp.stack(step_rngs))
+        return train_state, epoch_rng, epoch_metrics
+
+    return epoch_train_fn
+
+
 def create_fast_epoch_train_fn(econ_model, config):
 
     def step_train_fn(train_state, step_rng):

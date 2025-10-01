@@ -53,15 +53,15 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn):
     print(f"Running on {n_cores} device(s)")
 
     # CREATE RNGS, TRAIN_STATE
-    rng, rng_pol, rng_env, rng_epoch, rng_eval = random.split(random.PRNGKey(config["seed"]), num=5)
+    rng_pol, rng_epoch, rng_eval = random.split(random.PRNGKey(config["seed"]), num=5)
 
     # CREATE LR SCHEDULE
     lr_schedule = optax.join_schedules(
         schedules=[optax.constant_schedule(i) for i in config["lr_sch_values"][:-1]]
         + [
             optax.warmup_cosine_decay_schedule(
-                init_value=config["lr_sch_values"][-1],
-                peak_value=config["lr_sch_values"][-1],
+                init_value=config["lr_sch_values"][0],
+                peak_value=config["lr_sch_values"][0],
                 warmup_steps=config["warmup_steps"],
                 decay_steps=config["n_epochs"] * config["steps_per_epoch"] - config["lr_sch_transitions"][-1],
                 end_value=config["lr_end_value"],

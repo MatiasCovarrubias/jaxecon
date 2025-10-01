@@ -47,7 +47,7 @@ def create_epoch_train_fn(econ_model, config):
     return epoch_train_fn
 
 
-def create_fast_epoque_train_fn(econ_model, config):
+def create_fast_epoch_train_fn(econ_model, config):
 
     def step_train_fn(train_state, step_rng):
         apply_fn = train_state.apply_fn

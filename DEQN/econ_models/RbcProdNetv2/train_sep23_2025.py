@@ -109,9 +109,9 @@ import scipy.io as sio  # noqa: E402
 from jax import config as jax_config  # noqa: E402
 
 # DEQN imports (use absolute imports that work both as module and script)
-from DEQN.algorithm.epoch_train import (  # noqa: E402
+from DEQN.algorithm import (  # noqa: E402
     create_epoch_train_fn,
-    create_fast_epoque_train_fn,
+    create_fast_epoch_train_fn,
 )
 from DEQN.econ_models.RbcProdNetv2.plots import (  # noqa: E402
     plot_learning_rate_schedule,
@@ -259,7 +259,7 @@ def main():
     print("\n" + "=" * 60)
     print("Defining epoch train functions...")
 
-    epoch_train_functions = [create_epoch_train_fn, create_fast_epoque_train_fn]
+    epoch_train_functions = [create_epoch_train_fn, create_fast_epoch_train_fn]
     print("Configured baseline and fast epoch train functions")
 
     # ===================================================================

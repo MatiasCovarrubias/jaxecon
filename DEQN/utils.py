@@ -6,9 +6,11 @@ This module contains common utility functions used across different DEQN compone
 
 import json
 import os
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 import optax
+import orbax.checkpoint as ocp
 from flax.training import checkpoints
 from flax.training.train_state import TrainState
 
@@ -81,3 +83,48 @@ def load_experiment_data(experiments_config: Dict[str, str], save_dir: str) -> D
         }
 
     return experiments_data
+
+
+def load_trained_model_orbax(
+    experiment_name: str, save_dir: str, nn_config: Dict[str, Any], step: Optional[int] = None
+) -> TrainState:
+    """Load trained model from Orbax checkpoint.
+
+    Args:
+        experiment_name: Name of the experiment/checkpoint directory
+        save_dir: Base directory where experiments are saved
+        nn_config: Neural network configuration containing:
+            - features: List of layer sizes including output layer
+            - C: Neural network parameter C
+            - policies_sd: Standard deviations for policy normalization
+            - params_dtype: Data type for model parameters
+        step: Specific checkpoint step to load (None for latest)
+
+    Returns:
+        TrainState: Loaded model ready for inference
+    """
+    nn = NeuralNet(
+        features=nn_config["features"],
+        C=nn_config["C"],
+        policies_sd=nn_config["policies_sd"],
+        param_dtype=nn_config["params_dtype"],
+    )
+
+    checkpoint_dir = Path(save_dir) / experiment_name
+    checkpointer = ocp.StandardCheckpointer()
+
+    if step is None:
+        all_steps = ocp.utils.checkpoint_steps(checkpoint_dir)
+        if not all_steps:
+            raise ValueError(f"No checkpoints found in {checkpoint_dir}")
+        step = max(all_steps)
+
+    restored_state = checkpointer.restore(checkpoint_dir / str(step))
+
+    params = restored_state["params"]
+    opt_state = restored_state["opt_state"]
+
+    train_state = TrainState.create(apply_fn=nn.apply, params=params, tx=optax.adam(0.001))
+    train_state = train_state.replace(opt_state=opt_state)
+
+    return train_state

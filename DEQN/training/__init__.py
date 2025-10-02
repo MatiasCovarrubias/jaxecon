@@ -2,8 +2,10 @@
 Training utilities for DEQN models.
 
 This module provides high-level experiment management and training orchestration.
+
+Available submodules:
+- run_experiment: Experiment execution and orchestration
+- plots: Training visualization utilities
 """
 
-from .runner import generate_experiment_grid, run_experiment
-
-__all__ = ["run_experiment", "generate_experiment_grid"]
+__all__ = ["run_experiment", "plots"]

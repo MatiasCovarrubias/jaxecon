@@ -5,10 +5,10 @@ Analysis script for DEQN trained models.
 Usage:
     LOCAL:
         # Method 1: Run as module (from repository root):
-        python -m DEQN.econ_models.RbcProdNetv2.Analysis_Sep23_2025
+        python -m DEQN.analysis
 
         # Method 2: Run directly as script (from repository root):
-        python DEQN/econ_models/RbcProdNetv2/Analysis_Sep23_2025.py
+        python DEQN/analysis.py
 
         Both methods require you to be in the repository root directory.
 
@@ -58,7 +58,7 @@ else:
     os.environ["OMP_NUM_THREADS"] = "2"
     os.environ["MKL_NUM_THREADS"] = "2"
     os.environ["OPENBLAS_NUM_THREADS"] = "2"
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
     base_dir = os.path.join(repo_root, "DEQN", "econ_models")
@@ -82,17 +82,6 @@ from DEQN.analysis.simul_analysis import (  # noqa: E402
 )
 from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
-from DEQN.econ_models.RbcProdNetv2.plots import (  # noqa: E402
-    plot_ergodic_histograms,
-    plot_gir_responses,
-    plot_sectoral_capital_mean,
-)
-from DEQN.econ_models.RbcProdNetv2.tables import (  # noqa: E402
-    create_comparative_stats_table,
-    create_descriptive_stats_table,
-    create_stochastic_ss_table,
-    create_welfare_table,
-)
 from DEQN.utils import load_experiment_data, load_trained_model_GPU  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
@@ -115,7 +104,7 @@ config = {
     # Experiments to analyze
     "experiments_to_analyze": {
         # "High Volatility": "baseline_nostateaug_high",
-        "Baseline": "baseline_nostateaug_finetunev2",
+        "test": "test_local",
         # "Low Volatility": "baseline_nostateaug_lower",
     },
     # Simulation configuration
@@ -151,6 +140,19 @@ config = {
 # Import Model class from the specified model directory
 model_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.model")
 Model = model_module.Model
+
+# Import model-specific plotting functions
+plots_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.plots")
+plot_ergodic_histograms = plots_module.plot_ergodic_histograms
+plot_gir_responses = plots_module.plot_gir_responses
+plot_sectoral_capital_mean = plots_module.plot_sectoral_capital_mean
+
+# Import model-specific table functions
+tables_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.tables")
+create_comparative_stats_table = tables_module.create_comparative_stats_table
+create_descriptive_stats_table = tables_module.create_descriptive_stats_table
+create_stochastic_ss_table = tables_module.create_stochastic_ss_table
+create_welfare_table = tables_module.create_welfare_table
 
 
 # ============================================================================
@@ -260,6 +262,8 @@ def main():
         # Calculate and store stochastic steady state
         stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
 
+        # TODO: REFACTOR - Model-specific price extraction logic
+        # This should be abstracted into a model-specific method or analysis function
         # Get average prices from simulation policies
         simul_policies_mean = jnp.mean(simul_policies, axis=0)
         P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]

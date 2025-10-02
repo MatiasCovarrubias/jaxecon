@@ -53,16 +53,15 @@ cd /path/to/jaxecon
 source .venv/bin/activate
 
 # Run as a module (recommended)
-python -m DEQN.econ_models.RbcProdNetv2.RbcProdNet_Analysis_Sep23_2025
+python -m DEQN.train
 
 # Or run directly
-python DEQN/econ_models/RbcProdNetv2/RbcProdNet_Analysis_Sep23_2025.py
+python DEQN/train.py
 ```
 
 **Prerequisites for analysis scripts:**
 
--   Required model data files must be in `DEQN/econ_models/RbcProdNetv2/Model_Data/`
--   Trained experiment results must be in `DEQN/econ_models/RbcProdNetv2/Experiments/`
+-   Required model data files must be in model directory
 -   See [Data Dependencies](#data-dependencies) section below
 
 #### Running Other Algorithms

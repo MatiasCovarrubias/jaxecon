@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 """
-RBC ProdNet Model Training Script - Single Experiment
-
-This script provides a simplified training framework for neural network policies
-for the RBC Production Network model using the DEQN solver. Unlike the multi-experiment
-version, this script is designed to run a single experiment with a specific configuration,
-making it easier to understand and a better entry point for new users.
+Training script. YOu need to define
 
 Usage:
     LOCAL:
         # Method 1: Run as module (from repository root):
-        python -m DEQN.econ_models.RbcProdNetv2.train_single_sep23_2025
+        python -m DEQN.train
 
         # Method 2: Run directly as script (from repository root):
-        python DEQN/econ_models/RbcProdNetv2/train_single_sep23_2025.py
+        python DEQN/train.py
 
         Both methods require you to be in the repository root directory.
 
@@ -58,7 +53,12 @@ if IN_COLAB:
     base_dir = "/content/drive/MyDrive/Jaxecon/DEQN"
 
 else:
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    # Configure JAX for multi-threaded CPU execution BEFORE importing JAX
+    os.environ["XLA_FLAGS"] = "--xla_cpu_multi_thread_eigen=true intra_op_parallelism_threads=4"
+    os.environ["OMP_NUM_THREADS"] = "4"
+    os.environ["MKL_NUM_THREADS"] = "4"
+    os.environ["OPENBLAS_NUM_THREADS"] = "4"
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
     base_dir = os.path.join(repo_root, "DEQN", "econ_models")
@@ -73,8 +73,13 @@ import jax.numpy as jnp  # noqa: E402
 import scipy.io as sio  # noqa: E402
 from jax import config as jax_config  # noqa: E402
 
-from DEQN.algorithm import create_fast_epoch_train_fn  # noqa: E402
+from DEQN.algorithm import create_epoch_train_fn  # noqa: E402
 from DEQN.neural_nets.with_loglinear_baseline import NeuralNet  # noqa: E402
+from DEQN.training.plots import (
+    plot_learning_rate_schedule,
+    plot_training_metrics,
+    plot_training_summary,
+)
 from DEQN.training.run_experiment import run_experiment_orbax  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
@@ -85,42 +90,42 @@ jax_config.update("jax_debug_nans", True)
 # ============================================================================
 
 # Model and experiment names
-EXPER_NAME = "baseline_single"
-SEED = 7
+EXPER_NAME = "test_local_2"
 MODEL_DIR = "RbcProdNet_Oct2025"
 
 # Configuration dictionary -
 config = {
     # Basic experiment settings
     "exper_name": EXPER_NAME,
-    "date": "Sep25_2025",
-    "seed": SEED,
+    "date": "Oct1_2025",
+    "seed": 1,
     "restore": False,
     "restore_exper_name": None,
-    "comment": "",
+    "comment": "We now have multit-threading with 4 cores. Also, we use another seed.",
     # Econ Model
     "model_dir": MODEL_DIR,
     "model_param_overrides": {
         "pareps_c": 0.5,
     },
-    "mc_draws": 64,  # number of monte-carlo draws for loss calculation
+    "mc_draws": 16,  # number of monte-carlo draws for loss calculation
     "init_range": 6,  # range around the SS for state initialization in the model.
     "model_vol_scale": 1.0,  # scale for model volatility (used for simulation and expectation)
     "simul_vol_scale": 1.0,  # scale for simulation volatility (only used in simulation)
     # Training parameters
     "double_precision": True,  # use double precision for the model
-    "layers": [128, 128],
-    "learning_rate": 0.002,  # initial learning rate (cosine decay to 0)
-    "periods_per_epis": 64,
-    "epis_per_step": 64,
+    "layers": [64, 64],
+    "learning_rate": 0.001,  # initial learning rate (cosine decay to 0)
+    "periods_per_epis": 32,
+    "epis_per_step": 16,
     "steps_per_epoch": 100,
     "n_epochs": 100,
+    "checkpoint_frequency": 100,
     # Evaluation configuration
     "config_eval": {
-        "periods_per_epis": 512,
-        "mc_draws": 512,
+        "periods_per_epis": 64,
+        "mc_draws": 128,
         "simul_vol_scale": 1,
-        "eval_n_epis": 32,
+        "eval_n_epis": 64,
         "init_range": 6,
     },
 }
@@ -138,12 +143,6 @@ config["n_batches"] = config["periods_per_step"] // 16
 model_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.model")
 Model = model_module.Model
 
-# Import generic training plotting functions from centralized location
-from DEQN.training.plots import (
-    plot_learning_rate_schedule,
-    plot_training_metrics,
-    plot_training_summary,
-)
 
 # ============================================================================
 # MAIN FUNCTION
@@ -151,27 +150,33 @@ from DEQN.training.plots import (
 
 
 def main():
-    print(f"Training: {config['exper_name']}")
+    print(f"Training: {config['exper_name']}", flush=True)
 
     # Environment and precision setup
+    print("Setting up precision...", flush=True)
+    precision = jnp.float64 if config["double_precision"] else jnp.float32
     if config["double_precision"]:
         jax_config.update("jax_enable_x64", True)
+    print("Precision setup complete.", flush=True)
 
     model_dir = os.path.join(base_dir, config["model_dir"])
-    save_dir = os.path.join(base_dir, "experiments/")
+    save_dir = os.path.join(model_dir, "experiments/")
     config["save_dir"] = save_dir
 
     # Load model data
+    print("Loading model data...", flush=True)
     model_path = os.path.join(model_dir, "model_data.mat")
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
 
     model_data = sio.loadmat(model_path, simplify_cells=True)
+    print("Model data loaded successfully.", flush=True)
     n_sectors = model_data["SolData"]["parameters"]["parn_sectors"]
-    a_ss = jnp.zeros(shape=(n_sectors,), dtype=config["precision"])
+    a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
     state_ss = jnp.concatenate([model_data["SolData"]["k_ss"], a_ss])
 
     # Create economic model
+    print("Creating economic model...", flush=True)
     params = model_data["SolData"]["parameters"].copy()
     state_sd = model_data["SolData"]["states_sd"]
     policies_sd = model_data["SolData"]["policies_sd"]
@@ -189,18 +194,22 @@ def main():
         double_precision=config["double_precision"],
         volatility_scale=config["model_vol_scale"],
     )
+    print("Economic model created successfully.", flush=True)
 
     # Create neural network
+    print("Creating neural network...", flush=True)
     dim_policies = len(model_data["SolData"]["policies_ss"])
     neural_net = NeuralNet(
         features=config["layers"] + [dim_policies],
         C=model_data["SolData"]["C"],
         policies_sd=policies_sd,
-        param_dtype=config["precision"],
+        param_dtype=precision,
     )
+    print("Neural network created successfully.", flush=True)
 
     # Run training
-    epoch_train_fn = create_fast_epoch_train_fn
+    print("Starting training...", flush=True)
+    epoch_train_fn = create_epoch_train_fn
 
     try:
         result = run_experiment_orbax(

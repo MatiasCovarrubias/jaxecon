@@ -6,6 +6,41 @@ This guide explains how to migrate from Flax checkpointing to Orbax checkpointin
 
 Flax's checkpointing API (`flax.training.checkpoints`) has been deprecated in favor of Orbax, which provides better forward compatibility and more features. This library now provides both the old Flax-based functions (for backward compatibility) and new Orbax-based functions.
 
+**Note**: This library uses the **new Orbax CheckpointManager API** (post-0.5.0). The deprecated `checkpointers` parameter is not used.
+
+## API Changes (Orbax 0.5.0+)
+
+The library has been updated to use the refactored Orbax CheckpointManager API. Key changes:
+
+### Before (Deprecated):
+
+```python
+# OLD - Don't use this
+checkpoint_manager = ocp.CheckpointManager(
+    checkpoint_dir,
+    checkpointers=ocp.StandardCheckpointer(),  # ❌ Deprecated parameter
+    options=options
+)
+```
+
+### After (Current):
+
+```python
+# NEW - Use this
+checkpoint_manager = ocp.CheckpointManager(
+    checkpoint_dir,
+    options=options  # ✅ No checkpointers parameter
+)
+
+# Saving uses args=
+checkpoint_manager.save(step=step, args=ocp.args.StandardSave(train_state))
+
+# Restoring uses args=
+restored = checkpoint_manager.restore(step=step, args=ocp.args.StandardRestore(abstract_target))
+```
+
+For more details, see the [Orbax API Refactor Guide](https://orbax.readthedocs.io/en/latest/guides/checkpoint/api_refactor.html).
+
 ## New Functions
 
 ### 1. Training with Orbax: `run_experiment_orbax()`
@@ -30,9 +65,10 @@ results = run_experiment_orbax(config, econ_model, neural_net, epoch_train_fn)
 
 **Changes from `run_experiment()`:**
 
--   Uses `orbax.checkpoint.StandardCheckpointer()` instead of `flax.training.checkpoints`
+-   Uses `ocp.CheckpointManager()` with the new API (no `checkpointers` parameter)
 -   Checkpoints are saved in subdirectories named by step number (e.g., `experiment_name/1000/`, `experiment_name/2000/`)
--   Restoration uses `ocp.utils.checkpoint_steps()` to find available checkpoints
+-   Restoration uses `checkpoint_manager.latest_step()` to find the latest checkpoint
+-   Uses `args=ocp.args.StandardSave()` and `args=ocp.args.StandardRestore()` for saving and restoring
 -   All other functionality remains identical
 
 ### 2. Loading Models with Orbax: `load_trained_model_orbax()`
@@ -56,6 +92,7 @@ train_state = load_trained_model_orbax(
     experiment_name="my_experiment",
     save_dir="./results/",
     nn_config=nn_config,
+    state_ss=econ_model.state_ss,  # Required for proper initialization
     step=None  # None loads latest checkpoint
 )
 
@@ -64,14 +101,16 @@ train_state = load_trained_model_orbax(
     experiment_name="my_experiment",
     save_dir="./results/",
     nn_config=nn_config,
+    state_ss=econ_model.state_ss,
     step=5000  # Load checkpoint at step 5000
 )
 ```
 
 **Changes from `load_trained_model_GPU()`:**
 
--   Uses `orbax.checkpoint.StandardCheckpointer()` for restoration
--   Can specify a particular checkpoint step or load the latest automatically
+-   Uses `ocp.CheckpointManager()` with the new API (no `checkpointers` parameter)
+-   Uses `args=ocp.args.StandardRestore()` for type-safe restoration
+-   Can specify a particular checkpoint step or load the latest automatically using `checkpoint_manager.latest_step()`
 -   Path handling uses `pathlib.Path` for better cross-platform compatibility
 
 ## Checkpoint Directory Structure
@@ -168,6 +207,7 @@ trained_state = load_trained_model_orbax(
     experiment_name="new_experiment_orbax",
     save_dir="./results/",
     nn_config=nn_config,
+    state_ss=econ_model.state_ss,
     step=None  # Latest checkpoint
 )
 ```
@@ -195,6 +235,38 @@ The library automatically handles the import and will use the appropriate checkp
 -   Old Flax checkpoints cannot be loaded with `load_trained_model_orbax()`
 -   New Orbax checkpoints cannot be loaded with `load_trained_model_GPU()`
 -   Use the appropriate loading function for your checkpoint format
+
+### Optimizer state structure mismatch
+
+If you see an error like:
+
+```
+ValueError: User-provided restore item and on-disk value metadata tree structures do not match:
+{'opt_state': [None, Diff(lhs=<class 'optax._src.base.EmptyState'>, rhs=<class 'dict'>)]}
+```
+
+**Cause**: The optimizer structure used during restoration doesn't match the one used during training.
+
+**Solution**: Ensure you use a **learning rate schedule** (not a scalar) when creating the abstract target for restoration. The library now uses `optax.constant_schedule(0.001)` instead of the scalar `0.001` to match the training setup.
+
+**Example**:
+
+```python
+# ❌ Wrong - scalar learning rate
+dummy_train_state = TrainState.create(
+    apply_fn=nn.apply,
+    params=dummy_params,
+    tx=optax.adam(0.001)  # This creates a different optimizer structure
+)
+
+# ✅ Correct - schedule learning rate
+dummy_schedule = optax.constant_schedule(0.001)
+dummy_train_state = TrainState.create(
+    apply_fn=nn.apply,
+    params=dummy_params,
+    tx=optax.adam(dummy_schedule)  # This matches the training structure
+)
+```
 
 ### Path issues
 

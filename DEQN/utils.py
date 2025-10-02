@@ -79,14 +79,14 @@ def load_experiment_data(experiments_config: Dict[str, str], save_dir: str) -> D
         experiments_data[experiment_label] = {
             "results": results,
             "config": results["config"],
-            "model_name": results["config"]["model_name"],
+            "model_name": results["config"]["model_dir"],
         }
 
     return experiments_data
 
 
 def load_trained_model_orbax(
-    experiment_name: str, save_dir: str, nn_config: Dict[str, Any], step: Optional[int] = None
+    experiment_name: str, save_dir: str, nn_config: Dict[str, Any], state_ss: Any, step: Optional[int] = None
 ) -> TrainState:
     """Load trained model from Orbax checkpoint.
 
@@ -98,11 +98,15 @@ def load_trained_model_orbax(
             - C: Neural network parameter C
             - policies_sd: Standard deviations for policy normalization
             - params_dtype: Data type for model parameters
+        state_ss: Steady state of the economic model (used for initialization shape)
         step: Specific checkpoint step to load (None for latest)
 
     Returns:
         TrainState: Loaded model ready for inference
     """
+    import jax
+    import jax.numpy as jnp
+
     nn = NeuralNet(
         features=nn_config["features"],
         C=nn_config["C"],
@@ -111,20 +115,33 @@ def load_trained_model_orbax(
     )
 
     checkpoint_dir = Path(save_dir) / experiment_name
-    checkpointer = ocp.StandardCheckpointer()
+    checkpoint_manager = ocp.CheckpointManager(checkpoint_dir)
 
     if step is None:
-        all_steps = ocp.utils.checkpoint_steps(checkpoint_dir)
-        if not all_steps:
+        step = checkpoint_manager.latest_step()
+        if step is None:
             raise ValueError(f"No checkpoints found in {checkpoint_dir}")
-        step = max(all_steps)
 
-    restored_state = checkpointer.restore(checkpoint_dir / str(step))
+    # Create abstract target tree for environment-agnostic restoration
+    # Use same initialization approach as during training
+    # IMPORTANT: Use a schedule (not a scalar) to match the optimizer structure from training
+    dummy_params = nn.init(jax.random.PRNGKey(0), jnp.zeros_like(state_ss))
+    dummy_schedule = optax.constant_schedule(0.001)  # Constant schedule to match training's schedule-based optimizer
+    dummy_train_state = TrainState.create(apply_fn=nn.apply, params=dummy_params, tx=optax.adam(dummy_schedule))
 
-    params = restored_state["params"]
-    opt_state = restored_state["opt_state"]
+    # Create abstract tree structure matching the saved TrainState
+    abstract_target = jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_train_state)
 
-    train_state = TrainState.create(apply_fn=nn.apply, params=params, tx=optax.adam(0.001))
-    train_state = train_state.replace(opt_state=opt_state)
+    restored_state = checkpoint_manager.restore(step=step, args=ocp.args.StandardRestore(abstract_target))  # type: ignore
+
+    # Restored state is a TrainState-like structure
+    params = restored_state.params  # type: ignore
+    opt_state = restored_state.opt_state  # type: ignore
+    restored_step = restored_state.step  # type: ignore
+
+    # Use a schedule to match the training setup (learning rate value doesn't matter for inference)
+    inference_schedule = optax.constant_schedule(0.001)
+    train_state = TrainState.create(apply_fn=nn.apply, params=params, tx=optax.adam(inference_schedule))
+    train_state = train_state.replace(opt_state=opt_state, step=restored_step)
 
     return train_state

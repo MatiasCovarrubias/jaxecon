@@ -119,7 +119,6 @@ def plot_training_metrics(
             filename = "training_metrics.png"
         save_path = os.path.join(save_dir, filename)
         plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
-        print(f"  Saved to: {save_path}")
 
     return fig, axes
 
@@ -184,7 +183,6 @@ def plot_learning_rate_schedule(
             filename = "learning_rate.png"
         save_path = os.path.join(save_dir, filename)
         plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
-        print(f"  Saved to: {save_path}")
 
     return fig, ax
 
@@ -274,6 +272,5 @@ def plot_training_summary(
             filename = "training_summary.png"
         save_path = os.path.join(save_dir, filename)
         plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
-        print(f"  Saved to: {save_path}")
 
     return fig, axes

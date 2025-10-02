@@ -312,8 +312,13 @@ class Model:
 
         return mean_loss, mean_accuracy, min_accuracy, mean_accuracies_focs, min_accuracies_focs
 
-    def get_aggregates(self, state_logdev, policies_logdev, P_weights, Pk_weights, Pm_weights):
-        """Calculate log deviations of aggregates from steady state"""
+    def get_analysis_variables(self, state_logdev, policies_logdev, P_weights, Pk_weights, Pm_weights):
+        """
+        Calculate analysis variables as a dictionary with descriptive labels.
+
+        Returns:
+            dict: Dictionary mapping variable labels to their log deviations from steady state
+        """
         # Denormalize weights from log deviations to levels
         # Get steady state prices in levels
         P_ss = jnp.exp(self.policies_ss[8 * self.n_sectors : 9 * self.n_sectors])
@@ -325,15 +330,13 @@ class Model:
         Pk_weights_levels = Pk_ss * jnp.exp(Pk_weights)
         Pm_weights_levels = Pm_ss * jnp.exp(Pm_weights)
 
-        # Calculate current period aggregates in levels
+        # Calculate current period analysis variables in levels
 
         Cagg_logdev = policies_logdev[11 * self.n_sectors]
         Lagg_logdev = policies_logdev[11 * self.n_sectors + 1]
         # denormalize policy
         policies_notnorm = policies_logdev + self.policies_ss
         policies_levels = jnp.exp(policies_notnorm)
-        Cagg = policies_levels[11 * self.n_sectors]
-        Lagg = policies_levels[11 * self.n_sectors + 1]
 
         # Get Kagg
         state_notnorm = state_logdev + self.state_ss  # denormalize state
@@ -349,11 +352,7 @@ class Model:
         Inv = policies_levels[6 * self.n_sectors : 7 * self.n_sectors]
         Iagg = Inv @ Pk_weights_levels
 
-        utility = (1 / (1 - self.eps_c ** (-1))) * (
-            Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))
-        ) ** (1 - self.eps_c ** (-1))
-
-        # Calculate steady state aggregates in levels using steady state weights (which are just the steady state prices)
+        # Calculate steady state analysis variables in levels using steady state weights
         policies_ss_levels = jnp.exp(self.policies_ss)
 
         # Get steady state Kagg
@@ -374,13 +373,41 @@ class Model:
         Yagg_logdev = jnp.log(Yagg) - jnp.log(Yagg_ss)
         Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)
         Iagg_logdev = jnp.log(Iagg) - jnp.log(Iagg_ss)
-        utility_logdev = 1 - utility / self.utility_ss
 
-        aggregates_array = jnp.array(
-            [Cagg_logdev, Lagg_logdev, Kagg_logdev, Yagg_logdev, Magg_logdev, Iagg_logdev, utility_logdev, utility]
-        )
+        # Return as dictionary with descriptive labels
+        return {
+            "Agg. Consumption": Cagg_logdev,
+            "Agg. Labor": Lagg_logdev,
+            "Agg. Capital": Kagg_logdev,
+            "Agg. Output": Yagg_logdev,
+            "Agg. Intermediates": Magg_logdev,
+            "Agg. Investment": Iagg_logdev,
+        }
 
-        return aggregates_array
+    def utility_from_policies(self, policies_logdev):
+        """
+        Calculate utility from policies.
+
+        Args:
+            policies_logdev: Policy variables in log deviation form
+
+        Returns:
+            utility: Utility in levels
+        """
+        # Denormalize policies
+        policies_notnorm = policies_logdev + self.policies_ss
+        policies_levels = jnp.exp(policies_notnorm)
+
+        # Extract aggregate consumption and labor
+        Cagg = policies_levels[11 * self.n_sectors]
+        Lagg = policies_levels[11 * self.n_sectors + 1]
+
+        # Calculate utility
+        utility = (1 / (1 - self.eps_c ** (-1))) * (
+            Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))
+        ) ** (1 - self.eps_c ** (-1))
+
+        return utility
 
     def sample_shock(self, rng):
         """sample one realization of the shock"""

@@ -53,11 +53,6 @@ if IN_COLAB:
     base_dir = "/content/drive/MyDrive/Jaxecon/DEQN"
 
 else:
-    # Configure JAX for multi-threaded CPU execution BEFORE importing JAX
-    os.environ["XLA_FLAGS"] = "--xla_cpu_multi_thread_eigen=true intra_op_parallelism_threads=4"
-    os.environ["OMP_NUM_THREADS"] = "4"
-    os.environ["MKL_NUM_THREADS"] = "4"
-    os.environ["OPENBLAS_NUM_THREADS"] = "4"
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
@@ -89,21 +84,18 @@ jax_config.update("jax_debug_nans", True)
 # CONFIGURATION
 # ============================================================================
 
-# Model and experiment names
-EXPER_NAME = "test_local_2"
-MODEL_DIR = "RbcProdNet_Oct2025"
-
-# Configuration dictionary -
+# Configuration dictionary
 config = {
+    # Key configuration - Edit these first
+    "exper_name": "test_local_1thread",
+    "model_dir": "RbcProdNet_Oct2025",
     # Basic experiment settings
-    "exper_name": EXPER_NAME,
     "date": "Oct1_2025",
     "seed": 1,
     "restore": False,
     "restore_exper_name": None,
     "comment": "We now have multit-threading with 4 cores. Also, we use another seed.",
-    # Econ Model
-    "model_dir": MODEL_DIR,
+    # Econ Model parameters
     "model_param_overrides": {
         "pareps_c": 0.5,
     },
@@ -115,11 +107,11 @@ config = {
     "double_precision": True,  # use double precision for the model
     "layers": [64, 64],
     "learning_rate": 0.001,  # initial learning rate (cosine decay to 0)
-    "periods_per_epis": 32,
-    "epis_per_step": 16,
+    "periods_per_epis": 16,
+    "epis_per_step": 64,
     "steps_per_epoch": 100,
-    "n_epochs": 100,
-    "checkpoint_frequency": 100,
+    "n_epochs": 10,
+    "checkpoint_frequency": 10,
     # Evaluation configuration
     "config_eval": {
         "periods_per_epis": 64,
@@ -136,11 +128,11 @@ config["batch_size"] = 16  # hard coded
 config["n_batches"] = config["periods_per_step"] // 16
 
 # ============================================================================
-# DYNAMIC IMPORTS (based on MODEL_DIR)
+# DYNAMIC IMPORTS (based on model_dir from config)
 # ============================================================================
 
 # Import Model class from the specified model directory
-model_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.model")
+model_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.model")
 Model = model_module.Model
 
 

@@ -53,11 +53,6 @@ if IN_COLAB:
     base_dir = "/content/drive/MyDrive/Jaxecon/DEQN"
 
 else:
-    # Configure JAX for multi-threaded CPU execution BEFORE importing JAX
-    os.environ["XLA_FLAGS"] = "--xla_cpu_multi_thread_eigen=true intra_op_parallelism_threads=2"
-    os.environ["OMP_NUM_THREADS"] = "2"
-    os.environ["MKL_NUM_THREADS"] = "2"
-    os.environ["OPENBLAS_NUM_THREADS"] = "2"
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
@@ -68,6 +63,7 @@ else:
 # ============================================================================
 
 import importlib  # noqa: E402
+import json  # noqa: E402
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
@@ -76,13 +72,23 @@ from jax import config as jax_config  # noqa: E402
 from jax import random  # noqa: E402
 
 from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
+from DEQN.analysis.plots import (  # noqa: E402
+    plot_ergodic_histograms,
+    plot_gir_responses,
+)
 from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
     simulation_analysis,
 )
 from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
+from DEQN.analysis.tables import (  # noqa: E402
+    create_comparative_stats_table,
+    create_descriptive_stats_table,
+    create_stochastic_ss_table,
+    create_welfare_table,
+)
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
-from DEQN.utils import load_experiment_data, load_trained_model_GPU  # noqa: E402
+from DEQN.utils import load_experiment_data, load_trained_model_orbax  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
 
@@ -91,31 +97,26 @@ jax_config.update("jax_debug_nans", True)
 # CONFIGURATION
 # ============================================================================
 
-# Model and experiment names
-MODEL_DIR = "RbcProdNet_Oct2025"
-ANALYSIS_NAME = "baseline_analysis"
-
 # Configuration dictionary
 config = {
-    # Analysis identification
-    "analysis_name": ANALYSIS_NAME,
-    # Model and path configuration
-    "model_dir": MODEL_DIR,
+    # Key configuration - Edit these first
+    "model_dir": "RbcProdNet_Oct2025",
+    "analysis_name": "baseline_analysis",
     # Experiments to analyze
     "experiments_to_analyze": {
         # "High Volatility": "baseline_nostateaug_high",
-        "test": "test_local",
+        "test": "test_local_1thread",
         # "Low Volatility": "baseline_nostateaug_lower",
     },
     # Simulation configuration
     "init_range": 0,
-    "periods_per_epis": 6000,
+    "periods_per_epis": 8000,
     "burn_in_periods": 1000,
     "simul_vol_scale": 1,
     "simul_seed": 0,
     "n_simul_seeds": 10,
     # Welfare configuration
-    "welfare_n_trajects": 100,
+    "welfare_n_trajects": 200,
     "welfare_traject_length": 500,
     "welfare_seed": 0,
     # Stochastic steady state configuration
@@ -125,34 +126,24 @@ config = {
     # GIR configuration
     "gir_n_draws": 100,
     "gir_trajectory_length": 50,
-    "gir_tfp_shock_size": 0.2,
-    "gir_sectors_to_shock": None,
-    "gir_aggregate_indices": [0, 3, 5],
+    "shock_size": 0.2,
+    "states_to_shock": None,
     "gir_seed": 42,
     # JAX configuration
     "double_precision": True,
 }
 
 # ============================================================================
-# DYNAMIC IMPORTS (based on MODEL_DIR)
+# DYNAMIC IMPORTS (based on model_dir from config)
 # ============================================================================
 
 # Import Model class from the specified model directory
-model_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.model")
+model_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.model")
 Model = model_module.Model
 
-# Import model-specific plotting functions
-plots_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.plots")
-plot_ergodic_histograms = plots_module.plot_ergodic_histograms
-plot_gir_responses = plots_module.plot_gir_responses
-plot_sectoral_capital_mean = plots_module.plot_sectoral_capital_mean
-
-# Import model-specific table functions
-tables_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.tables")
-create_comparative_stats_table = tables_module.create_comparative_stats_table
-create_descriptive_stats_table = tables_module.create_descriptive_stats_table
-create_stochastic_ss_table = tables_module.create_stochastic_ss_table
-create_welfare_table = tables_module.create_welfare_table
+# Import model-specific plots module and registry
+plots_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.plots")
+MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", [])
 
 
 # ============================================================================
@@ -172,8 +163,22 @@ def main():
 
     model_dir = os.path.join(base_dir, config["model_dir"])
     save_dir = os.path.join(model_dir, "experiments/")
-    plots_dir = os.path.join(model_dir, "plots/")
-    tables_dir = os.path.join(model_dir, "tables/")
+
+    # Create analysis directory structure
+    analysis_dir = os.path.join(model_dir, "analysis", config["analysis_name"])
+    simulation_dir = os.path.join(analysis_dir, "simulation")
+    irs_dir = os.path.join(analysis_dir, "IRs")
+
+    # Create all directories
+    os.makedirs(analysis_dir, exist_ok=True)
+    os.makedirs(simulation_dir, exist_ok=True)
+    os.makedirs(irs_dir, exist_ok=True)
+
+    # Save analysis configuration as JSON
+    config_path = os.path.join(analysis_dir, "config.json")
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+    print(f"Analysis configuration saved to: {config_path}", flush=True)
 
     # Load model data
     print("Loading model data...", flush=True)
@@ -221,7 +226,8 @@ def main():
     print("Analysis functions created successfully.", flush=True)
 
     # Storage for analysis results
-    simulation_data = {}
+    analysis_variables_data = {}
+    raw_simulation_data = {}
     welfare_costs = {}
     stochastic_ss_data = {}
     gir_data = {}
@@ -238,22 +244,28 @@ def main():
         nn_config = nn_config_base.copy()
         nn_config["features"] = experiment_config["layers"] + [econ_model.dim_policies]
 
-        # Load trained model
-        train_state = load_trained_model_GPU(experiment_name, save_dir, nn_config)
+        # Load trained model (using same initialization approach as training)
+        train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
 
         # Generate simulation data
-        simul_obs, simul_policies, simul_aggregates = simulation_analysis(
+        simul_obs, simul_policies, simul_analysis_variables = simulation_analysis(
             train_state, econ_model, config, simulation_fn
         )
 
-        # Store simulation data (aggregates + sectoral capital)
-        simulation_data[experiment_label] = {
-            "aggregates": simul_aggregates,
-            "sectoral_capital_mean": jnp.mean(simul_obs, axis=0)[: econ_model.n_sectors].tolist(),
+        # Store raw simulation data for model-specific plots
+        raw_simulation_data[experiment_label] = {
+            "simul_obs": simul_obs,
+            "simul_policies": simul_policies,
+            "simul_analysis_variables": simul_analysis_variables,
         }
 
+        # Store analysis variables for general analysis
+        analysis_variables_data[experiment_label] = simul_analysis_variables
+
+        # Calculate utilities separately using the new utility method
+        simul_utilities = jax.vmap(econ_model.utility_from_policies)(simul_policies)
+
         # Calculate and store welfare cost
-        simul_utilities = simul_aggregates[:, -1]
         welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
         welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config["welfare_seed"]))
         welfare_loss = (1 - welfare / welfare_ss) * 100
@@ -261,20 +273,22 @@ def main():
 
         # Calculate and store stochastic steady state
         stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
+        if stoch_ss_obs_std.max() > 0.001:
+            raise ValueError("Stochastic steady state standard deviation too large")
 
-        # TODO: REFACTOR - Model-specific price extraction logic
-        # This should be abstracted into a model-specific method or analysis function
         # Get average prices from simulation policies
         simul_policies_mean = jnp.mean(simul_policies, axis=0)
         P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
         Pk_mean = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
         Pm_mean = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
 
-        # Calculate stochastic steady state aggregates
-        stoch_ss_aggregates = econ_model.get_aggregates(stoch_ss_obs, stoch_ss_policy, P_mean, Pk_mean, Pm_mean)
+        # Calculate stochastic steady state analysis variables (returns dictionary)
+        stoch_ss_analysis_variables = econ_model.get_analysis_variables(
+            stoch_ss_obs, stoch_ss_policy, P_mean, Pk_mean, Pm_mean
+        )
 
-        # Store stochastic steady state data (first 7 aggregates)
-        stochastic_ss_data[experiment_label] = stoch_ss_aggregates[:7].tolist()
+        # Store stochastic steady state data as dictionary
+        stochastic_ss_data[experiment_label] = stoch_ss_analysis_variables
 
         # Calculate and store GIR
         gir_results = gir_fn(simul_obs, train_state, simul_policies)
@@ -282,75 +296,89 @@ def main():
 
     print("Data collection completed successfully.", flush=True)
 
-    # Create output directories
-    os.makedirs(plots_dir, exist_ok=True)
-    os.makedirs(tables_dir, exist_ok=True)
+    # ============================================================================
+    # GENERAL ANALYSIS: Tables and Plots
+    # ============================================================================
+    print("Generating general analysis tables and figures...", flush=True)
 
-    # Extract aggregates data for table/plot functions
-    aggregates_data = {exp_label: data["aggregates"] for exp_label, data in simulation_data.items()}
-    sectoral_capital_data = {
-        exp_label: {"sectoral_capital_mean": data["sectoral_capital_mean"]}
-        for exp_label, data in simulation_data.items()
-    }
-
-    # Generate tables and figures
-    print("Generating tables and figures...", flush=True)
-
-    # Descriptive statistics tables
+    # Descriptive statistics tables (in simulation folder)
     create_descriptive_stats_table(
-        aggregates_data=aggregates_data,
-        save_path=os.path.join(tables_dir, "descriptive_stats_table.tex"),
+        analysis_variables_data=analysis_variables_data,
+        save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
         analysis_name=config["analysis_name"],
     )
 
-    if len(aggregates_data) > 1:
+    if len(analysis_variables_data) > 1:
         create_comparative_stats_table(
-            aggregates_data=aggregates_data,
-            save_path=os.path.join(tables_dir, "descriptive_stats_comparative.tex"),
+            analysis_variables_data=analysis_variables_data,
+            save_path=os.path.join(simulation_dir, "descriptive_stats_comparative.tex"),
             analysis_name=config["analysis_name"],
         )
 
-    # Welfare table
+    # Welfare table (in analysis directory)
     create_welfare_table(
         welfare_data=welfare_costs,
-        save_path=os.path.join(tables_dir, "welfare_table.tex"),
+        save_path=os.path.join(analysis_dir, "welfare_table.tex"),
         analysis_name=config["analysis_name"],
     )
 
-    # Stochastic steady state table
+    # Stochastic steady state table (in analysis directory)
     create_stochastic_ss_table(
         stochastic_ss_data=stochastic_ss_data,
-        save_path=os.path.join(tables_dir, "stochastic_ss_table.tex"),
+        save_path=os.path.join(analysis_dir, "stochastic_ss_table.tex"),
         analysis_name=config["analysis_name"],
     )
 
-    # Aggregate histograms
-    plot_ergodic_histograms(aggregates_data=aggregates_data, save_dir=plots_dir, analysis_name=config["analysis_name"])
-
-    # Sectoral capital bar plot
-    plot_sectoral_capital_mean(
-        analysis_results=sectoral_capital_data,
-        sector_labels=econ_model.labels,
-        save_path=os.path.join(plots_dir, "sectoral_capital_analysis.png"),
-        analysis_name=config["analysis_name"],
+    # Analysis variable histograms (in simulation folder)
+    plot_ergodic_histograms(
+        analysis_variables_data=analysis_variables_data, save_dir=simulation_dir, analysis_name=config["analysis_name"]
     )
 
-    # GIR plots
+    # GIR plots (in IRs folder)
     first_experiment = list(gir_data.keys())[0]
-    sectors_shocked = list(gir_data[first_experiment].keys())
+    states_shocked = list(gir_data[first_experiment].keys())
 
     plot_gir_responses(
         gir_data=gir_data,
-        aggregate_indices=config["gir_aggregate_indices"],
-        sectors_to_plot=sectors_shocked,
-        save_dir=plots_dir,
+        states_to_plot=states_shocked,
+        save_dir=irs_dir,
         analysis_name=config["analysis_name"],
     )
+
+    # ============================================================================
+    # MODEL-SPECIFIC ANALYSIS: Plots
+    # ============================================================================
+    print("Generating model-specific plots...", flush=True)
+
+    if MODEL_SPECIFIC_PLOTS:
+        for plot_spec in MODEL_SPECIFIC_PLOTS:
+            plot_name = plot_spec["name"]
+            plot_function = plot_spec["function"]
+            print(f"  - Running model-specific plot: {plot_name}", flush=True)
+
+            # Run the plot for each experiment (save in simulation folder)
+            for experiment_label, sim_data in raw_simulation_data.items():
+                try:
+                    plot_function(
+                        simul_obs=sim_data["simul_obs"],
+                        simul_policies=sim_data["simul_policies"],
+                        simul_analysis_variables=sim_data["simul_analysis_variables"],
+                        save_path=os.path.join(simulation_dir, f"{plot_name}_{experiment_label}.png"),
+                        analysis_name=config["analysis_name"],
+                        econ_model=econ_model,
+                        experiment_label=experiment_label,
+                    )
+                    print(f"    ✓ {plot_name} for {experiment_label}", flush=True)
+                except Exception as e:
+                    print(f"    ✗ Failed to create {plot_name} for {experiment_label}: {e}", flush=True)
+    else:
+        print("  No model-specific plots registered.", flush=True)
 
     print("Analysis completed successfully.", flush=True)
 
     return {
-        "simulation_data": simulation_data,
+        "analysis_variables_data": analysis_variables_data,
+        "raw_simulation_data": raw_simulation_data,
         "welfare_costs": welfare_costs,
         "stochastic_ss_data": stochastic_ss_data,
         "gir_data": gir_data,

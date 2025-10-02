@@ -267,13 +267,24 @@ def run_experiment_orbax(config, econ_model, neural_net, epoch_train_fn):
         train_state_obj = TrainState.create(apply_fn=neural_net.apply, params=params, tx=optax.adam(lr_schedule))
     else:
         restore_dir = Path(config["save_dir"]) / config["restore_exper_name"]
-        restore_checkpoint_manager = ocp.CheckpointManager(restore_dir, checkpointers=ocp.StandardCheckpointer())
+        restore_checkpoint_manager = ocp.CheckpointManager(restore_dir)
 
         latest_step = restore_checkpoint_manager.latest_step()
         if latest_step is None:
             raise ValueError(f"No checkpoints found in {restore_dir}")
 
-        restored_state = restore_checkpoint_manager.restore(latest_step)
+        # Create abstract target tree for environment-agnostic restoration
+        dummy_params = neural_net.init(rng_pol, jnp.zeros_like(econ_model.state_ss))
+        dummy_opt_state = optax.adam(lr_schedule).init(dummy_params)
+
+        abstract_target = {
+            "params": jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_params),
+            "opt_state": jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_opt_state),
+        }
+
+        restored_state = restore_checkpoint_manager.restore(
+            step=latest_step, args=ocp.args.StandardRestore(abstract_target)  # type: ignore
+        )
         params = restored_state["params"]
         opt_state = restored_state["opt_state"]
 
@@ -324,9 +335,7 @@ def run_experiment_orbax(config, econ_model, neural_net, epoch_train_fn):
 
     # CREATE ORBAX CHECKPOINT MANAGER (keeps only the most recent checkpoint)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_manager = ocp.CheckpointManager(
-        checkpoint_dir, checkpointers=ocp.StandardCheckpointer(), options=ocp.CheckpointManagerOptions(max_to_keep=1)
-    )
+    checkpoint_manager = ocp.CheckpointManager(checkpoint_dir, options=ocp.CheckpointManagerOptions(max_to_keep=1))
 
     # RUN ALL THE EPOCHS
     time_start = time()
@@ -372,7 +381,9 @@ def run_experiment_orbax(config, econ_model, neural_net, epoch_train_fn):
 
         # Checkpoint and metrics storage with Orbax
         if train_state_obj.step >= 100 and train_state_obj.step % 100 == 0:
-            checkpoint_manager.save(train_state_obj.step, train_state_obj)
+            checkpoint_manager.save(
+                step=train_state_obj.step, args=ocp.args.StandardSave(train_state_obj)  # type: ignore
+            )
             mean_losses.append(float(eval_metrics[0]))
             mean_accuracy.append(float(eval_metrics[1]))
             min_accuracy.append(float(eval_metrics[2]))

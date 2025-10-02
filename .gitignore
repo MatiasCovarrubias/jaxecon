@@ -133,3 +133,6 @@ dmypy.json
 
 # Experiment data
 DEQN/econ_models/*/experiments/
+DEQN/econ_models/*/analysis/
+DEQN/econ_models/*/plots/
+DEQN/econ_models/*/tables/

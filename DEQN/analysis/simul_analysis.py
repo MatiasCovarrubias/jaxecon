@@ -27,7 +27,7 @@ def create_episode_simulation_fn_verbose(econ_model, config):
 
 def simulation_analysis(train_state, econ_model, analysis_config, simulation_fn):
     """
-    Run parallel simulations and compute aggregates.
+    Run parallel simulations and compute analysis variables.
 
     Parameters:
     -----------
@@ -42,8 +42,8 @@ def simulation_analysis(train_state, econ_model, analysis_config, simulation_fn)
         Combined simulation observations after burn-in (in log deviation form)
     simul_policies : JAX array of shape (n_seeds * n_periods, n_policy_vars)
         Combined simulation policies after burn-in (in log deviation form)
-    simul_aggregates : JAX array of shape (n_seeds * n_periods, n_aggregates)
-        Computed aggregate variables for each observation
+    simul_analysis_variables : JAX array of shape (n_seeds * n_periods, n_analysis_vars)
+        Computed analysis variables for each observation
 
     Note: This function expects simulation_fn to return states and policies in log deviation form
           (not normalized by standard deviations), which is the case for create_episode_simulation_fn_verbose.
@@ -75,15 +75,28 @@ def simulation_analysis(train_state, econ_model, analysis_config, simulation_fn)
 
     print(f"  Using {simul_obs.shape[0]} total observations ({n_seeds} seeds × {n_periods} periods) for statistics")
 
-    # Get mean states and policies from ergodic distribution to construct aggregates
+    # Get mean states and policies from ergodic distribution to construct analysis variables
     simul_policies_mean = jnp.mean(simul_policies, axis=0)
     P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
     Pk_mean = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
     Pm_mean = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
 
-    # Get aggregates for simulation data
-    simul_aggregates = jax.vmap(econ_model.get_aggregates, in_axes=(0, 0, None, None, None))(
+    # Get analysis variables for first observation to extract labels
+    first_analysis_vars = econ_model.get_analysis_variables(simul_obs[0], simul_policies[0], P_mean, Pk_mean, Pm_mean)
+    var_labels = list(first_analysis_vars.keys())
+
+    # Vectorized computation returns dictionary per observation
+    # We need to convert to array format for vmap, then reconstruct dictionary
+    def get_vars_as_array(obs, pol, P, Pk, Pm):
+        var_dict = econ_model.get_analysis_variables(obs, pol, P, Pk, Pm)
+        return jnp.array([var_dict[label] for label in var_labels])
+
+    # Get analysis variables as array (n_obs, n_vars)
+    simul_analysis_vars_array = jax.vmap(get_vars_as_array, in_axes=(0, 0, None, None, None))(
         simul_obs, simul_policies, P_mean, Pk_mean, Pm_mean
     )
 
-    return simul_obs, simul_policies, simul_aggregates
+    # Convert to dictionary format: {label: array of values across time}
+    simul_analysis_variables = {label: simul_analysis_vars_array[:, i] for i, label in enumerate(var_labels)}
+
+    return simul_obs, simul_policies, simul_analysis_variables

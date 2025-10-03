@@ -150,6 +150,8 @@ def plot_ergodic_histograms(
 
         figures.append((fig, ax))
 
+    plt.show()
+
     return figures
 
 
@@ -294,6 +296,8 @@ def plot_gir_responses(
                 plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
 
             figures.append((fig, ax))
+
+    plt.show()
 
     return figures
 

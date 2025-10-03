@@ -70,6 +70,12 @@ def create_descriptive_stats_table(
         with open(final_save_path, "w") as file:
             file.write(latex_code)
 
+    print("\n" + "=" * 80)
+    print("DESCRIPTIVE STATISTICS TABLE")
+    print("=" * 80)
+    print(latex_code)
+    print("=" * 80 + "\n")
+
     return latex_code
 
 
@@ -248,6 +254,12 @@ def create_welfare_table(
         with open(final_save_path, "w") as file:
             file.write(latex_code)
 
+    print("\n" + "=" * 80)
+    print("WELFARE TABLE")
+    print("=" * 80)
+    print(latex_code)
+    print("=" * 80 + "\n")
+
     return latex_code
 
 
@@ -305,6 +317,12 @@ def create_stochastic_ss_table(
 
         with open(final_save_path, "w") as file:
             file.write(latex_code)
+
+    print("\n" + "=" * 80)
+    print("STOCHASTIC STEADY STATE TABLE")
+    print("=" * 80)
+    print(latex_code)
+    print("=" * 80 + "\n")
 
     return latex_code
 

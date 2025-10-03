@@ -169,7 +169,7 @@ def plot_sectoral_capital(
         final_save_path = save_path
 
     plt.savefig(final_save_path, dpi=300, bbox_inches="tight", format="png")
-    plt.close(fig)
+    plt.show()
 
     return fig, ax
 

@@ -199,7 +199,7 @@ class Model:
         normC = (self.xi.T @ MgUtCmod_temp ** (1 - self.sigma_c)) ** (1 / (1 - self.sigma_c))
         MgUtCmod = MgUtCmod_temp / normC
 
-        MgUtLmod = MgUtCagg * self.theta * Lagg ** (self.eps_l**-1) * (L / Lagg) ** (1 / self.sigma_l)
+        MgUtLmod = MgUtCagg * self.theta * Lagg ** (self.eps_l**-1) * (L / Lagg) ** (1 / self.sigma_l) / normC
         MPLmod = (
             P
             * A ** ((self.sigma_y - 1) / self.sigma_y)

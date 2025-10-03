@@ -62,11 +62,13 @@ else:
 # IMPORTS
 # ============================================================================
 
+import glob  # noqa: E402
 import importlib  # noqa: E402
 import json  # noqa: E402
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
 import scipy.io as sio  # noqa: E402
 from jax import config as jax_config  # noqa: E402
 from jax import random  # noqa: E402
@@ -302,11 +304,20 @@ def main():
     print("Generating general analysis tables and figures...", flush=True)
 
     # Descriptive statistics tables (in simulation folder)
+    descriptive_stats_path = os.path.join(simulation_dir, "descriptive_stats_table.tex")
     create_descriptive_stats_table(
         analysis_variables_data=analysis_variables_data,
-        save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
+        save_path=descriptive_stats_path,
         analysis_name=config["analysis_name"],
     )
+
+    # Print descriptive statistics table
+    print("\n" + "=" * 80)
+    print("DESCRIPTIVE STATISTICS TABLE")
+    print("=" * 80)
+    with open(descriptive_stats_path, "r") as f:
+        print(f.read())
+    print("=" * 80 + "\n")
 
     if len(analysis_variables_data) > 1:
         create_comparative_stats_table(
@@ -323,18 +334,38 @@ def main():
     )
 
     # Stochastic steady state table (in analysis directory)
+    stochastic_ss_path = os.path.join(analysis_dir, "stochastic_ss_table.tex")
     create_stochastic_ss_table(
         stochastic_ss_data=stochastic_ss_data,
-        save_path=os.path.join(analysis_dir, "stochastic_ss_table.tex"),
+        save_path=stochastic_ss_path,
         analysis_name=config["analysis_name"],
     )
+
+    # Print stochastic steady state table
+    print("\n" + "=" * 80)
+    print("STOCHASTIC STEADY STATE TABLE")
+    print("=" * 80)
+    with open(stochastic_ss_path, "r") as f:
+        print(f.read())
+    print("=" * 80 + "\n")
 
     # Analysis variable histograms (in simulation folder)
     plot_ergodic_histograms(
         analysis_variables_data=analysis_variables_data, save_dir=simulation_dir, analysis_name=config["analysis_name"]
     )
 
-    # GIR plots (in IRs folder)
+    # Display histogram plots
+    print("Displaying ergodic histograms...", flush=True)
+    histogram_files = glob.glob(os.path.join(simulation_dir, f"histogram_*_{config['analysis_name']}.png"))
+    for hist_file in sorted(histogram_files):
+        img = plt.imread(hist_file)
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.imshow(img)
+        ax.axis("off")
+        plt.tight_layout()
+        plt.show()
+
+    # GIR plots (in IRs folder) - save but don't display (too many)
     first_experiment = list(gir_data.keys())[0]
     states_shocked = list(gir_data[first_experiment].keys())
 
@@ -344,12 +375,14 @@ def main():
         save_dir=irs_dir,
         analysis_name=config["analysis_name"],
     )
+    print(f"GIR plots saved to {irs_dir} (not displayed - too many plots)", flush=True)
 
     # ============================================================================
     # MODEL-SPECIFIC ANALYSIS: Plots
     # ============================================================================
     print("Generating model-specific plots...", flush=True)
 
+    model_specific_plot_files = []
     if MODEL_SPECIFIC_PLOTS:
         for plot_spec in MODEL_SPECIFIC_PLOTS:
             plot_name = plot_spec["name"]
@@ -359,18 +392,32 @@ def main():
             # Run the plot for each experiment (save in simulation folder)
             for experiment_label, sim_data in raw_simulation_data.items():
                 try:
+                    plot_path = os.path.join(simulation_dir, f"{plot_name}_{experiment_label}.png")
                     plot_function(
                         simul_obs=sim_data["simul_obs"],
                         simul_policies=sim_data["simul_policies"],
                         simul_analysis_variables=sim_data["simul_analysis_variables"],
-                        save_path=os.path.join(simulation_dir, f"{plot_name}_{experiment_label}.png"),
+                        save_path=plot_path,
                         analysis_name=config["analysis_name"],
                         econ_model=econ_model,
                         experiment_label=experiment_label,
                     )
                     print(f"    ✓ {plot_name} for {experiment_label}", flush=True)
+                    model_specific_plot_files.append(plot_path)
                 except Exception as e:
                     print(f"    ✗ Failed to create {plot_name} for {experiment_label}: {e}", flush=True)
+
+        # Display model-specific plots
+        print("Displaying model-specific plots...", flush=True)
+        for plot_file in sorted(model_specific_plot_files):
+            if os.path.exists(plot_file):
+                img = plt.imread(plot_file)
+                fig, ax = plt.subplots(figsize=(12, 8))
+                ax.imshow(img)
+                ax.axis("off")
+                ax.set_title(os.path.basename(plot_file))
+                plt.tight_layout()
+                plt.show()
     else:
         print("  No model-specific plots registered.", flush=True)
 

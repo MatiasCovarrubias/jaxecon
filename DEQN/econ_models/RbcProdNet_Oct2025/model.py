@@ -194,7 +194,11 @@ class Model:
         )
 
         # key variables for loss function
-        MgUtCmod = MgUtCagg * (Cagg * self.xi / C) ** (1 / self.sigma_c)
+        # Normalize consumption prices (P-hat trick)
+        MgUtCmod_temp = MgUtCagg * (Cagg * self.xi / C) ** (1 / self.sigma_c)
+        normC = (self.xi.T @ MgUtCmod_temp ** (1 - self.sigma_c)) ** (1 / (1 - self.sigma_c))
+        MgUtCmod = MgUtCmod_temp / normC
+
         MgUtLmod = MgUtCagg * self.theta * Lagg ** (self.eps_l**-1) * (L / Lagg) ** (1 / self.sigma_l)
         MPLmod = (
             P

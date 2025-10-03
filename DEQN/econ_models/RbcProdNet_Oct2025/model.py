@@ -312,6 +312,31 @@ class Model:
 
         return mean_loss, mean_accuracy, min_accuracy, mean_accuracies_focs, min_accuracies_focs
 
+    def utility_from_policies(self, policies_logdev):
+        """
+        Calculate utility from policies.
+
+        Args:
+            policies_logdev: Policy variables in log deviation form
+
+        Returns:
+            utility: Utility in levels
+        """
+        # Denormalize policies
+        policies_notnorm = policies_logdev + self.policies_ss
+        policies_levels = jnp.exp(policies_notnorm)
+
+        # Extract aggregate consumption and labor
+        Cagg = policies_levels[11 * self.n_sectors]
+        Lagg = policies_levels[11 * self.n_sectors + 1]
+
+        # Calculate utility
+        utility = (1 / (1 - self.eps_c ** (-1))) * (
+            Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))
+        ) ** (1 - self.eps_c ** (-1))
+
+        return utility
+
     def get_analysis_variables(self, state_logdev, policies_logdev, P_weights, Pk_weights, Pm_weights):
         """
         Calculate analysis variables as a dictionary with descriptive labels.
@@ -374,6 +399,11 @@ class Model:
         Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)
         Iagg_logdev = jnp.log(Iagg) - jnp.log(Iagg_ss)
 
+        # Calculate utility and its deviation
+        utility = self.utility_from_policies(policies_logdev)
+        utility_ss = self.utility_ss
+        utility_dev = (utility - utility_ss) / jnp.abs(utility_ss)
+
         # Return as dictionary with descriptive labels
         return {
             "Agg. Consumption": Cagg_logdev,
@@ -382,32 +412,8 @@ class Model:
             "Agg. Output": Yagg_logdev,
             "Agg. Intermediates": Magg_logdev,
             "Agg. Investment": Iagg_logdev,
+            "Utility": utility_dev,
         }
-
-    def utility_from_policies(self, policies_logdev):
-        """
-        Calculate utility from policies.
-
-        Args:
-            policies_logdev: Policy variables in log deviation form
-
-        Returns:
-            utility: Utility in levels
-        """
-        # Denormalize policies
-        policies_notnorm = policies_logdev + self.policies_ss
-        policies_levels = jnp.exp(policies_notnorm)
-
-        # Extract aggregate consumption and labor
-        Cagg = policies_levels[11 * self.n_sectors]
-        Lagg = policies_levels[11 * self.n_sectors + 1]
-
-        # Calculate utility
-        utility = (1 / (1 - self.eps_c ** (-1))) * (
-            Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))
-        ) ** (1 - self.eps_c ** (-1))
-
-        return utility
 
     def sample_shock(self, rng):
         """sample one realization of the shock"""

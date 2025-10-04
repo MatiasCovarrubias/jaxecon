@@ -75,7 +75,7 @@ from DEQN.training.plots import (
     plot_training_metrics,
     plot_training_summary,
 )
-from DEQN.training.run_experiment import run_experiment_orbax  # noqa: E402
+from DEQN.training.run_experiment import run_experiment  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
 
@@ -87,35 +87,35 @@ jax_config.update("jax_debug_nans", True)
 # Configuration dictionary
 config = {
     # Key configuration - Edit these first
-    "exper_name": "test_local_1thread",
+    "exper_name": "baseline",
     "model_dir": "RbcProdNet_Oct2025",
     # Basic experiment settings
-    "date": "Oct1_2025",
+    "date": "Oct4_2025",
     "seed": 1,
     "restore": False,
     "restore_exper_name": None,
-    "comment": "We now have multit-threading with 4 cores. Also, we use another seed.",
+    "comment": "",
     # Econ Model parameters
     "model_param_overrides": {
-        "pareps_c": 0.5,
+        # "pareps_c": 0.1,
     },
-    "mc_draws": 16,  # number of monte-carlo draws for loss calculation
+    "mc_draws": 32,  # number of monte-carlo draws for loss calculation
     "init_range": 6,  # range around the SS for state initialization in the model.
     "model_vol_scale": 1.0,  # scale for model volatility (used for simulation and expectation)
     "simul_vol_scale": 1.0,  # scale for simulation volatility (only used in simulation)
     # Training parameters
     "double_precision": True,  # use double precision for the model
-    "layers": [64, 64],
-    "learning_rate": 0.001,  # initial learning rate (cosine decay to 0)
-    "periods_per_epis": 16,
-    "epis_per_step": 64,
+    "layers": [32, 32],
+    "learning_rate": 0.0005,  # initial learning rate (cosine decay to 0)
+    "periods_per_epis": 32,
+    "epis_per_step": 32,
     "steps_per_epoch": 100,
-    "n_epochs": 10,
-    "checkpoint_frequency": 10,
+    "n_epochs": 100,
+    "checkpoint_every_n_epochs": 10,
     # Evaluation configuration
     "config_eval": {
         "periods_per_epis": 64,
-        "mc_draws": 128,
+        "mc_draws": 64,
         "simul_vol_scale": 1,
         "eval_n_epis": 64,
         "init_range": 6,
@@ -169,16 +169,17 @@ def main():
 
     # Create economic model
     print("Creating economic model...", flush=True)
-    params = model_data["SolData"]["parameters"].copy()
+    params_original = model_data["SolData"]["parameters"].copy()
     state_sd = model_data["SolData"]["states_sd"]
     policies_sd = model_data["SolData"]["policies_sd"]
 
+    params_train = params_original.copy()
     if config["model_param_overrides"] is not None:
         for param_name, param_value in config["model_param_overrides"].items():
-            params[param_name] = param_value
+            params_train[param_name] = param_value
 
     econ_model = Model(
-        parameters=params,
+        parameters=params_train,
         state_ss=state_ss,
         policies_ss=model_data["SolData"]["policies_ss"],
         state_sd=state_sd,
@@ -187,6 +188,17 @@ def main():
         volatility_scale=config["model_vol_scale"],
     )
     print("Economic model created successfully.", flush=True)
+
+    econ_model_eval = Model(
+        parameters=params_original,
+        state_ss=state_ss,
+        policies_ss=model_data["SolData"]["policies_ss"],
+        state_sd=state_sd,
+        policies_sd=policies_sd,
+        double_precision=config["double_precision"],
+        volatility_scale=1.0,
+    )
+    print("Evaluation model created with original parameters and standard volatility (1.0).", flush=True)
 
     # Create neural network
     print("Creating neural network...", flush=True)
@@ -204,11 +216,12 @@ def main():
     epoch_train_fn = create_epoch_train_fn
 
     try:
-        result = run_experiment_orbax(
+        result = run_experiment(
             config=config,
             econ_model=econ_model,
             neural_net=neural_net,
             epoch_train_fn=epoch_train_fn,
+            econ_model_eval=econ_model_eval,
         )
     except Exception as e:
         print(f"Training failed: {e}")

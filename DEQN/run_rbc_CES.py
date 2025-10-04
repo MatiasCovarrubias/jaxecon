@@ -126,7 +126,7 @@ def create_config():
         "steps_per_epoch": 100,
         "n_epochs": 10,
         "batch_size": 16,
-        "checkpoint_frequency": 1000,
+        "checkpoint_every_n_steps": 1000,
         "config_eval": {
             "periods_per_epis": 64,
             "mc_draws": 256,
@@ -246,8 +246,8 @@ def run_experiment(econ_model, config, precision):
 
         # TODO: Implement checkpointing for local runs
         if (
-            train_state.step >= config["checkpoint_frequency"]
-            and train_state.step % config["checkpoint_frequency"] == 0
+            train_state.step >= config["checkpoint_every_n_steps"]
+            and train_state.step % config["checkpoint_every_n_steps"] == 0
         ):
             # checkpoints.save_checkpoint(ckpt_dir=config['save_dir']+config['exper_name'], target=train_state, step=train_state.step)
 
@@ -335,7 +335,7 @@ def run_analysis(econ_model, trained_train_state):
 def plot_learning_curves(config, mean_losses, max_losses, mean_accuracy, min_accuracy, lr_schedule):
     """Generate and save learning curve plots."""
     # TODO: Implement plotting and saving for local runs
-    checkpoint_steps = [(i + 1) * config["checkpoint_frequency"] for i in range(len(mean_losses))]
+    checkpoint_steps = [(i + 1) * config["checkpoint_every_n_steps"] for i in range(len(mean_losses))]
 
     # Mean Losses
     plt.figure()

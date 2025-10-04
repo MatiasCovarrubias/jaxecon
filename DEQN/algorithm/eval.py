@@ -3,9 +3,14 @@ from jax import numpy as jnp
 from jax import random
 
 
-def create_eval_fn(config, episode_simul_fn, batch_loss_fn):
+def create_eval_fn(econ_model, config):
+    from DEQN.algorithm.loss import create_batch_loss_fn
+    from DEQN.algorithm.simulation import create_episode_simul_fn
 
-    config = config["config_eval"]
+    config_eval = config["config_eval"]
+
+    episode_simul_fn = create_episode_simul_fn(econ_model, config_eval)
+    batch_loss_fn = create_batch_loss_fn(econ_model, config_eval)
 
     def episode_eval_fn(train_state, epis_rng):
         epis_rng, loss_rng = random.split(epis_rng, 2)
@@ -15,7 +20,7 @@ def create_eval_fn(config, episode_simul_fn, batch_loss_fn):
         return loss_metrics, obs_metrics
 
     def eval_fn(train_state, step_rng):
-        epis_rng = random.split(step_rng, config["eval_n_epis"])
+        epis_rng = random.split(step_rng, config_eval["eval_n_epis"])
         loss_metrics, obs_metrics = jax.vmap(episode_eval_fn, in_axes=(None, 0))(train_state, jnp.stack(epis_rng))
         mean_losses, mean_accuracies, min_accuracies, mean_accs_focs, min_accs_focs = loss_metrics
         mean_loss = jnp.mean(mean_losses)

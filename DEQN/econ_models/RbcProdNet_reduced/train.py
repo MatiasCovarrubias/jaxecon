@@ -53,7 +53,7 @@ if IN_COLAB:
     base_dir = "/content/drive/MyDrive/Jaxecon/DEQN"
 
 else:
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
     base_dir = os.path.join(repo_root, "DEQN", "econ_models")
@@ -88,7 +88,7 @@ jax_config.update("jax_debug_nans", True)
 config = {
     # Key configuration - Edit these first
     "exper_name": "low_volatility",
-    "model_dir": "RbcProdNet_Oct2025",
+    "model_dir": "RbcProdNet_reduced",
     # Basic experiment settings
     "date": "Oct4_2025",
     "seed": 1,
@@ -167,13 +167,142 @@ def main():
     a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
     state_ss = jnp.concatenate([model_data["SolData"]["k_ss"], a_ss])
 
-    # Create economic model
+    # Create reduced policy vectors and matrices
+    print("Building reduced policy setup (4N layout: [L, M, Inv, P])...", flush=True)
+    N = int(n_sectors)
+
+    # Full policy vector layout: [C, L, Pk, Pm, M, Mout, Inv, Iout, P, Q, Y, Cagg, Lagg, Yagg, Iagg, Magg]
+    # Blocks:                     [0, 1, 2,  3,  4, 5,    6,   7,    8, 9, 10, -,    -,    -,    -,    -   ]
+    # We want blocks [1, 4, 6, 8] = [L, M, Inv, P]
+
+    # Convert full arrays to numpy first for easier manipulation
+    policies_ss_full = jnp.array(model_data["SolData"]["policies_ss"], dtype=precision)
+    policies_sd_full = jnp.array(model_data["SolData"]["policies_sd"], dtype=precision)
+    C_full = jnp.array(model_data["SolData"]["C"], dtype=precision)
+
+    print(f"Full policies shape: {policies_ss_full.shape}, C shape: {C_full.shape}")
+    print(f"Expected: policies={(11*N+5,)}, C={(11*N+5, 2*N)}")
+
+    # EXPLICIT extraction - much clearer than boolean mask
+    # Block 1 (L): indices [N:2N]
+    # Block 4 (M): indices [4N:5N]
+    # Block 6 (Inv): indices [6N:7N]
+    # Block 8 (P): indices [8N:9N]
+
+    L_ss = policies_ss_full[N : 2 * N]
+    M_ss = policies_ss_full[4 * N : 5 * N]
+    Inv_ss = policies_ss_full[6 * N : 7 * N]
+    P_ss = policies_ss_full[8 * N : 9 * N]
+
+    L_sd = policies_sd_full[N : 2 * N]
+    M_sd = policies_sd_full[4 * N : 5 * N]
+    Inv_sd = policies_sd_full[6 * N : 7 * N]
+    P_sd = policies_sd_full[8 * N : 9 * N]
+
+    C_L = C_full[N : 2 * N, :]
+    C_M = C_full[4 * N : 5 * N, :]
+    C_Inv = C_full[6 * N : 7 * N, :]
+    C_P = C_full[8 * N : 9 * N, :]
+
+    # Concatenate in the order [L, M, Inv, P]
+    policies_ss_reduced = jnp.concatenate([L_ss, M_ss, Inv_ss, P_ss])
+    policies_sd_reduced = jnp.concatenate([L_sd, M_sd, Inv_sd, P_sd])
+    C_reduced = jnp.concatenate([C_L, C_M, C_Inv, C_P], axis=0)
+
+    print(f"Reduced to: policies={(policies_ss_reduced.shape)}, C={(C_reduced.shape)}")
+    print(f"Expected:   policies={(4*N,)}, C={(4*N, 2*N)}")
+
+    # VERIFICATION TEST with dummy state
+    print("\n=== VERIFICATION TEST ===")
+    dummy_state_logdev = jnp.ones((2 * N,)) * 0.01  # Small log-deviation
+
+    # Full system baseline
+    baseline_full_logdev = dummy_state_logdev @ C_full.T
+    print(f"Full baseline output shape: {baseline_full_logdev.shape} (expect {(11*N+5,)})")
+
+    # Reduced system baseline
+    baseline_reduced_logdev = dummy_state_logdev @ C_reduced.T
+    print(f"Reduced baseline output shape: {baseline_reduced_logdev.shape} (expect {(4*N,)})")
+
+    # Check: The reduced baseline should match the corresponding elements from full baseline
+    full_L = baseline_full_logdev[N : 2 * N]
+    full_M = baseline_full_logdev[4 * N : 5 * N]
+    full_Inv = baseline_full_logdev[6 * N : 7 * N]
+    full_P = baseline_full_logdev[8 * N : 9 * N]
+
+    reduced_L = baseline_reduced_logdev[0:N]
+    reduced_M = baseline_reduced_logdev[N : 2 * N]
+    reduced_Inv = baseline_reduced_logdev[2 * N : 3 * N]
+    reduced_P = baseline_reduced_logdev[3 * N : 4 * N]
+
+    print("\nBaseline matching test:")
+    print(f"  L match:   max diff = {jnp.max(jnp.abs(full_L - reduced_L)):.2e}")
+    print(f"  M match:   max diff = {jnp.max(jnp.abs(full_M - reduced_M)):.2e}")
+    print(f"  Inv match: max diff = {jnp.max(jnp.abs(full_Inv - reduced_Inv)):.2e}")
+    print(f"  P match:   max diff = {jnp.max(jnp.abs(full_P - reduced_P)):.2e}")
+
+    print("\nSteady state values (first 3 of each):")
+    print(f"  L_ss:   {L_ss[:3]}")
+    print(f"  M_ss:   {M_ss[:3]}")
+    print(f"  Inv_ss: {Inv_ss[:3]}")
+    print(f"  P_ss:   {P_ss[:3]}")
+
+    # Check if steady states are reasonable (in log space, should be small)
+    print("\nSteady state magnitude checks:")
+    print(f"  L_ss max abs:   {jnp.max(jnp.abs(L_ss)):.4f}")
+    print(f"  M_ss max abs:   {jnp.max(jnp.abs(M_ss)):.4f}")
+    print(f"  Inv_ss max abs: {jnp.max(jnp.abs(Inv_ss)):.4f}")
+    print(f"  P_ss max abs:   {jnp.max(jnp.abs(P_ss)):.4f}")
+    print(f"  policies_sd_reduced min/max: {jnp.min(policies_sd_reduced):.4f} / {jnp.max(policies_sd_reduced):.4f}")
+
+    # Verify model_data file path
+    print(f"\nLoaded model_data from: {model_path}")
+    print(f"Model directory: {model_dir}")
+    print("=== END VERIFICATION ===\n")
+
+    # STEADY STATE TEST - Evaluate loss at exact steady state
+    print("\n=== STEADY STATE TEST ===")
+    params_original = model_data["SolData"]["parameters"].copy()
+    state_sd = jnp.array(model_data["SolData"]["states_sd"], dtype=precision)
+
+    # Create a temporary model for testing
+    temp_model = Model(
+        parameters=params_original,
+        state_ss=state_ss,
+        policies_ss=policies_ss_reduced,
+        state_sd=state_sd,
+        policies_sd=policies_sd_reduced,
+        double_precision=config["double_precision"],
+        volatility_scale=1.0,
+    )
+
+    # Test at exact steady state (normalized to zero)
+    state_at_ss = jnp.zeros(2 * N)  # Zero in normalized space = steady state
+    policy_at_ss = jnp.zeros(4 * N)  # Zero in normalized space = steady state
+
+    # Compute expectation at SS (should also be at SS)
+    shock_zero = jnp.zeros(N)
+    state_next_ss = temp_model.step(state_at_ss, policy_at_ss, shock_zero)
+    expect_at_ss = temp_model.expect_realization(state_next_ss, policy_at_ss)
+
+    # Evaluate loss at SS
+    loss_ss, acc_ss, min_acc_ss, mean_accs_focs_ss, min_accs_focs_ss = temp_model.loss(
+        state_at_ss, expect_at_ss, policy_at_ss
+    )
+
+    print(f"Loss at steady state: {loss_ss:.6e}")
+    print(f"Mean accuracy at SS: {acc_ss:.6f}")
+    print(f"Mean accuracies by FOC at SS: {mean_accs_focs_ss}")
+    print("  [0]=C_loss, [1]=L_loss, [2]=K_loss, [3]=M_loss")
+    print(f"Min accuracies by FOC at SS: {min_accs_focs_ss}")
+
+    # Check if step returns to SS
+    print(f"\nState after step at SS (should be ~0): max abs = {jnp.max(jnp.abs(state_next_ss)):.6e}")
+
+    print("=== END STEADY STATE TEST ===\n")
+
+    # Create economic model with reduced policies
     print("Creating economic model...", flush=True)
-    soldata = model_data["SolData"]
-    params_original = soldata["parameters"].copy()
-    state_sd = soldata["states_sd"]
-    policies_sd = soldata["policies_sd"]
-    policies_ss = soldata["policies_ss"]
 
     params_train = params_original.copy()
     if config["model_param_overrides"] is not None:
@@ -183,9 +312,9 @@ def main():
     econ_model = Model(
         parameters=params_train,
         state_ss=state_ss,
-        policies_ss=policies_ss,
+        policies_ss=policies_ss_reduced,
         state_sd=state_sd,
-        policies_sd=policies_sd,
+        policies_sd=policies_sd_reduced,
         double_precision=config["double_precision"],
         volatility_scale=config["model_vol_scale"],
     )
@@ -194,22 +323,35 @@ def main():
     econ_model_eval = Model(
         parameters=params_original,
         state_ss=state_ss,
-        policies_ss=policies_ss,
+        policies_ss=policies_ss_reduced,
         state_sd=state_sd,
-        policies_sd=policies_sd,
+        policies_sd=policies_sd_reduced,
         double_precision=config["double_precision"],
         volatility_scale=1.0,
     )
     print("Evaluation model created with original parameters and standard volatility (1.0).", flush=True)
 
-    # Create neural network
+    # Create neural network with reduced setup
     print("Creating neural network...", flush=True)
-    dim_policies = econ_model.dim_policies
+    dim_policies = 4 * N
+
+    # EXPERIMENT: Test with NO baseline (set C to zeros)
+    # This will tell us if the C matrix mismatch is the problem
+    USE_BASELINE = False  # Set to False to test without baseline
+
+    if USE_BASELINE:
+        C_for_net = C_reduced
+        print("Using log-linear baseline from C matrix", flush=True)
+    else:
+        C_for_net = jnp.zeros_like(C_reduced)
+        print("WARNING: Using ZERO baseline (no log-linear approximation)", flush=True)
+        print("  This is a test to see if the baseline C matrix is causing the high loss", flush=True)
+
     neural_net = NeuralNet(
         features=config["layers"] + [dim_policies],
-        C=model_data["SolData"]["C"],
+        C=C_for_net,
         state_sd=state_sd,
-        policies_sd=policies_sd,
+        policies_sd=policies_sd_reduced,
         param_dtype=precision,
     )
     print("Neural network created successfully.", flush=True)

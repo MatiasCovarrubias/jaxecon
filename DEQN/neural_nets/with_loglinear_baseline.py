@@ -4,7 +4,7 @@ import flax.linen as nn
 import jax.numpy as jnp
 
 
-class NeuralNet(nn.Module):
+class NeuralNet_legacy(nn.Module):
     features: Sequence[int]
     C: jnp.ndarray  # shape (n_states, n_states)
     policies_sd: jnp.ndarray  # shape (n_policies,)
@@ -40,40 +40,84 @@ class NeuralNet(nn.Module):
         return output
 
 
-def create_neural_net_loglinear_builder(
-    C: jnp.ndarray, policies_sd: jnp.ndarray, dim_policies: int, param_dtype: jnp.dtype = jnp.float64
-):
-    """
-    Create a builder function for log-linear baseline neural networks.
+class NeuralNet(nn.Module):
+    features: Sequence[int]
+    C: jnp.ndarray  # shape (n_policies, n_states) - maps state log-dev to policy log-dev
+    state_sd: jnp.ndarray  # shape (n_states,)
+    policies_sd: jnp.ndarray  # shape (n_policies,)
+    param_dtype: jnp.dtype = jnp.float64
 
-    This function returns a callable that can build log-linear neural networks
-    with a baseline policy.
+    @nn.compact
+    def __call__(self, x):
+        # x is state z-score (batch, n_states) or (n_states,)
+        # Ensure 2D for consistent processing
+        x_2d = x.reshape(-1, x.shape[-1])  # (batch, n_states)
 
-    Args:
-        C: Linear coefficient matrix, shape (n_states, n_states)
-        policies_sd: Policy standard deviations, shape (n_policies,)
-        dim_policies: Dimension of policy outputs
-        param_dtype: Numerical precision for parameters
+        # Convert z-score to log-deviation: multiply by state_sd
+        state_logdev = x_2d * self.state_sd[None, :]  # (batch, n_states)
 
-    Returns:
-        A callable that takes layers and returns a NeuralNet instance with log-linear baseline
-    """
+        # Baseline loglinear policy (in log-deviation space)
+        baseline_logdev = state_logdev @ self.C.T  # (batch, n_policies)
 
-    def builder(layers: Sequence[int]) -> NeuralNet:
-        """
-        Build a log-linear neural network with the specified layer structure.
+        # Convert to z-score by dividing by policies_sd
+        baseline_zscore = baseline_logdev / self.policies_sd[None, :]  # (batch, n_policies)
 
-        Args:
-            layers: List of hidden layer sizes
+        # Residual MLP operates on z-score input
+        h = x_2d
+        for feat in self.features:
+            h = nn.relu(nn.Dense(feat, param_dtype=self.param_dtype)(h))
 
-        Returns:
-            Configured NeuralNet instance with log-linear baseline
-        """
-        return NeuralNet(
-            features=list(layers) + [dim_policies],
-            C=C,
-            policies_sd=policies_sd,
-            param_dtype=param_dtype,
-        )
+        residual = nn.Dense(
+            self.C.shape[0],
+            kernel_init=nn.initializers.zeros,
+            bias_init=nn.initializers.zeros,
+            param_dtype=self.param_dtype,
+        )(h)
 
-    return builder
+        # Output is z-score (baseline + residual)
+        output = baseline_zscore + residual
+
+        # Reshape output to match input shape structure
+        if x.ndim == 1:
+            output = output.reshape(-1)
+
+        return output
+
+
+# def create_neural_net_loglinear_builder(
+#     C: jnp.ndarray, policies_sd: jnp.ndarray, dim_policies: int, param_dtype: jnp.dtype = jnp.float64
+# ):
+#     """
+#     Create a builder function for log-linear baseline neural networks.
+
+#     This function returns a callable that can build log-linear neural networks
+#     with a baseline policy.
+
+#     Args:
+#         C: Linear coefficient matrix, shape (n_states, n_states)
+#         policies_sd: Policy standard deviations, shape (n_policies,)
+#         dim_policies: Dimension of policy outputs
+#         param_dtype: Numerical precision for parameters
+
+#     Returns:
+#         A callable that takes layers and returns a NeuralNet instance with log-linear baseline
+#     """
+
+#     def builder(layers: Sequence[int]) -> NeuralNet:
+#         """
+#         Build a log-linear neural network with the specified layer structure.
+
+#         Args:
+#             layers: List of hidden layer sizes
+
+#         Returns:
+#             Configured NeuralNet instance with log-linear baseline
+#         """
+#         return NeuralNet(
+#             features=list(layers) + [dim_policies],
+#             C=C,
+#             policies_sd=policies_sd,
+#             param_dtype=param_dtype,
+#         )
+
+#     return builder

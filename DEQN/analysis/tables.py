@@ -90,7 +90,7 @@ def _generate_latex_table(df: pd.DataFrame) -> str:
     )
 
     for index, row in df.iterrows():
-        formatted_row = [f"{float(value):.2f}" for value in row]
+        formatted_row = [f"{float(value):.4f}" for value in row]
         latex_code += r"\textbf{" + str(index) + r"} & " + " & ".join(formatted_row) + r" \\" + "\n"
 
         if any(keyword in str(index) for keyword in ["Utility"]):
@@ -202,7 +202,7 @@ def _generate_comparative_latex_table(df: pd.DataFrame, experiment_names: list) 
     latex_code += r" \\" + "\n" + r"\midrule" + "\n"
 
     for index, row in df.iterrows():
-        formatted_row = [f"{float(value):.2f}" if not np.isnan(value) else "—" for value in row]
+        formatted_row = [f"{float(value):.4f}" if not np.isnan(value) else "—" for value in row]
         latex_code += r"\textbf{" + str(index) + r"} & " + " & ".join(formatted_row) + r" \\" + "\n"
 
         if any(keyword in str(index) for keyword in ["Kurtosis"]):

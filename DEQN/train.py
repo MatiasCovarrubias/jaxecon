@@ -171,7 +171,7 @@ def main():
     print("Creating economic model...", flush=True)
     soldata = model_data["SolData"]
     params_original = soldata["parameters"].copy()
-    state_sd = soldata["states_sd"]
+    states_sd = soldata["states_sd"]
     policies_sd = soldata["policies_sd"]
     policies_ss = soldata["policies_ss"]
 
@@ -184,7 +184,7 @@ def main():
         parameters=params_train,
         state_ss=state_ss,
         policies_ss=policies_ss,
-        state_sd=state_sd,
+        states_sd=states_sd,
         policies_sd=policies_sd,
         double_precision=config["double_precision"],
         volatility_scale=config["model_vol_scale"],
@@ -195,7 +195,7 @@ def main():
         parameters=params_original,
         state_ss=state_ss,
         policies_ss=policies_ss,
-        state_sd=state_sd,
+        states_sd=states_sd,
         policies_sd=policies_sd,
         double_precision=config["double_precision"],
         volatility_scale=1.0,
@@ -208,7 +208,7 @@ def main():
     neural_net = NeuralNet(
         features=config["layers"] + [dim_policies],
         C=model_data["SolData"]["C"],
-        state_sd=state_sd,
+        states_sd=states_sd,
         policies_sd=policies_sd,
         param_dtype=precision,
     )

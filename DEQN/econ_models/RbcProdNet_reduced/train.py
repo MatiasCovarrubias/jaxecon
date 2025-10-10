@@ -263,14 +263,14 @@ def main():
     # STEADY STATE TEST - Evaluate loss at exact steady state
     print("\n=== STEADY STATE TEST ===")
     params_original = model_data["SolData"]["parameters"].copy()
-    state_sd = jnp.array(model_data["SolData"]["states_sd"], dtype=precision)
+    states_sd = jnp.array(model_data["SolData"]["states_sd"], dtype=precision)
 
     # Create a temporary model for testing
     temp_model = Model(
         parameters=params_original,
         state_ss=state_ss,
         policies_ss=policies_ss_reduced,
-        state_sd=state_sd,
+        states_sd=states_sd,
         policies_sd=policies_sd_reduced,
         double_precision=config["double_precision"],
         volatility_scale=1.0,
@@ -313,7 +313,7 @@ def main():
         parameters=params_train,
         state_ss=state_ss,
         policies_ss=policies_ss_reduced,
-        state_sd=state_sd,
+        states_sd=states_sd,
         policies_sd=policies_sd_reduced,
         double_precision=config["double_precision"],
         volatility_scale=config["model_vol_scale"],
@@ -324,7 +324,7 @@ def main():
         parameters=params_original,
         state_ss=state_ss,
         policies_ss=policies_ss_reduced,
-        state_sd=state_sd,
+        states_sd=states_sd,
         policies_sd=policies_sd_reduced,
         double_precision=config["double_precision"],
         volatility_scale=1.0,
@@ -350,7 +350,7 @@ def main():
     neural_net = NeuralNet(
         features=config["layers"] + [dim_policies],
         C=C_for_net,
-        state_sd=state_sd,
+        states_sd=states_sd,
         policies_sd=policies_sd_reduced,
         param_dtype=precision,
     )

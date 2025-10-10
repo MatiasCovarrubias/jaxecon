@@ -43,7 +43,7 @@ class NeuralNet_legacy(nn.Module):
 class NeuralNet(nn.Module):
     features: Sequence[int]
     C: jnp.ndarray  # shape (n_policies, n_states) - maps state log-dev to policy log-dev
-    state_sd: jnp.ndarray  # shape (n_states,)
+    states_sd: jnp.ndarray  # shape (n_states,)
     policies_sd: jnp.ndarray  # shape (n_policies,)
     param_dtype: jnp.dtype = jnp.float64
 
@@ -54,7 +54,7 @@ class NeuralNet(nn.Module):
         x_2d = x.reshape(-1, x.shape[-1])  # (batch, n_states)
 
         # Convert z-score to log-deviation: multiply by state_sd
-        state_logdev = x_2d * self.state_sd[None, :]  # (batch, n_states)
+        state_logdev = x_2d * self.states_sd[None, :]  # (batch, n_states)
 
         # Baseline loglinear policy (in log-deviation space)
         baseline_logdev = state_logdev @ self.C.T  # (batch, n_policies)

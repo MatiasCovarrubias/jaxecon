@@ -87,7 +87,7 @@ jax_config.update("jax_debug_nans", True)
 # Configuration dictionary
 config = {
     # Key configuration - Edit these first
-    "exper_name": "low_volatility",
+    "exper_name": "baseline_newNN",
     "model_dir": "RbcProdNet_reduced",
     # Basic experiment settings
     "date": "Oct4_2025",
@@ -101,12 +101,12 @@ config = {
     },
     "mc_draws": 32,  # number of monte-carlo draws for loss calculation
     "init_range": 6,  # range around the SS for state initialization in the model.
-    "model_vol_scale": 0.1,  # scale for model volatility (used for simulation and expectation)
-    "simul_vol_scale": 10.0,  # scale for simulation volatility (only used in simulation)
+    "model_vol_scale": 1.0,  # scale for model volatility (used for simulation and expectation)
+    "simul_vol_scale": 1.0,  # scale for simulation volatility (only used in simulation)
     # Training parameters
     "double_precision": True,  # use double precision for the model
-    "layers": [32, 32],
-    "learning_rate": 0.0005,  # initial learning rate (cosine decay to 0)
+    "layers": [64, 64],
+    "learning_rate": 0.0001,  # initial learning rate (cosine decay to 0)
     "periods_per_epis": 32,
     "epis_per_step": 32,
     "steps_per_epoch": 100,
@@ -337,7 +337,7 @@ def main():
 
     # EXPERIMENT: Test with NO baseline (set C to zeros)
     # This will tell us if the C matrix mismatch is the problem
-    USE_BASELINE = False  # Set to False to test without baseline
+    USE_BASELINE = True  # Set to False to test without baseline
 
     if USE_BASELINE:
         C_for_net = C_reduced

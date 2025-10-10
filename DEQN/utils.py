@@ -37,7 +37,7 @@ def load_trained_model_GPU(experiment_name: str, save_dir: str, nn_config: Dict[
     nn = NeuralNet(
         features=nn_config["features"],
         C=nn_config["C"],
-        states_sd=nn_config["state_sd"],
+        states_sd=nn_config["states_sd"],
         policies_sd=nn_config["policies_sd"],
         param_dtype=nn_config["params_dtype"],
     )
@@ -111,7 +111,7 @@ def load_trained_model_orbax(
     nn = NeuralNet(
         features=nn_config["features"],
         C=nn_config["C"],
-        states_sd=nn_config["state_sd"],
+        states_sd=nn_config["states_sd"],
         policies_sd=nn_config["policies_sd"],
         param_dtype=nn_config["params_dtype"],
     )

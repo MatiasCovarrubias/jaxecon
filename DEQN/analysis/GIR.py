@@ -39,14 +39,15 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         Pm_weights = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
         return P_weights, Pk_weights, Pm_weights
 
-    def create_counterfactual_state(state_logdev, state_idx, shock_size):
+    def create_counterfactual_state(state_logdev, state_idx, shock_size, shock_sign="neg"):
         """
         Create counterfactual initial state with specified state variable shocked.
 
         Args:
             state_logdev: State in log deviation form (not normalized)
             state_idx: Index of state variable to shock
-            shock_size: Size of negative shock to apply (positive value)
+            shock_size: Size of shock to apply (as fraction, e.g., 0.2 for 20%)
+            shock_sign: "neg" for negative shock, "pos" for positive shock
 
         Returns:
             counterfactual_state_logdev: Modified state in log deviation form
@@ -54,9 +55,12 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         # Convert logdevs to actual log levels
         state_notnorm = state_logdev + econ_model.state_ss
 
-        # Apply negative shock to specified state variable
-        # Since state is in log terms, we subtract log(1 + shock_size) ≈ shock_size for small shocks
-        state_counterfactual_notnorm = state_notnorm.at[state_idx].add(-jnp.log(1 + shock_size))
+        # Apply shock to specified state variable
+        # Since state is in log terms, we add/subtract log(1 + shock_size)
+        if shock_sign == "neg":
+            state_counterfactual_notnorm = state_notnorm.at[state_idx].add(-jnp.log(1 + shock_size))
+        else:  # positive shock
+            state_counterfactual_notnorm = state_notnorm.at[state_idx].add(jnp.log(1 + shock_size))
 
         # Convert back to logdevs
         state_counterfactual_logdev = state_counterfactual_notnorm - econ_model.state_ss
@@ -121,7 +125,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         keys_t = random.split(key, T)
         return jax.vmap(lambda k: econ_model.sample_shock(k))(keys_t)  # shape [T, n_sectors]
 
-    def compute_state_GIR(simul_obs, train_state, state_idx, P_weights, Pk_weights, Pm_weights, var_labels):
+    def compute_state_GIR(
+        simul_obs, train_state, state_idx, P_weights, Pk_weights, Pm_weights, var_labels, shock_size, shock_sign
+    ):
         """
         Compute GIR for a specific state variable using analysis variables.
 
@@ -131,6 +137,8 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             state_idx: Index of state to shock
             P_weights, Pk_weights, Pm_weights: Price weights for aggregation
             var_labels: List of variable labels in consistent order
+            shock_size: Size of shock (fraction, e.g., 0.2 for 20%)
+            shock_sign: "neg" or "pos"
 
         Returns:
             gir_analysis_variables: Averaged impulse response for analysis variables [T+1, n_analysis_vars]
@@ -149,9 +157,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                 econ_model, train_state, shocks, obs_init_logdev, P_weights, Pk_weights, Pm_weights, var_labels
             )
 
-            # Create counterfactual initial state
+            # Create counterfactual initial state with specified shock sign
             obs_counterfactual_logdev = create_counterfactual_state(
-                obs_init_logdev, state_idx, config.get("shock_size", 0.2)
+                obs_init_logdev, state_idx, shock_size, shock_sign
             )
 
             # Counterfactual trajectory analysis variables (using same shocks)
@@ -183,6 +191,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
     def GIR_fn(simul_obs, train_state, simul_policies_data=None):
         """
         Main GIR function that computes analysis variable impulse responses for specified states.
+        Computes GIRs for both positive and negative shocks, and for multiple shock sizes.
 
         Args:
             simul_obs: Simulation observations from ergodic distribution (in logdev form)
@@ -190,7 +199,14 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             simul_policies_data: Simulation policies for extracting price weights (in logdev form)
 
         Returns:
-            gir_results: Dictionary with analysis variable impulse responses for each state
+            gir_results: Dictionary with structure:
+                {state_name: {
+                    "state_idx": int,
+                    "pos_5": {"gir_analysis_variables": {...}},
+                    "neg_5": {"gir_analysis_variables": {...}},
+                    "pos_10": {...}, "neg_10": {...},
+                    "pos_20": {...}, "neg_20": {...},
+                }}
         """
         # Use provided simul_policies or the one passed during creation
         if simul_policies_data is None:
@@ -214,26 +230,55 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             # Default to all states in the model
             states_to_shock = list(range(simul_obs.shape[1]))
 
+        # Get shock sizes from config (as percentages, e.g., [5, 10, 20])
+        ir_shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
+
         gir_results = {}
+
+        total_computations = len(states_to_shock) * len(ir_shock_sizes) * 2  # 2 for pos/neg
+        current_computation = 0
 
         # Compute GIR for each specified state
         for state_idx in states_to_shock:
-            gir_analysis_vars_array = compute_state_GIR(
-                simul_obs, train_state, state_idx, P_weights, Pk_weights, Pm_weights, var_labels
-            )
-
-            # Convert array back to dictionary format
-            gir_analysis_vars_dict = {label: gir_analysis_vars_array[:, i] for i, label in enumerate(var_labels)}
-
             # Create state label
             state_name = f"state_{state_idx}"
             if hasattr(econ_model, "state_labels") and state_idx < len(econ_model.state_labels):
                 state_name = econ_model.state_labels[state_idx]
 
-            gir_results[state_name] = {
-                "gir_analysis_variables": gir_analysis_vars_dict,
-                "state_idx": state_idx,
-            }
+            gir_results[state_name] = {"state_idx": state_idx}
+
+            # Compute GIR for each shock size and sign
+            for shock_size_pct in ir_shock_sizes:
+                shock_size = shock_size_pct / 100.0  # Convert percentage to fraction
+
+                for shock_sign in ["pos", "neg"]:
+                    current_computation += 1
+                    print(
+                        f"      GIR [{current_computation}/{total_computations}]: "
+                        f"state {state_idx}, {shock_sign}_{shock_size_pct}%",
+                        flush=True,
+                    )
+
+                    gir_analysis_vars_array = compute_state_GIR(
+                        simul_obs,
+                        train_state,
+                        state_idx,
+                        P_weights,
+                        Pk_weights,
+                        Pm_weights,
+                        var_labels,
+                        shock_size,
+                        shock_sign,
+                    )
+
+                    # Convert array back to dictionary format
+                    gir_analysis_vars_dict = {
+                        label: gir_analysis_vars_array[:, i] for i, label in enumerate(var_labels)
+                    }
+
+                    # Store with key like "pos_5", "neg_10", etc.
+                    key = f"{shock_sign}_{shock_size_pct}"
+                    gir_results[state_name][key] = {"gir_analysis_variables": gir_analysis_vars_dict}
 
         return gir_results
 

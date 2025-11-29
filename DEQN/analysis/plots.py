@@ -831,18 +831,33 @@ def plot_sector_ir_by_shock_size(
 
         for k, exp_name in enumerate(experiment_names):
             if state_name and state_name in gir_data[exp_name]:
-                gir_vars = gir_data[exp_name][state_name]["gir_analysis_variables"]
-                if variable_to_plot in gir_vars:
-                    response = gir_vars[variable_to_plot][:max_periods] * 100
-                    label = f"GIR ({exp_name})" if j == 0 else None
-                    ax.plot(
-                        time_periods[: len(response)],
-                        response,
-                        color=colors[k % len(colors)],
-                        linewidth=2.5,
-                        alpha=0.9,
-                        label=label,
-                    )
+                state_gir_data = gir_data[exp_name][state_name]
+
+                if pos_key in state_gir_data:
+                    gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
+                    if variable_to_plot in gir_vars_pos:
+                        response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
+                        label = f"GIR ({exp_name})" if j == 0 else None
+                        ax.plot(
+                            time_periods[: len(response_pos)],
+                            response_pos,
+                            color=colors[k % len(colors)],
+                            linewidth=2.5,
+                            alpha=0.9,
+                            label=label,
+                        )
+
+                if neg_key in state_gir_data:
+                    gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
+                    if variable_to_plot in gir_vars_neg:
+                        response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
+                        ax.plot(
+                            time_periods[: len(response_neg)],
+                            response_neg,
+                            color=colors[k % len(colors)],
+                            linewidth=2.5,
+                            alpha=0.9,
+                        )
 
         ax.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax.grid(True, alpha=0.3)

@@ -75,7 +75,6 @@ from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
 from DEQN.analysis.matlab_irs import load_matlab_irs  # noqa: E402
 from DEQN.analysis.plots import (  # noqa: E402
     plot_ergodic_histograms,
-    plot_gir_responses,
     plot_sector_ir_by_shock_size,
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
@@ -374,16 +373,8 @@ def main():
         analysis_variables_data=analysis_variables_data, save_dir=simulation_dir, analysis_name=config["analysis_name"]
     )
 
-    # GIR plots (in IRs folder)
-    first_experiment = list(gir_data.keys())[0]
-    states_shocked = list(gir_data[first_experiment].keys())
-
-    plot_gir_responses(
-        gir_data=gir_data,
-        states_to_plot=states_shocked,
-        save_dir=irs_dir,
-        analysis_name=config["analysis_name"],
-    )
+    # Note: plot_gir_responses uses old GIR data structure.
+    # Combined IR plots below handle both positive and negative shocks.
 
     # ============================================================================
     # COMBINED IR ANALYSIS: MATLAB + JAX GIRs

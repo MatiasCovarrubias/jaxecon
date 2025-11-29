@@ -159,6 +159,7 @@ def plot_gir_responses(
     gir_data: Dict[str, Any],
     states_to_plot: Optional[list] = None,
     variables_to_plot: Optional[list] = None,
+    shock_config: str = "neg_20",
     figsize: Tuple[float, float] = (12, 8),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
@@ -171,12 +172,14 @@ def plot_gir_responses(
     Parameters:
     -----------
     gir_data : dict
-        Dictionary containing GIR results from analysis
-        Structure: {experiment_name: {state_name: {"gir_analysis_variables": {var_label: array}, "state_idx": int}}}
+        Dictionary containing GIR results from analysis.
+        New structure: {experiment_name: {state_name: {"state_idx": int, "pos_5": {...}, "neg_20": {...}, ...}}}
     states_to_plot : list, optional
         Which states to plot. If None, plots all states.
     variables_to_plot : list, optional
         Which variable labels to plot. If None, plots all variables.
+    shock_config : str
+        Which shock configuration to plot (e.g., "neg_20", "pos_10"). Default is "neg_20".
     figsize : tuple, optional
         Figure size (width, height) in inches
     save_dir : str, optional
@@ -207,9 +210,27 @@ def plot_gir_responses(
         # Filter to requested states
         states_to_plot = [s for s in states_to_plot if s in all_state_names]
 
-    # Get variable labels from first state's GIR data
+    # Get variable labels from first state's GIR data (using specified shock config)
     first_state = states_to_plot[0]
-    gir_vars_dict = first_exp_data[first_state]["gir_analysis_variables"]
+    first_state_data = first_exp_data[first_state]
+
+    # Handle new data structure with shock configs like "pos_5", "neg_20", etc.
+    if shock_config in first_state_data and "gir_analysis_variables" in first_state_data[shock_config]:
+        gir_vars_dict = first_state_data[shock_config]["gir_analysis_variables"]
+    elif "gir_analysis_variables" in first_state_data:
+        # Old data structure (backward compatibility)
+        gir_vars_dict = first_state_data["gir_analysis_variables"]
+        shock_config = None  # Signal to use old structure
+    else:
+        # Try to find any shock config
+        available_configs = [k for k in first_state_data.keys() if k not in ["state_idx"]]
+        if available_configs:
+            shock_config = available_configs[0]
+            gir_vars_dict = first_state_data[shock_config]["gir_analysis_variables"]
+        else:
+            print(f"Warning: No GIR data found for state {first_state}")
+            return []
+
     all_var_labels = list(gir_vars_dict.keys())
 
     if variables_to_plot is None:
@@ -240,7 +261,18 @@ def plot_gir_responses(
 
             # Plot for each experiment (if multiple)
             for j, exp_name in enumerate(experiment_names):
-                gir_analysis_variables = gir_data[exp_name][state_name]["gir_analysis_variables"]
+                state_data = gir_data[exp_name][state_name]
+
+                # Get GIR data based on structure
+                if shock_config and shock_config in state_data:
+                    gir_analysis_variables = state_data[shock_config]["gir_analysis_variables"]
+                elif "gir_analysis_variables" in state_data:
+                    gir_analysis_variables = state_data["gir_analysis_variables"]
+                else:
+                    continue
+
+                if var_label not in gir_analysis_variables:
+                    continue
 
                 # Convert to percentages
                 response_pct = gir_analysis_variables[var_label] * 100
@@ -257,7 +289,13 @@ def plot_gir_responses(
 
                 # Plot the impulse response
                 ax.plot(
-                    time_periods, response_pct, label=label, color=color, linewidth=2, linestyle=linestyle, alpha=0.8
+                    time_periods[: len(response_pct)],
+                    response_pct,
+                    label=label,
+                    color=color,
+                    linewidth=2,
+                    linestyle=linestyle,
+                    alpha=0.8,
                 )
 
             # Add horizontal line at zero
@@ -288,10 +326,11 @@ def plot_gir_responses(
                 # Create filename with state and analysis variable names
                 safe_state_name = make_safe_filename(state_name)
                 safe_var_name = make_safe_filename(var_label)
+                shock_suffix = f"_{shock_config}" if shock_config else ""
                 if analysis_name:
-                    filename = f"GIR_{safe_var_name}_{safe_state_name}_{analysis_name}.png"
+                    filename = f"GIR_{safe_var_name}_{safe_state_name}{shock_suffix}_{analysis_name}.png"
                 else:
-                    filename = f"GIR_{safe_var_name}_{safe_state_name}.png"
+                    filename = f"GIR_{safe_var_name}_{safe_state_name}{shock_suffix}.png"
                 save_path = os.path.join(save_dir, filename)
                 plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
 

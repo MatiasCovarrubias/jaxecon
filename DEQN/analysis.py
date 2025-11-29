@@ -50,7 +50,7 @@ if IN_COLAB:
 
     drive.mount("/content/drive")
 
-    base_dir = "/content/drive/MyDrive/Jaxecon/DEQN"
+    base_dir = "/content/drive/MyDrive/Jaxecontemp"
 
 else:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -72,9 +72,12 @@ from jax import config as jax_config  # noqa: E402
 from jax import random  # noqa: E402
 
 from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
+from DEQN.analysis.matlab_irs import load_matlab_irs  # noqa: E402
 from DEQN.analysis.plots import (  # noqa: E402
+    plot_combined_impulse_responses,
     plot_ergodic_histograms,
     plot_gir_responses,
+    plot_ir_comparison_panel,
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
@@ -100,35 +103,53 @@ jax_config.update("jax_debug_nans", True)
 # Configuration dictionary
 config = {
     # Key configuration - Edit these first
-    "model_dir": "RbcProdNet_Oct2025",
-    "analysis_name": "baseline_analysis",
+    "model_dir": "RbcProdNet_nonlinear",
+    "analysis_name": "npnlinearv2_lowvol",
     # Experiments to analyze
     "experiments_to_analyze": {
-        # "High Volatility": "baseline_nostateaug_high",
-        "test": "test_local_1thread",
-        # "Low Volatility": "baseline_nostateaug_lower",
+        # "higher volatility": "3vol",
+        # "x0.075 volatility": "nonlinearv2_volx0dot075",
+        # "x0.05 volatility": "nonlinearv2_vol0dot05",
+        # "x0.025 volatility": "nonlinearv2_volx0dot025",
+        "x1.5 volatility": "nonlinearv2_volx1.5",
+        "baseline": "nonlinearv2",
+        "x0.1 volatility": "nonlinearv2_volx0dot1",
+        # "x0.75 volatility": "x0dot75vol_newNN",
+        # "x0.5 volatility": "x0dot5_newNN",
+        # "x0.1 volatility": "newcalib_volx0dot1",
     },
     # Simulation configuration
-    "init_range": 0,
-    "periods_per_epis": 8000,
-    "burn_in_periods": 1000,
+    "init_range": 6,
+    "periods_per_epis": 64000,
+    "burn_in_periods": 3200,
     "simul_vol_scale": 1,
     "simul_seed": 0,
-    "n_simul_seeds": 10,
+    "n_simul_seeds": 16,
     # Welfare configuration
-    "welfare_n_trajects": 200,
-    "welfare_traject_length": 500,
+    "welfare_n_trajects": 16000,
+    "welfare_traject_length": 100,
     "welfare_seed": 0,
     # Stochastic steady state configuration
-    "n_draws": 500,
-    "time_to_converge": 200,
+    "n_draws": 2000,
+    "time_to_converge": 500,
     "seed": 0,
     # GIR configuration
-    "gir_n_draws": 100,
-    "gir_trajectory_length": 50,
+    "gir_n_draws": 1000,
+    "gir_trajectory_length": 100,
     "shock_size": 0.2,
-    "states_to_shock": None,
     "gir_seed": 42,
+    # Combined IR analysis configuration
+    # Sectors to analyze: specify sector indices (0-based).
+    # The state index for sector i depends on the shock type:
+    #   - "capital": state_idx = i (capital K_i)
+    #   - "productivity": state_idx = n_sectors + i (productivity A_i)
+    # Note: MATLAB IRs from Dynare are typically capital shocks (deterministic/perfect foresight)
+    "ir_sectors_to_plot": [0, 2, 23],
+    "ir_shock_type": "capital",
+    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Output", "Agg. Investment"],
+    "ir_shock_sizes": [5, 10, 20],
+    "ir_max_periods": 80,
+    "matlab_ir_file_pattern": "AllSectors_IRS__Oct_25nonlinear_{sign}_{size}.mat",
     # JAX configuration
     "double_precision": True,
 }
@@ -192,6 +213,9 @@ def main():
     a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
     state_ss = jnp.concatenate([model_data["SolData"]["k_ss"], a_ss])
 
+    # Print parameters
+
+    print("Parameteres \n:", model_data["SolData"]["parameters"])
     # Create economic model
     print("Creating economic model...", flush=True)
     econ_model = Model(
@@ -213,9 +237,26 @@ def main():
     # Define shared nn_config using model_data (features will be set per experiment)
     nn_config_base = {
         "C": model_data["SolData"]["C"],
+        "states_sd": model_data["SolData"]["states_sd"],
         "policies_sd": model_data["SolData"]["policies_sd"],
         "params_dtype": precision,
     }
+
+    # Compute states_to_shock from ir_sectors_to_plot and ir_shock_type
+    # State indices:
+    #   - Capital (K): state_idx = sector_idx
+    #   - Productivity (A): state_idx = n_sectors + sector_idx
+    ir_sectors = config.get("ir_sectors_to_plot", [0])
+    ir_shock_type = config.get("ir_shock_type", "capital")
+
+    if ir_shock_type == "productivity":
+        states_to_shock = [n_sectors + sector_idx for sector_idx in ir_sectors]
+    else:
+        states_to_shock = ir_sectors
+
+    config["states_to_shock"] = states_to_shock
+    print(f"GIR shock type: {ir_shock_type}", flush=True)
+    print(f"GIR states to shock: {states_to_shock} (sectors: {ir_sectors})", flush=True)
 
     # Create analysis functions
     print("Creating analysis functions...", flush=True)
@@ -346,6 +387,68 @@ def main():
     )
 
     # ============================================================================
+    # COMBINED IR ANALYSIS: MATLAB + JAX GIRs
+    # ============================================================================
+    print("Loading MATLAB impulse responses...", flush=True)
+
+    matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
+    matlab_ir_data = {}
+
+    if os.path.exists(matlab_ir_dir):
+        matlab_ir_data = load_matlab_irs(
+            matlab_ir_dir=matlab_ir_dir,
+            shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
+            file_pattern=config.get("matlab_ir_file_pattern", "AllSectors_IRS__Oct_25nonlinear_{sign}_{size}.mat"),
+        )
+        print(f"Loaded MATLAB IRs for {len(matlab_ir_data)} shock configurations.", flush=True)
+    else:
+        print(f"Warning: MATLAB IR directory not found: {matlab_ir_dir}", flush=True)
+
+    if matlab_ir_data:
+        print("Generating combined IR plots...", flush=True)
+
+        sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
+        ir_variables = config.get("ir_variables_to_plot", None)
+        shock_sizes = config.get("ir_shock_sizes", [20])
+        max_periods = config.get("ir_max_periods", 80)
+
+        plot_combined_impulse_responses(
+            gir_data=gir_data,
+            matlab_ir_data=matlab_ir_data,
+            sectors_to_plot=sectors_to_plot,
+            sector_labels=econ_model.labels,
+            variables_to_plot=ir_variables,
+            shock_sizes_to_plot=shock_sizes,
+            save_dir=irs_dir,
+            analysis_name=config["analysis_name"],
+            max_periods=max_periods,
+        )
+
+        for sector_idx in sectors_to_plot:
+            sector_label = (
+                econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+            )
+            print(f"  Creating panel plot for {sector_label}...", flush=True)
+
+            plot_ir_comparison_panel(
+                gir_data=gir_data,
+                matlab_ir_data=matlab_ir_data,
+                sector_idx=sector_idx,
+                sector_label=sector_label,
+                variables_to_plot=(
+                    ir_variables if ir_variables else ["Agg. Consumption", "Agg. Output", "Agg. Investment"]
+                ),
+                shock_sizes=shock_sizes,
+                save_dir=irs_dir,
+                analysis_name=config["analysis_name"],
+                max_periods=max_periods,
+            )
+
+        print("Combined IR analysis completed.", flush=True)
+    else:
+        print("Skipping combined IR plots (no MATLAB data).", flush=True)
+
+    # ============================================================================
     # MODEL-SPECIFIC ANALYSIS: Plots
     # ============================================================================
     print("Generating model-specific plots...", flush=True)
@@ -382,6 +485,7 @@ def main():
         "welfare_costs": welfare_costs,
         "stochastic_ss_data": stochastic_ss_data,
         "gir_data": gir_data,
+        "matlab_ir_data": matlab_ir_data,
     }
 
 

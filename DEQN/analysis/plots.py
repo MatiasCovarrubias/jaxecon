@@ -700,6 +700,197 @@ def plot_ir_comparison_panel(
     return fig, axes
 
 
+def plot_sector_ir_by_shock_size(
+    gir_data: Dict[str, Any],
+    matlab_ir_data: Dict[str, Any],
+    sector_idx: int,
+    sector_label: str,
+    variable_to_plot: str = "Agg. Consumption",
+    shock_sizes: list = [5, 10, 20],
+    figsize: Tuple[float, float] = (16, 5),
+    save_dir: Optional[str] = None,
+    analysis_name: Optional[str] = None,
+    display_dpi: int = 100,
+    max_periods: int = 80,
+    n_sectors: int = 37,
+):
+    """
+    Create a figure with subplots for each shock size, showing positive and negative IRs.
+    Each subplot shows positive IRs in upper quadrant and negative IRs in lower quadrant.
+
+    Parameters:
+    -----------
+    gir_data : dict
+        Dictionary containing GIR results from JAX analysis
+    matlab_ir_data : dict
+        Dictionary from load_matlab_irs containing MATLAB IRs
+    sector_idx : int
+        Sector index (0-based) to plot
+    sector_label : str
+        Label for the sector
+    variable_to_plot : str
+        Analysis variable to plot (default: "Agg. Consumption")
+    shock_sizes : list
+        List of shock sizes (e.g., [5, 10, 20])
+    figsize : tuple
+        Figure size
+    save_dir : str, optional
+        Directory to save the figure
+    analysis_name : str, optional
+        Name for the analysis
+    display_dpi : int
+        DPI for display
+    max_periods : int
+        Maximum periods to plot
+    n_sectors : int
+        Number of sectors in the model
+
+    Returns:
+    --------
+    fig, axes : matplotlib figure and axes array
+    """
+    from DEQN.analysis.matlab_irs import get_matlab_ir_for_analysis_variable
+
+    n_sizes = len(shock_sizes)
+    fig, axes = plt.subplots(1, n_sizes, figsize=figsize, dpi=display_dpi, sharey=True)
+
+    if n_sizes == 1:
+        axes = [axes]
+
+    experiment_names = list(gir_data.keys()) if gir_data else []
+    first_exp_data = gir_data[experiment_names[0]] if experiment_names else {}
+    all_state_names = list(first_exp_data.keys()) if first_exp_data else []
+
+    state_name = None
+    for candidate in all_state_names:
+        gir_info = first_exp_data[candidate]
+        candidate_state_idx = gir_info.get("state_idx")
+        if candidate_state_idx == sector_idx or candidate_state_idx == n_sectors + sector_idx:
+            state_name = candidate
+            break
+
+    if state_name is None:
+        for possible_idx in [sector_idx, n_sectors + sector_idx]:
+            possible_name = f"state_{possible_idx}"
+            if possible_name in all_state_names:
+                state_name = possible_name
+                break
+
+    time_periods = np.arange(max_periods)
+
+    for j, shock_size in enumerate(shock_sizes):
+        ax = axes[j]
+
+        pos_key = f"pos_{shock_size}"
+        neg_key = f"neg_{shock_size}"
+
+        matlab_irs = get_matlab_ir_for_analysis_variable(matlab_ir_data, sector_idx, variable_to_plot, max_periods)
+
+        if matlab_irs:
+            if pos_key in matlab_irs:
+                pos_loglin = matlab_irs[pos_key]["loglin"][:max_periods] * 100
+                pos_determ = matlab_irs[pos_key]["determ"][:max_periods] * 100
+                ax.plot(
+                    np.arange(len(pos_loglin)),
+                    pos_loglin,
+                    color=colors[4],
+                    linewidth=1.5,
+                    linestyle="--",
+                    alpha=0.8,
+                    label="Loglinear" if j == 0 else None,
+                )
+                ax.plot(
+                    np.arange(len(pos_determ)),
+                    pos_determ,
+                    color=colors[2],
+                    linewidth=1.5,
+                    linestyle="-.",
+                    alpha=0.8,
+                    label="Perfect Foresight" if j == 0 else None,
+                )
+
+            if neg_key in matlab_irs:
+                neg_loglin = matlab_irs[neg_key]["loglin"][:max_periods] * 100
+                neg_determ = matlab_irs[neg_key]["determ"][:max_periods] * 100
+                ax.plot(
+                    np.arange(len(neg_loglin)),
+                    neg_loglin,
+                    color=colors[4],
+                    linewidth=1.5,
+                    linestyle="--",
+                    alpha=0.8,
+                )
+                ax.plot(
+                    np.arange(len(neg_determ)),
+                    neg_determ,
+                    color=colors[2],
+                    linewidth=1.5,
+                    linestyle="-.",
+                    alpha=0.8,
+                )
+
+        for k, exp_name in enumerate(experiment_names):
+            if state_name and state_name in gir_data[exp_name]:
+                gir_vars = gir_data[exp_name][state_name]["gir_analysis_variables"]
+                if variable_to_plot in gir_vars:
+                    response = gir_vars[variable_to_plot][:max_periods] * 100
+                    label = f"GIR ({exp_name})" if j == 0 else None
+                    ax.plot(
+                        time_periods[: len(response)],
+                        response,
+                        color=colors[k % len(colors)],
+                        linewidth=2.5,
+                        alpha=0.9,
+                        label=label,
+                    )
+
+        ax.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
+        ax.grid(True, alpha=0.3)
+        ax.set_title(f"±{shock_size}% shock", fontweight="bold", fontsize=MEDIUM_SIZE)
+        ax.set_xlabel("Periods", fontsize=SMALL_SIZE)
+        ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
+        ax.set_xlim(0, max_periods - 1)
+
+    axes[0].set_ylabel(f"{variable_to_plot} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
+
+    fig.suptitle(
+        f"{sector_label}: {variable_to_plot} Impulse Responses",
+        fontweight="bold",
+        fontsize=LARGE_SIZE,
+        y=1.02,
+    )
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=len(handles),
+            fontsize=SMALL_SIZE,
+            bbox_to_anchor=(0.5, -0.08),
+        )
+
+    plt.tight_layout()
+
+    if save_dir:
+
+        def make_safe_filename(label):
+            return label.replace(" ", "_").replace(".", "").replace("/", "_")
+
+        safe_sector = make_safe_filename(sector_label)
+        safe_var = make_safe_filename(variable_to_plot)
+        if analysis_name:
+            filename = f"IR_{safe_var}_{safe_sector}_{analysis_name}.png"
+        else:
+            filename = f"IR_{safe_var}_{safe_sector}.png"
+        save_path = os.path.join(save_dir, filename)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        print(f"      Saved: {filename}")
+
+    return fig, axes
+
+
 def plot_gir_heatmap(
     gir_data: Dict[str, Any],
     aggregate_idx: int = 0,

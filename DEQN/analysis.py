@@ -74,10 +74,9 @@ from jax import random  # noqa: E402
 from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
 from DEQN.analysis.matlab_irs import load_matlab_irs  # noqa: E402
 from DEQN.analysis.plots import (  # noqa: E402
-    plot_combined_impulse_responses,
     plot_ergodic_histograms,
     plot_gir_responses,
-    plot_ir_comparison_panel,
+    plot_sector_ir_by_shock_size,
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
@@ -146,7 +145,7 @@ config = {
     # Note: MATLAB IRs from Dynare are typically capital shocks (deterministic/perfect foresight)
     "ir_sectors_to_plot": [0, 2, 23],
     "ir_shock_type": "capital",
-    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Output", "Agg. Investment"],
+    "ir_variable_to_plot": "Agg. Consumption",
     "ir_shock_sizes": [5, 10, 20],
     "ir_max_periods": 80,
     "matlab_ir_file_pattern": "AllSectors_IRS__Oct_25nonlinear_{sign}_{size}.mat",
@@ -389,64 +388,63 @@ def main():
     # ============================================================================
     # COMBINED IR ANALYSIS: MATLAB + JAX GIRs
     # ============================================================================
-    print("Loading MATLAB impulse responses...", flush=True)
+    print("\n" + "=" * 60, flush=True)
+    print("COMBINED IR ANALYSIS: MATLAB + JAX GIRs", flush=True)
+    print("=" * 60, flush=True)
 
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
     matlab_ir_data = {}
 
+    print(f"\nChecking MATLAB IR directory: {matlab_ir_dir}", flush=True)
+
     if os.path.exists(matlab_ir_dir):
+        print("  ✓ Directory exists", flush=True)
         matlab_ir_data = load_matlab_irs(
             matlab_ir_dir=matlab_ir_dir,
             shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
             file_pattern=config.get("matlab_ir_file_pattern", "AllSectors_IRS__Oct_25nonlinear_{sign}_{size}.mat"),
         )
-        print(f"Loaded MATLAB IRs for {len(matlab_ir_data)} shock configurations.", flush=True)
+
+        if matlab_ir_data:
+            print(f"\n  ✓ Successfully loaded {len(matlab_ir_data)} shock configurations", flush=True)
+        else:
+            print("\n  ✗ No MATLAB IR files were loaded", flush=True)
     else:
-        print(f"Warning: MATLAB IR directory not found: {matlab_ir_dir}", flush=True)
+        print(f"  ✗ Directory NOT FOUND: {matlab_ir_dir}", flush=True)
+        print("    To use MATLAB IRs, create this directory and add the .mat files", flush=True)
 
-    if matlab_ir_data:
-        print("Generating combined IR plots...", flush=True)
+    # Generate combined IR plots (with or without MATLAB data)
+    print("\nGenerating IR comparison plots...", flush=True)
 
-        sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
-        ir_variables = config.get("ir_variables_to_plot", None)
-        shock_sizes = config.get("ir_shock_sizes", [20])
-        max_periods = config.get("ir_max_periods", 80)
+    sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
+    ir_variable = config.get("ir_variable_to_plot", "Agg. Consumption")
+    shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
+    max_periods = config.get("ir_max_periods", 80)
 
-        plot_combined_impulse_responses(
+    print(f"  Variable: {ir_variable}", flush=True)
+    print(f"  Shock sizes: {shock_sizes}", flush=True)
+    print(f"  Sectors to plot: {sectors_to_plot}", flush=True)
+
+    for i, sector_idx in enumerate(sectors_to_plot):
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+        )
+        print(f"\n  [{i + 1}/{len(sectors_to_plot)}] Processing sector {sector_idx}: {sector_label}...", flush=True)
+
+        plot_sector_ir_by_shock_size(
             gir_data=gir_data,
             matlab_ir_data=matlab_ir_data,
-            sectors_to_plot=sectors_to_plot,
-            sector_labels=econ_model.labels,
-            variables_to_plot=ir_variables,
-            shock_sizes_to_plot=shock_sizes,
+            sector_idx=sector_idx,
+            sector_label=sector_label,
+            variable_to_plot=ir_variable,
+            shock_sizes=shock_sizes,
             save_dir=irs_dir,
             analysis_name=config["analysis_name"],
             max_periods=max_periods,
+            n_sectors=n_sectors,
         )
 
-        for sector_idx in sectors_to_plot:
-            sector_label = (
-                econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
-            )
-            print(f"  Creating panel plot for {sector_label}...", flush=True)
-
-            plot_ir_comparison_panel(
-                gir_data=gir_data,
-                matlab_ir_data=matlab_ir_data,
-                sector_idx=sector_idx,
-                sector_label=sector_label,
-                variables_to_plot=(
-                    ir_variables if ir_variables else ["Agg. Consumption", "Agg. Output", "Agg. Investment"]
-                ),
-                shock_sizes=shock_sizes,
-                save_dir=irs_dir,
-                analysis_name=config["analysis_name"],
-                max_periods=max_periods,
-            )
-
-        print("Combined IR analysis completed.", flush=True)
-    else:
-        print("Skipping combined IR plots (no MATLAB data).", flush=True)
+    print("\n  ✓ Combined IR analysis completed.", flush=True)
 
     # ============================================================================
     # MODEL-SPECIFIC ANALYSIS: Plots

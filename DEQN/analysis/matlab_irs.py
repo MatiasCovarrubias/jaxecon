@@ -34,6 +34,11 @@ def load_matlab_irs(
         }
     """
     ir_data = {}
+    files_found = 0
+    files_missing = 0
+    files_error = 0
+
+    print(f"  Looking for MATLAB IR files in: {matlab_ir_dir}")
 
     for size in shock_sizes:
         for sign in ["pos", "neg"]:
@@ -41,16 +46,21 @@ def load_matlab_irs(
             filepath = os.path.join(matlab_ir_dir, filename)
 
             if not os.path.exists(filepath):
-                print(f"Warning: IR file not found: {filepath}")
+                print(f"    ✗ NOT FOUND: {filename}")
+                files_missing += 1
                 continue
 
             try:
                 mat_data = sio.loadmat(filepath, simplify_cells=True)["AllIRS"]
                 key = f"{sign}_{size}"
                 ir_data[key] = _process_matlab_ir_data(mat_data)
-                print(f"Loaded: {filename}")
+                print(f"    ✓ Loaded: {filename}")
+                files_found += 1
             except Exception as e:
-                print(f"Error loading {filename}: {e}")
+                print(f"    ✗ ERROR loading {filename}: {e}")
+                files_error += 1
+
+    print(f"  Summary: {files_found} loaded, {files_missing} missing, {files_error} errors")
 
     return ir_data
 

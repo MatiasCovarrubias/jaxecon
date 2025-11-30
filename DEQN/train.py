@@ -155,25 +155,47 @@ def main():
     save_dir = os.path.join(model_dir, "experiments/")
     config["save_dir"] = save_dir
 
-    # Load model data
+    # Load model data (supports both old and new structure)
     print("Loading model data...", flush=True)
-    model_path = os.path.join(model_dir, "model_data.mat")
+    # Try new naming convention first, fall back to old
+    model_path = os.path.join(model_dir, "ModelData.mat")
     if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+        model_path = os.path.join(model_dir, "model_data.mat")
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found. Tried: ModelData.mat and model_data.mat in {model_dir}")
 
     model_data = sio.loadmat(model_path, simplify_cells=True)
     print("Model data loaded successfully.", flush=True)
-    n_sectors = model_data["SolData"]["parameters"]["parn_sectors"]
-    a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
-    state_ss = jnp.concatenate([model_data["SolData"]["k_ss"], a_ss])
 
-    # Create economic model
-    print("Creating economic model...", flush=True)
-    soldata = model_data["SolData"]
-    params_original = soldata["parameters"].copy()
-    states_sd = soldata["states_sd"]
-    policies_sd = soldata["policies_sd"]
-    policies_ss = soldata["policies_ss"]
+    # Detect structure and extract data
+    if "ModelData" in model_data:
+        # New structure: ModelData.SteadyState, ModelData.Simulation, ModelData.Solution
+        print("Detected new ModelData structure.", flush=True)
+        md = model_data["ModelData"]
+        n_sectors = md["SteadyState"]["parameters"]["parn_sectors"]
+        a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
+        k_ss = jnp.array(md["SteadyState"]["endostates_ss"], dtype=precision)
+        state_ss = jnp.concatenate([k_ss, a_ss])
+        params_original = md["SteadyState"]["parameters"].copy()
+        state_sd = jnp.array(md["Simulation"]["states_sd"], dtype=precision)
+        policies_sd = jnp.array(md["Simulation"]["policies_sd"], dtype=precision)
+        policies_ss = jnp.array(md["SteadyState"]["policies_ss"], dtype=precision)
+        C_matrix = md["Solution"]["StateSpace"]["C"]
+    elif "SolData" in model_data:
+        # Old structure: SolData contains everything
+        print("Detected old SolData structure.", flush=True)
+        soldata = model_data["SolData"]
+        n_sectors = soldata["parameters"]["parn_sectors"]
+        a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
+        k_ss = jnp.array(soldata["k_ss"], dtype=precision)
+        state_ss = jnp.concatenate([k_ss, a_ss])
+        params_original = soldata["parameters"].copy()
+        state_sd = jnp.array(soldata["states_sd"], dtype=precision)
+        policies_sd = jnp.array(soldata["policies_sd"], dtype=precision)
+        policies_ss = jnp.array(soldata["policies_ss"], dtype=precision)
+        C_matrix = soldata["C"]
+    else:
+        raise ValueError("Unknown model_data structure. Expected 'ModelData' or 'SolData' key.")
 
     params_train = params_original.copy()
     if config["model_param_overrides"] is not None:
@@ -184,7 +206,7 @@ def main():
         parameters=params_train,
         state_ss=state_ss,
         policies_ss=policies_ss,
-        states_sd=states_sd,
+        state_sd=state_sd,
         policies_sd=policies_sd,
         double_precision=config["double_precision"],
         volatility_scale=config["model_vol_scale"],
@@ -195,7 +217,7 @@ def main():
         parameters=params_original,
         state_ss=state_ss,
         policies_ss=policies_ss,
-        states_sd=states_sd,
+        state_sd=state_sd,
         policies_sd=policies_sd,
         double_precision=config["double_precision"],
         volatility_scale=1.0,
@@ -207,8 +229,8 @@ def main():
     dim_policies = econ_model.dim_policies
     neural_net = NeuralNet(
         features=config["layers"] + [dim_policies],
-        C=model_data["SolData"]["C"],
-        states_sd=states_sd,
+        C=C_matrix,
+        states_sd=state_sd,
         policies_sd=policies_sd,
         param_dtype=precision,
     )

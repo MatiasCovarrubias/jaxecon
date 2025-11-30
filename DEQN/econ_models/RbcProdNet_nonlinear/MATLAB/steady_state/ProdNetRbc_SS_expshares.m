@@ -43,20 +43,20 @@ Q          = exp(sol(9*n_sectors+1:10*n_sectors));
 Y          = exp(sol(10*n_sectors+1:11*n_sectors));
 Cagg       = exp(sol(11*n_sectors+1));
 Lagg       = exp(sol(11*n_sectors+2));
-theta      = exp(sol(11*n_sectors+3));
+theta      = params.theta;
 
-xi         = exp(sol(11*n_sectors+4:12*n_sectors+3));
-mu         = exp(sol(12*n_sectors+4:13*n_sectors+3));
-alpha         = exp(sol(13*n_sectors+4:14*n_sectors+3));
+xi         = exp(sol(11*n_sectors+3:12*n_sectors+2));
+mu         = exp(sol(12*n_sectors+3:13*n_sectors+2));
+alpha         = exp(sol(13*n_sectors+3:14*n_sectors+2));
 
-Gamma_M_partial    = exp(sol(14*n_sectors+4:14*n_sectors+3+n_sectors*(n_sectors-1)));
+Gamma_M_partial    = exp(sol(14*n_sectors+3:14*n_sectors+2+n_sectors*(n_sectors-1)));
 Gamma_M = zeros(n_sectors, n_sectors);
 for i = 1:n_sectors
     Gamma_M(1:n_sectors-1, i) = Gamma_M_partial((i-1)*(n_sectors-1)+1 : i*(n_sectors-1));
 end
 Gamma_M(n_sectors, :) = 1 - sum(Gamma_M(1:n_sectors-1, :), 1);
 
-Gamma_I_partial    = exp(sol(14*n_sectors+3+n_sectors*(n_sectors-1)+1:14*n_sectors+3+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1)));
+Gamma_I_partial    = exp(sol(14*n_sectors+2+n_sectors*(n_sectors-1)+1:14*n_sectors+2+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1)));
 Gamma_I = zeros(n_sectors, n_sectors);
 for i = 1:n_sectors
     Gamma_I(1:n_sectors-1, i) = Gamma_I_partial((i-1)*(n_sectors-1)+1 : i*(n_sectors-1));
@@ -69,8 +69,10 @@ Gamma_I(n_sectors, :) = 1 - sum(Gamma_I(1:n_sectors-1, :), 1);
 Pagg = (sum(xi'*P.^(1-sigma_c)))^(1/(1-sigma_c));
 K = I./delta;
 MgUtCagg = (Cagg-theta*(1/(1+eps_l^(-1)))*Lagg^(1+eps_l^(-1)))^(-eps_c^(-1));
-MgUtCmod = MgUtCagg * (Cagg * xi./C).^(1/sigma_c);
-MgUtLmod = MgUtCagg * theta*Lagg^(eps_l^(-1)) * (L/Lagg).^(1/sigma_l);
+MgUtCmod_temp = MgUtCagg * (Cagg * xi./C).^(1/sigma_c);
+normC = (xi' * MgUtCmod_temp.^(1 - sigma_c))^(1/(1 - sigma_c)); 
+MgUtCmod = MgUtCmod_temp/normC;
+MgUtLmod = MgUtCagg * theta*Lagg^(eps_l^(-1)) * (L/Lagg).^(1/sigma_l)/normC;
 MPLmod = P .* ((mu).*Q./Y).^(1/sigma_q) .* ((1-alpha).*Y./L).^(1/sigma_y);
 MPKmod = (beta./(1-beta*(1-delta))).*(P.*((mu).*Q./Y).^(1/sigma_q) .* (alpha.*Y./K).^(1/sigma_y));
 Pmdef = (Gamma_M.'* (P.^(1-sigma_m))).^(1/(1-sigma_m)) ;
@@ -110,7 +112,7 @@ Qdef_loss = Q./ Qdef - 1;
 Ydef_loss = Y./ Ydef - 1;
 Caggdef_loss = Cagg/Caggdef - 1;
 Laggdef_loss = Lagg/Laggdef - 1;
-norm_loss = MgUtCagg/1-1;
+%norm_loss = Cagg/1-1;
 
 % Moments matching equations
 xi_loss = cons_share./consshare_data-1;
@@ -123,7 +125,7 @@ Gamma_I_loss = Gamma_I_loss(:);
 
 
 % Organizes losses in one vector
-fx = zeros(14*n_sectors+3+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1),1);
+fx = zeros(14*n_sectors+2+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1),1);
 fx(1:n_sectors) = C_loss;
 fx(n_sectors+1:2*n_sectors) = L_loss;
 fx(2*n_sectors+1:3*n_sectors) = K_loss;
@@ -137,12 +139,12 @@ fx(9*n_sectors+1:10*n_sectors) = Qdef_loss;
 fx(10*n_sectors+1:11*n_sectors) = Ydef_loss;
 fx(11*n_sectors+1) = Caggdef_loss;
 fx(11*n_sectors+2) = Laggdef_loss;
-fx(11*n_sectors+3) = norm_loss;
-fx(11*n_sectors+4:12*n_sectors+3) = xi_loss;
-fx(12*n_sectors+4:13*n_sectors+3) = mu_loss;
-fx(13*n_sectors+4:14*n_sectors+3) = alpha_loss;
-fx(14*n_sectors+4:14*n_sectors+3+n_sectors*(n_sectors-1)) = Gamma_M_loss;
-fx(14*n_sectors+3+n_sectors*(n_sectors-1)+1:14*n_sectors+3+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1)) = Gamma_I_loss;
+%fx(11*n_sectors+3) = norm_loss;
+fx(11*n_sectors+3:12*n_sectors+2) = xi_loss;
+fx(12*n_sectors+3:13*n_sectors+2) = mu_loss;
+fx(13*n_sectors+3:14*n_sectors+2) = alpha_loss;
+fx(14*n_sectors+3:14*n_sectors+2+n_sectors*(n_sectors-1)) = Gamma_M_loss;
+fx(14*n_sectors+2+n_sectors*(n_sectors-1)+1:14*n_sectors+2+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1)) = Gamma_I_loss;
 
 %% Print Section %%
 

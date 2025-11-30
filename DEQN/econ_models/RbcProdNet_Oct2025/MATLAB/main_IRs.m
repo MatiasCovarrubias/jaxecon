@@ -8,8 +8,8 @@ save_exper_ind = 0; % 1 to save data  and graphs for the experiment.
 big_sector_ind = 0; % 1 to analyze big sectors, 0 to analize intermediate suppliers.
 
 % Labels
-date = "_July_17_2025";
-exp_label = "_secondord_Min";
+date = "_December_2025";
+exp_label = "_nonlinear_Min";
 
 % choosing sectors to analyze
 if big_sector_ind ==1
@@ -59,10 +59,6 @@ invnet_data = invnet_data ./ sum(invnet_data, 1);
 ionet_data=mean(IOmat47bea./repmat(sum(IOmat47bea),[dim 1 1]),3);
 ionet_data(ionet_data < 0.001) = 0.001;
 ionet_data = ionet_data ./ sum(ionet_data, 1);
-
-% Secotral investment volatility (to do)
-
-% Sectoral labor reallocation (to do)
 
 %%%%% Externally calibrated parameters %%%%%
 
@@ -150,7 +146,6 @@ params.Gamma_I = invnet_data;
 
 load SS_CDsolution_norm_permanent.mat
 % sol_guess=[zeros([11*params.n_sectors,1])-1;0;-1;1];
-sol_init = sol_init(1:11*params.n_sectors+2);
 sol_guess = sol_init;
 
 % Assuming intensitiy shares are equal to expenditure shares
@@ -231,7 +226,7 @@ Gamma_M_guess = ModData.parameters.parGamma_M(1:params.n_sectors-1, :);
 Gamma_M_guess = Gamma_M_guess(:);
 Gamma_I_guess = invnet_data(1:params.n_sectors-1, :);
 Gamma_I_guess = Gamma_I_guess(:);
-sol_guess = [sol_partial(1:11*params.n_sectors+2);log(xi_guess);log(mu_guess);log(alpha_guess);log(Gamma_M_guess);log(Gamma_I_guess)];
+sol_guess = [sol_partial(1:11*params.n_sectors+3);log(xi_guess);log(mu_guess);log(alpha_guess);log(Gamma_M_guess);log(Gamma_I_guess)];
 
 % loop over grid of values to get final answer
 gridpoints = 30;

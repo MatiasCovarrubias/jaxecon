@@ -1,35 +1,33 @@
 % Steady State
-function [fx,ModData] = ProdNetRbc_SS_expshares(sol,params, print)
+function [fx,StStval] = ProdNetRbc_SS(sol,params, print)
 
 % This functions computes the steady state of the model
 
 %% -------------------- Parameters -------------------- %%
 
-
+alpha = params.alpha;
 beta = params.beta;
 delta = params.delta;
 rho = params.rho;
 eps_l = params.eps_l;
 eps_c = params.eps_c;
 phi = params.phi;
-
 sigma_c = params.sigma_c;
 sigma_m = params.sigma_m;
 sigma_q = params.sigma_q;
 sigma_y = params.sigma_y;
 sigma_I = params.sigma_I;
 sigma_l = params.sigma_l;
-consshare_data = params.conssh_data;
-vashare_data = params.vash_data;
-capshare_data = params.capsh_data;
-ionet_data = params.ionet_data;
-invnet_data = params.invnet_data;
-
+xi = params.xi;
+mu = params.mu;
+Gamma_M = params.Gamma_M;
+Gamma_I = params.Gamma_I;
 n_sectors = params.n_sectors;
 Sigma_A = params.Sigma_A;
 
 
 %% -------------------- Endogenous variables -------------------- %%
+
 C          = exp(sol(1:n_sectors));
 L          = exp(sol(n_sectors+1:2*n_sectors));
 Pk          = exp(sol(2*n_sectors+1:3*n_sectors));
@@ -43,34 +41,20 @@ Q          = exp(sol(9*n_sectors+1:10*n_sectors));
 Y          = exp(sol(10*n_sectors+1:11*n_sectors));
 Cagg       = exp(sol(11*n_sectors+1));
 Lagg       = exp(sol(11*n_sectors+2));
-theta      = exp(sol(11*n_sectors+3));
-
-xi         = exp(sol(11*n_sectors+4:12*n_sectors+3));
-mu         = exp(sol(12*n_sectors+4:13*n_sectors+3));
-alpha         = exp(sol(13*n_sectors+4:14*n_sectors+3));
-
-Gamma_M_partial    = exp(sol(14*n_sectors+4:14*n_sectors+3+n_sectors*(n_sectors-1)));
-Gamma_M = zeros(n_sectors, n_sectors);
-for i = 1:n_sectors
-    Gamma_M(1:n_sectors-1, i) = Gamma_M_partial((i-1)*(n_sectors-1)+1 : i*(n_sectors-1));
-end
-Gamma_M(n_sectors, :) = 1 - sum(Gamma_M(1:n_sectors-1, :), 1);
-
-Gamma_I_partial    = exp(sol(14*n_sectors+3+n_sectors*(n_sectors-1)+1:14*n_sectors+3+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1)));
-Gamma_I = zeros(n_sectors, n_sectors);
-for i = 1:n_sectors
-    Gamma_I(1:n_sectors-1, i) = Gamma_I_partial((i-1)*(n_sectors-1)+1 : i*(n_sectors-1));
-end
-Gamma_I(n_sectors, :) = 1 - sum(Gamma_I(1:n_sectors-1, :), 1);
+theta      = params.theta;
 
 %% -------------------- Model equations -------------------- %%
 
 % Economic Variables
-Pagg = (sum(xi'*P.^(1-sigma_c)))^(1/(1-sigma_c));
+
 K = I./delta;
+Pagg = (sum(xi'*P.^(1-sigma_c)))^(1/(1-sigma_c));
 MgUtCagg = (Cagg-theta*(1/(1+eps_l^(-1)))*Lagg^(1+eps_l^(-1)))^(-eps_c^(-1));
-MgUtCmod = MgUtCagg * (Cagg * xi./C).^(1/sigma_c);
-MgUtLmod = MgUtCagg * theta*Lagg^(eps_l^(-1)) * (L/Lagg).^(1/sigma_l);
+MgUtCmod_temp = MgUtCagg * (Cagg * xi./C).^(1/sigma_c);
+normC = (xi' * MgUtCmod_temp.^(1 - sigma_c))^(1/(1 - sigma_c)); 
+MgUtCmod = MgUtCmod_temp/normC;
+MgUtLmod = MgUtCagg * theta*Lagg^(eps_l^(-1)) * (L/Lagg).^(1/sigma_l)/normC;
+
 MPLmod = P .* ((mu).*Q./Y).^(1/sigma_q) .* ((1-alpha).*Y./L).^(1/sigma_y);
 MPKmod = (beta./(1-beta*(1-delta))).*(P.*((mu).*Q./Y).^(1/sigma_q) .* (alpha.*Y./K).^(1/sigma_y));
 Pmdef = (Gamma_M.'* (P.^(1-sigma_m))).^(1/(1-sigma_m)) ;
@@ -83,21 +67,10 @@ Qdef = (((mu).^(1/sigma_q).*Y.^((sigma_q-1)/sigma_q) + (1-mu).^(1/sigma_q).*M.^(
 Ydef = ((alpha.^(1/sigma_y).*K.^((sigma_y-1)/sigma_y) + (1-alpha).^(1/sigma_y).*L.^((sigma_y-1)/sigma_y) ).^(sigma_y/(sigma_y-1)));
 Caggdef = ( (xi.^(1/sigma_c))' * (C.^((sigma_c-1)/sigma_c)) )^(sigma_c/(sigma_c-1));
 Laggdef = (sum(L.^((sigma_l+1)/sigma_l)))^(sigma_l/(sigma_l+1));
+
 V = (1/(1-eps_c^(-1)))*(Cagg-theta*(1/(1+eps_l^(-1)))*Lagg^(1+eps_l^(-1)))^(1-eps_c^(-1))/(1-beta);
-
-% Moments to match
-cons_share = xi.^(sigma_c^(-1)).*(C/Cagg).^(1-sigma_c^(-1));
-va_share = mu.^(sigma_q^(-1)).*(Ydef./Qdef).^(1-sigma_q^(-1));
-cap_share = alpha.^(sigma_y^(-1)).*(K./Ydef).^(1-sigma_y^(-1));
-Pm_inverted = 1 ./ Pm; % Invert the elements of Pm
-ratio = (P * Pm_inverted.').^(1 - sigma_m); % Compute the ratio P * Pm_inverted', and then raise it to the power (1 - sigma_m)
-ionet = Gamma_M .* ratio; % Multiply Gamma_M element-wise by the ratio to obtain the new matrix
-Pk_inverted = 1 ./ Pk; % Invert the elements of Pk
-ratio = (P * Pk_inverted.').^(1 - sigma_I); % Compute the ratio P * Pk_inverted', and then raise it to the power (1 - sigma_I)
-invnet = Gamma_I .* ratio; % Multiply Gamma_I element-wise by the ratio to obtain the new matrix
-
-% Equilibrium equations
-Qrc_loss = Q./Qrc - 1;
+% V = ((1/(1-eps_c^(-1)))*(Cagg)^(1-eps_c^(-1))-theta*(1/(1+eps_l^(-1)))*Lagg^(1+eps_l^(-1)))/(1-beta);
+% Equilibrium
 C_loss = P./MgUtCmod - 1;
 L_loss = MgUtLmod ./MPLmod - 1;
 K_loss = Pk./MPKmod - 1;
@@ -106,24 +79,15 @@ M_loss = M./Mmod - 1;
 Mout_loss = Mout./Moutmod - 1;
 Pk_loss = Pk./Pkdef - 1;
 Iout_loss = Iout./Ioutmod - 1;
+Qrc_loss = Q./Qrc - 1;
 Qdef_loss = Q./ Qdef - 1;
 Ydef_loss = Y./ Ydef - 1;
 Caggdef_loss = Cagg/Caggdef - 1;
 Laggdef_loss = Lagg/Laggdef - 1;
-norm_loss = MgUtCagg/1-1;
-
-% Moments matching equations
-xi_loss = cons_share./consshare_data-1;
-mu_loss = va_share./vashare_data - 1;
-alpha_loss = cap_share./capshare_data - 1;
-Gamma_M_loss = ionet(1:n_sectors-1,:)./ionet_data(1:n_sectors-1,:)-1;
-Gamma_M_loss = Gamma_M_loss(:);
-Gamma_I_loss = invnet(1:n_sectors-1,:)./invnet_data(1:n_sectors-1,:)-1;
-Gamma_I_loss = Gamma_I_loss(:);
+%norm_loss    = Cagg/1 - 1;
 
 
-% Organizes losses in one vector
-fx = zeros(14*n_sectors+3+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1),1);
+fx = zeros(11*n_sectors+2,1);
 fx(1:n_sectors) = C_loss;
 fx(n_sectors+1:2*n_sectors) = L_loss;
 fx(2*n_sectors+1:3*n_sectors) = K_loss;
@@ -137,12 +101,8 @@ fx(9*n_sectors+1:10*n_sectors) = Qdef_loss;
 fx(10*n_sectors+1:11*n_sectors) = Ydef_loss;
 fx(11*n_sectors+1) = Caggdef_loss;
 fx(11*n_sectors+2) = Laggdef_loss;
-fx(11*n_sectors+3) = norm_loss;
-fx(11*n_sectors+4:12*n_sectors+3) = xi_loss;
-fx(12*n_sectors+4:13*n_sectors+3) = mu_loss;
-fx(13*n_sectors+4:14*n_sectors+3) = alpha_loss;
-fx(14*n_sectors+4:14*n_sectors+3+n_sectors*(n_sectors-1)) = Gamma_M_loss;
-fx(14*n_sectors+3+n_sectors*(n_sectors-1)+1:14*n_sectors+3+n_sectors*(n_sectors-1)+n_sectors*(n_sectors-1)) = Gamma_I_loss;
+%fx(11*n_sectors+3) = norm_loss;
+
 
 %% Print Section %%
 
@@ -216,24 +176,23 @@ if print
     disp(Pagg)
     disp('theta')
     disp(theta)
-    
+
 end
 
 %% Return Output
 
-ModData.parameters    = struct('parn_sectors', n_sectors, 'parbeta', beta, 'pareps_c', eps_c, 'pareps_l', eps_l, 'parphi', phi, 'partheta', theta, ...
-    'parsigma_c', sigma_c, 'parsigma_m', sigma_m, 'parsigma_q', sigma_q, 'parsigma_y', sigma_y,'parsigma_I', sigma_I,'parsigma_l', sigma_l, ...
+StStval.parameters    = struct('parn_sectors', n_sectors, 'parbeta', beta, 'pareps_c', eps_c, 'pareps_l', eps_l, 'parphi', phi, 'partheta', theta, ...
+    'parsigma_c', sigma_c, 'parsigma_m', sigma_m, 'parsigma_q', sigma_q, 'parsigma_y', sigma_y,'parsigma_I', sigma_I, 'parsigma_l', sigma_l, ...
     'paralpha', alpha, 'pardelta', delta, 'parmu', mu, 'parrho', rho, 'parxi', xi, ...
     'parGamma_I', Gamma_I, 'parGamma_M', Gamma_M, 'parSigma_A', Sigma_A);
-ModData.policies_ss = [sol(1:11*n_sectors+2);log(P'*Y);log(Pk'*I);log(Pm'*M);V];
-ModData.endostates_ss = log(K);
-ModData.Cagg_ss = Cagg;
-ModData.Lagg_ss = Lagg;
-ModData.Yagg_ss = P'*Y;
-ModData.Iagg_ss = Pk'*I;
-ModData.Magg_ss = Pm'*M;
-ModData.V_ss = V;
-ModData.loss = fx;
+StStval.policies_ss = [sol(1:11*n_sectors+2);log(P'*Y);log(Pk'*I);log(Pm'*M);V];
+StStval.endostates_ss = log(K);
+StStval.Cagg_ss = Cagg;
+StStval.Lagg_ss = Lagg;
+StStval.Yagg_ss = P'*Y;
+StStval.Iagg_ss = Pk'*I;
+StStval.Magg_ss = Pm'*M;
+StStval.V_ss = V;
 
 
 end

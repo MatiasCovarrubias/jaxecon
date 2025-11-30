@@ -95,6 +95,131 @@ jax_config.update("jax_debug_nans", True)
 
 
 # ============================================================================
+# DYNARE SIMULATION PROCESSING UTILITIES
+# ============================================================================
+
+
+def get_dynare_variable_indices(n_sectors: int) -> dict:
+    """Get variable indices for Dynare simulation data (0-indexed for Python)."""
+    n = n_sectors
+    return {
+        "k": (0, n),
+        "a": (n, 2 * n),
+        "c": (2 * n, 3 * n),
+        "l": (3 * n, 4 * n),
+        "pk": (4 * n, 5 * n),
+        "pm": (5 * n, 6 * n),
+        "m": (6 * n, 7 * n),
+        "mout": (7 * n, 8 * n),
+        "i": (8 * n, 9 * n),
+        "iout": (9 * n, 10 * n),
+        "p": (10 * n, 11 * n),
+        "q": (11 * n, 12 * n),
+        "y": (12 * n, 13 * n),
+        "cagg": 13 * n,
+        "lagg": 13 * n + 1,
+        "yagg": 13 * n + 2,
+        "iagg": 13 * n + 3,
+        "magg": 13 * n + 4,
+    }
+
+
+def process_dynare_simulation(
+    simul_data: jnp.ndarray,
+    n_sectors: int,
+    P_weights: jnp.ndarray,
+    Pk_weights: jnp.ndarray,
+    Pm_weights: jnp.ndarray,
+    state_ss: jnp.ndarray,
+    policies_ss: jnp.ndarray,
+    burn_in: int = 0,
+) -> dict:
+    """
+    Process Dynare simulation data and compute analysis variables using nonlinear aggregators.
+
+    Args:
+        simul_data: Dynare simulation output (n_vars, T) in log levels
+        n_sectors: Number of sectors
+        P_weights: Price weights for output aggregation (from nonlinear ergodic dist)
+        Pk_weights: Capital price weights for investment/capital aggregation
+        Pm_weights: Intermediate price weights for intermediate aggregation
+        state_ss: Steady state states (log)
+        policies_ss: Steady state policies (log)
+        burn_in: Number of initial periods to discard
+
+    Returns:
+        Dictionary with analysis variables (log deviations from steady state)
+    """
+    idx = get_dynare_variable_indices(n_sectors)
+
+    # Extract simulation data (after burn-in) - data is in log levels
+    simul = simul_data[:, burn_in:]
+    T = simul.shape[1]
+
+    # Extract sectoral variables in levels
+    K = jnp.exp(simul[idx["k"][0] : idx["k"][1], :])  # (n_sectors, T)
+    Y = jnp.exp(simul[idx["y"][0] : idx["y"][1], :])
+    I = jnp.exp(simul[idx["i"][0] : idx["i"][1], :])
+    M = jnp.exp(simul[idx["m"][0] : idx["m"][1], :])
+
+    # Extract aggregate variables directly from Dynare (in log levels)
+    Cagg = jnp.exp(simul[idx["cagg"], :])
+    Lagg = jnp.exp(simul[idx["lagg"], :])
+
+    # Aggregate using nonlinear model's price weights
+    # These weights are already in levels (from ergodic distribution)
+    Kagg = K.T @ Pk_weights  # (T,)
+    Yagg = Y.T @ P_weights
+    Iagg = I.T @ Pk_weights
+    Magg = M.T @ Pm_weights
+
+    # Calculate steady state aggregates using same weights
+    K_ss = jnp.exp(state_ss[:n_sectors])
+    policies_ss_levels = jnp.exp(policies_ss)
+
+    Y_ss = policies_ss_levels[10 * n_sectors : 11 * n_sectors]
+    I_ss = policies_ss_levels[6 * n_sectors : 7 * n_sectors]
+    M_ss = policies_ss_levels[4 * n_sectors : 5 * n_sectors]
+    Cagg_ss = policies_ss_levels[11 * n_sectors]
+    Lagg_ss = policies_ss_levels[11 * n_sectors + 1]
+
+    Kagg_ss = K_ss @ Pk_weights
+    Yagg_ss = Y_ss @ P_weights
+    Iagg_ss = I_ss @ Pk_weights
+    Magg_ss = M_ss @ Pm_weights
+
+    # Compute log deviations from steady state
+    Cagg_logdev = jnp.log(Cagg) - jnp.log(Cagg_ss)
+    Lagg_logdev = jnp.log(Lagg) - jnp.log(Lagg_ss)
+    Kagg_logdev = jnp.log(Kagg) - jnp.log(Kagg_ss)
+    Yagg_logdev = jnp.log(Yagg) - jnp.log(Yagg_ss)
+    Iagg_logdev = jnp.log(Iagg) - jnp.log(Iagg_ss)
+    Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)
+
+    return {
+        "Agg. Consumption": Cagg_logdev,
+        "Agg. Labor": Lagg_logdev,
+        "Agg. Capital": Kagg_logdev,
+        "Agg. Output": Yagg_logdev,
+        "Agg. Intermediates": Magg_logdev,
+        "Agg. Investment": Iagg_logdev,
+    }
+
+
+def compute_simulation_statistics(analysis_vars: dict) -> dict:
+    """Compute mean and std for each analysis variable."""
+    stats = {}
+    for var_name, values in analysis_vars.items():
+        stats[var_name] = {
+            "mean": float(jnp.mean(values)),
+            "std": float(jnp.std(values)),
+            "min": float(jnp.min(values)),
+            "max": float(jnp.max(values)),
+        }
+    return stats
+
+
+# ============================================================================
 # CONFIGURATION
 # ============================================================================
 
@@ -196,29 +321,72 @@ def main():
         json.dump(config, f, indent=2)
     print(f"Analysis configuration saved to: {config_path}", flush=True)
 
-    # Load model data
+    # Load model data (supports both old and new structure)
     print("Loading model data...", flush=True)
-    model_path = os.path.join(model_dir, "model_data.mat")
+    # Try new naming convention first, fall back to old
+    model_path = os.path.join(model_dir, "ModelData.mat")
     if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+        model_path = os.path.join(model_dir, "model_data.mat")
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found. Tried: ModelData.mat and model_data.mat in {model_dir}")
 
     model_data = sio.loadmat(model_path, simplify_cells=True)
     print("Model data loaded successfully.", flush=True)
-    n_sectors = model_data["SolData"]["parameters"]["parn_sectors"]
-    a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
-    state_ss = jnp.concatenate([model_data["SolData"]["k_ss"], a_ss])
+
+    # Detect structure and extract data
+    dynare_simul_loglin = None
+    dynare_simul_determ = None
+
+    if "ModelData" in model_data:
+        # New structure: ModelData.SteadyState, ModelData.Simulation, ModelData.Solution
+        print("Detected new ModelData structure.", flush=True)
+        md = model_data["ModelData"]
+        n_sectors = md["SteadyState"]["parameters"]["parn_sectors"]
+        a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
+        k_ss = jnp.array(md["SteadyState"]["endostates_ss"], dtype=precision)
+        state_ss = jnp.concatenate([k_ss, a_ss])
+        params = md["SteadyState"]["parameters"]
+        state_sd = jnp.array(md["Simulation"]["states_sd"], dtype=precision)
+        policies_sd = jnp.array(md["Simulation"]["policies_sd"], dtype=precision)
+        policies_ss = jnp.array(md["SteadyState"]["policies_ss"], dtype=precision)
+        C_matrix = md["Solution"]["StateSpace"]["C"]
+
+        # Extract Dynare simulations if available
+        if "Simulation" in md:
+            sim = md["Simulation"]
+            if "Loglin" in sim and "full_simul" in sim["Loglin"]:
+                dynare_simul_loglin = jnp.array(sim["Loglin"]["full_simul"], dtype=precision)
+                print(f"  Loaded log-linear simulation: {dynare_simul_loglin.shape}", flush=True)
+            if "Determ" in sim and "full_simul" in sim["Determ"]:
+                dynare_simul_determ = jnp.array(sim["Determ"]["full_simul"], dtype=precision)
+                print(f"  Loaded deterministic simulation: {dynare_simul_determ.shape}", flush=True)
+    elif "SolData" in model_data:
+        # Old structure: SolData contains everything
+        print("Detected old SolData structure.", flush=True)
+        soldata = model_data["SolData"]
+        n_sectors = soldata["parameters"]["parn_sectors"]
+        a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
+        k_ss = jnp.array(soldata["k_ss"], dtype=precision)
+        state_ss = jnp.concatenate([k_ss, a_ss])
+        params = soldata["parameters"]
+        state_sd = jnp.array(soldata["states_sd"], dtype=precision)
+        policies_sd = jnp.array(soldata["policies_sd"], dtype=precision)
+        policies_ss = jnp.array(soldata["policies_ss"], dtype=precision)
+        C_matrix = soldata["C"]
+    else:
+        raise ValueError("Unknown model_data structure. Expected 'ModelData' or 'SolData' key.")
 
     # Print parameters
+    print("Parameters:\n", params)
 
-    print("Parameteres \n:", model_data["SolData"]["parameters"])
     # Create economic model
     print("Creating economic model...", flush=True)
     econ_model = Model(
-        parameters=model_data["SolData"]["parameters"],
+        parameters=params,
         state_ss=state_ss,
-        policies_ss=model_data["SolData"]["policies_ss"],
-        state_sd=model_data["SolData"]["states_sd"],
-        policies_sd=model_data["SolData"]["policies_sd"],
+        policies_ss=policies_ss,
+        state_sd=state_sd,
+        policies_sd=policies_sd,
         double_precision=config["double_precision"],
     )
     print("Economic model created successfully.", flush=True)
@@ -229,11 +397,11 @@ def main():
     experiments_data = load_experiment_data(experiments_to_analyze, save_dir)
     print("Experiment data loaded successfully.", flush=True)
 
-    # Define shared nn_config using model_data (features will be set per experiment)
+    # Define shared nn_config (features will be set per experiment)
     nn_config_base = {
-        "C": model_data["SolData"]["C"],
-        "states_sd": model_data["SolData"]["states_sd"],
-        "policies_sd": model_data["SolData"]["policies_sd"],
+        "C": C_matrix,
+        "states_sd": state_sd,
+        "policies_sd": policies_sd,
         "params_dtype": precision,
     }
 
@@ -323,6 +491,65 @@ def main():
         gir_data[experiment_label] = gir_results
 
     print("Data collection completed successfully.", flush=True)
+
+    # ============================================================================
+    # PROCESS DYNARE SIMULATIONS (if available)
+    # ============================================================================
+    # Use average prices from the first experiment's ergodic distribution
+    # to aggregate Dynare simulations consistently with the nonlinear model
+    first_experiment_label = list(analysis_variables_data.keys())[0]
+    first_sim_data = raw_simulation_data[first_experiment_label]
+
+    # Get average prices from nonlinear simulation (in log deviations, convert to levels)
+    simul_policies = first_sim_data["simul_policies"]
+    simul_policies_mean = jnp.mean(simul_policies, axis=0)
+
+    # Prices are stored as log deviations in policies, need to convert to levels for weights
+    # P_mean is the mean log deviation, so P_weights = P_ss * exp(P_mean) gives mean prices
+    P_ss = jnp.exp(policies_ss[8 * n_sectors : 9 * n_sectors])
+    Pk_ss = jnp.exp(policies_ss[2 * n_sectors : 3 * n_sectors])
+    Pm_ss = jnp.exp(policies_ss[3 * n_sectors : 4 * n_sectors])
+
+    # simul_policies_mean is already denormalized (log deviation from SS)
+    # So mean prices in levels are: P_ss * exp(mean_logdev)
+    P_weights = P_ss * jnp.exp(simul_policies_mean[8 * n_sectors : 9 * n_sectors])
+    Pk_weights = Pk_ss * jnp.exp(simul_policies_mean[2 * n_sectors : 3 * n_sectors])
+    Pm_weights = Pm_ss * jnp.exp(simul_policies_mean[3 * n_sectors : 4 * n_sectors])
+
+    print(f"Using price weights from experiment: {first_experiment_label}", flush=True)
+
+    # Process Dynare simulations if available
+    if dynare_simul_loglin is not None:
+        print("Processing log-linear (Dynare) simulation...", flush=True)
+        loglin_analysis_vars = process_dynare_simulation(
+            simul_data=dynare_simul_loglin,
+            n_sectors=n_sectors,
+            P_weights=P_weights,
+            Pk_weights=Pk_weights,
+            Pm_weights=Pm_weights,
+            state_ss=state_ss,
+            policies_ss=policies_ss,
+            burn_in=config["burn_in_periods"],
+        )
+        # Add to analysis data for comparison
+        analysis_variables_data["Log-Linear (Dynare)"] = loglin_analysis_vars
+        print("  Log-linear simulation processed and added to analysis.", flush=True)
+
+    if dynare_simul_determ is not None:
+        print("Processing deterministic (Dynare) simulation...", flush=True)
+        determ_analysis_vars = process_dynare_simulation(
+            simul_data=dynare_simul_determ,
+            n_sectors=n_sectors,
+            P_weights=P_weights,
+            Pk_weights=Pk_weights,
+            Pm_weights=Pm_weights,
+            state_ss=state_ss,
+            policies_ss=policies_ss,
+            burn_in=min(config["burn_in_periods"], dynare_simul_determ.shape[1] // 10),
+        )
+        # Add to analysis data for comparison
+        analysis_variables_data["Deterministic (Dynare)"] = determ_analysis_vars
+        print("  Deterministic simulation processed and added to analysis.", flush=True)
 
     # ============================================================================
     # GENERAL ANALYSIS: Tables and Plots

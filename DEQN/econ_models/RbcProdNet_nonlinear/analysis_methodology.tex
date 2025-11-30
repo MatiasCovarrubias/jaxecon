@@ -17,7 +17,7 @@
 
 \section{Introduction}
 
-This document describes the analysis methodology applied to the RBC Production Network model (\texttt{RbcProdNet\_nonlinear}). The model features 37 sectors with CES production functions, intermediate input linkages, investment flows, and correlated productivity shocks. The analysis framework evaluates trained neural network solutions across multiple dimensions: ergodic simulations, welfare costs, stochastic steady states, and generalized impulse responses.
+This document describes the analysis methodology applied to the RBC Production Network model (\texttt{RbcProdNet\_nonlinear}). The model features 37 sectors with CES production functions, intermediate input linkages, investment flows, and correlated productivity shocks. The analysis framework evaluates trained neural network solutions across the following dimensions: ergodic simulations, welfare costs, stochastic steady states, and generalized impulse responses.
 
 \section{Model Overview}
 
@@ -214,6 +214,163 @@ When available, GIRs are compared with impulse responses from log-linearized MAT
     \item Quantifies the importance of nonlinearities for different shock sizes
     \item Identifies asymmetries between positive and negative productivity shocks
 \end{itemize}
+
+\section{MATLAB Benchmark Calculations}
+
+The MATLAB/Dynare code provides benchmark impulse responses for comparison with the neural network solution. This section documents the calibration, steady state computation, and IR calculation procedures.
+
+\subsection{Calibration Procedure}
+
+The model is calibrated using U.S. sectoral data from the BEA. The calibration proceeds in stages:
+
+\subsubsection{Data Sources}
+\begin{itemize}
+    \item \textbf{Consumption shares} ($\xi$): Average sectoral consumption expenditure shares from BEA
+    \item \textbf{Capital shares} ($\alpha$): Average capital expenditure shares by sector (floored at 5\%)
+    \item \textbf{Value-added shares} ($\mu$): Average ratio of value added to gross output
+    \item \textbf{Input-output matrix} ($\Gamma_M$): Average IO flows, normalized with entries floored at 1\%
+    \item \textbf{Investment matrix} ($\Gamma_I$): Average investment flows across sectors
+    \item \textbf{Depreciation rates} ($\delta$): Sector-specific rates from BEA fixed assets
+    \item \textbf{TFP process}: Estimated AR(1) process with covariance matrix $\Sigma_A$
+\end{itemize}
+
+\subsubsection{Steady State Computation}
+
+The steady state is solved iteratively, starting from a Cobb-Douglas specification and gradually lowering elasticities to target values:
+
+\begin{enumerate}
+    \item \textbf{Stage 1}: Solve with all $\sigma = 0.99$ (near Cobb-Douglas)
+    \item \textbf{Stage 2}: Lower $\sigma_l$ to target value while matching labor reallocation
+    \item \textbf{Stage 3}: Lower $\sigma_m, \sigma_q$ while matching value-added and IO shares
+    \item \textbf{Stage 4}: Lower $\sigma_c, \sigma_y, \sigma_I$ while matching all expenditure shares
+\end{enumerate}
+
+The steady state solver (\texttt{ProdNetRbc\_SS.m}) jointly determines:
+\begin{itemize}
+    \item Sectoral quantities: $C_i, L_i, M_i, I_i, Q_i, Y_i$
+    \item Sectoral prices: $P_i, P^k_i, P^m_i$
+    \item Aggregates: $C^{agg}, L^{agg}$
+    \item Preference parameter: $\theta$ (calibrated to normalize marginal utility)
+\end{itemize}
+
+\subsection{Log-Linear Solution (Dynare)}
+
+The log-linearized model is solved using Dynare (\texttt{stoch\_simul.mod}):
+
+\begin{enumerate}
+    \item Variables are expressed as log deviations from steady state
+    \item First-order perturbation around the deterministic steady state
+    \item Shocks are specified with the estimated covariance matrix $\Sigma_A$
+    \item Policy functions are linear: $x_t = C \cdot s_{t-1} + D \cdot \varepsilon_t$
+\end{enumerate}
+
+The solution yields state-space matrices $(A, B, C, D)$ where:
+\begin{align}
+    s_t &= A \cdot s_{t-1} + B \cdot \varepsilon_t \quad \text{(state evolution)} \\
+    x_t &= C \cdot s_{t-1} + D \cdot \varepsilon_t \quad \text{(policy functions)}
+\end{align}
+
+\subsection{Impulse Response Computation}
+
+Two types of impulse responses are computed for each sector:
+
+\subsubsection{Log-Linear IRs}
+
+Starting from steady state, apply a TFP shock to sector $i$ and simulate using the linear policy functions:
+\begin{enumerate}
+    \item Set initial state: $a_i(0) = \text{shock\_size}$ (e.g., $\log(0.95)$ for $-5\%$)
+    \item Simulate forward with zero future shocks: $\varepsilon_t = 0$ for $t > 0$
+    \item Record deviations from steady state for all variables
+\end{enumerate}
+
+\subsubsection{Perfect Foresight (Deterministic) IRs}
+
+Solve the fully nonlinear model under perfect foresight (\texttt{determ\_irs.mod}):
+\begin{enumerate}
+    \item Set initial TFP: $a_i(0) = \text{shock\_size}$
+    \item Solve for the perfect foresight transition path back to steady state
+    \item No future uncertainty: agents know the exact path of TFP recovery
+\end{enumerate}
+
+This captures nonlinearities in the transition dynamics but ignores precautionary behavior.
+
+\subsection{Units and Normalization}
+
+\textbf{Critical for comparison}: All impulse responses are stored in \textbf{log deviations from steady state} (not percentages):
+
+\begin{itemize}
+    \item \textbf{MATLAB output} (\texttt{ProcessIRs.m}): Variables are computed as
+    \begin{equation}
+        \hat{x}_t = \log(x_t) - \log(x_{ss})
+    \end{equation}
+    
+    \item \textbf{JAX GIR output}: Also in log deviations from steady state
+    
+    \item \textbf{Plotting}: Both are multiplied by 100 to display as percentages
+\end{itemize}
+
+\subsubsection{MATLAB IR Variable Mapping}
+
+The \texttt{ProcessIRs.m} function outputs a matrix with rows corresponding to:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{clll}
+\toprule
+\textbf{Row} & \textbf{Variable} & \textbf{Description} & \textbf{Units} \\
+\midrule
+0 & $A_i$ & TFP of shocked sector & \textbf{Levels} (not log dev) \\
+1 & $\hat{C}^{agg}$ & Aggregate consumption & Log deviation \\
+2 & $\hat{L}^{agg}$ & Aggregate labor & Log deviation \\
+3 & $V_c$ & Continuation value & Level \\
+4 & $\hat{C}_i$ & Sectoral consumption & Log deviation \\
+5 & $\hat{P}_i$ & Output price & Log deviation \\
+6 & $\hat{I}^{out}_i$ & Investment outputs sold & Log deviation \\
+7 & $\hat{M}^{out}_i$ & Intermediate outputs sold & Log deviation \\
+8 & $\hat{L}_i$ & Sectoral labor & Log deviation \\
+9 & $\hat{I}_i$ & Sectoral investment & Log deviation \\
+10 & $\hat{M}_i$ & Intermediate inputs & Log deviation \\
+11 & $\hat{Y}_i$ & Sectoral value added & Log deviation \\
+12 & $\hat{Q}_i$ & Gross output & Log deviation \\
+13--22 & Client & Client sector variables & (same ordering) \\
+23 & $\hat{K}_i$ & Capital of shocked sector & Log deviation \\
+24 & $\hat{Y}^{agg}$ & Aggregate output & Log deviation \\
+25 & $\hat{P}^m_{client}$ & Intermediate price of client & Log deviation \\
+26 & $\hat{\gamma}_{ij}$ & Expenditure share change & Log deviation \\
+\bottomrule
+\end{tabular}
+\caption{MATLAB IR output variable ordering from \texttt{ProcessIRs.m}}
+\end{table}
+
+\textbf{Important}: Row 0 (TFP) is in \textbf{levels}, not log deviations. For a $-20\%$ shock, $A_i(0) = 0.8$. All other rows are in log deviations from steady state.
+
+\textbf{Note}: The Python loader (\texttt{matlab\_irs.py}) contains a variable index mapping that should be verified against the actual saved \texttt{.mat} files using the \texttt{inspect\_matlab\_ir\_structure()} function.
+
+\subsubsection{Shock Sign Convention}
+
+In the MATLAB code, shocks are defined with the following convention:
+\begin{itemize}
+    \item \texttt{params.IRshock = -0.0513}: This is $\log(0.95) \approx -0.0513$
+    \item For a \textbf{positive} 5\% shock (TFP increases to 105\%): set $a_i(0) = -\text{IRshock} = +0.0513$
+    \item For a \textbf{negative} 5\% shock (TFP decreases to 95\%): set $a_i(0) = +\text{IRshock} = -0.0513$
+\end{itemize}
+
+This matches the JAX convention where a negative shock adds $\log(1 - \text{shock\_size})$ to the log level.
+
+\subsection{Amplification Metrics}
+
+The MATLAB code computes several diagnostic metrics:
+\begin{itemize}
+    \item \textbf{Peak values}: Maximum absolute response for each variable
+    \item \textbf{Peak periods}: Time at which peak response occurs
+    \item \textbf{Half-lives}: Time for response to decay to half of peak
+    \item \textbf{Amplification}: Difference between perfect foresight and log-linear peaks
+    \begin{equation}
+        \text{Amplification}_i = \text{peak}^{determ}_i - \text{peak}^{loglin}_i
+    \end{equation}
+\end{itemize}
+
+Positive amplification indicates that nonlinearities magnify the response relative to the log-linear approximation.
 
 \section{Comparative Analysis}
 

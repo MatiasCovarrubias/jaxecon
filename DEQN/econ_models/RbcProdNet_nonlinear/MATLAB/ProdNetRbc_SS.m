@@ -41,7 +41,7 @@ Q          = exp(sol(9*n_sectors+1:10*n_sectors));
 Y          = exp(sol(10*n_sectors+1:11*n_sectors));
 Cagg       = exp(sol(11*n_sectors+1));
 Lagg       = exp(sol(11*n_sectors+2));
-theta      = exp(sol(11*n_sectors+3));
+theta      = params.theta;
 
 %% -------------------- Model equations -------------------- %%
 
@@ -85,10 +85,9 @@ Qdef_loss = Q./ Qdef - 1;
 Ydef_loss = Y./ Ydef - 1;
 Caggdef_loss = Cagg/Caggdef - 1;
 Laggdef_loss = Lagg/Laggdef - 1;
-norm_loss    = MgUtCagg/1 - 1;
 
 
-fx = zeros(11*n_sectors+3,1);
+fx = zeros(11*n_sectors+2,1);
 fx(1:n_sectors) = C_loss;
 fx(n_sectors+1:2*n_sectors) = L_loss;
 fx(2*n_sectors+1:3*n_sectors) = K_loss;
@@ -102,7 +101,6 @@ fx(9*n_sectors+1:10*n_sectors) = Qdef_loss;
 fx(10*n_sectors+1:11*n_sectors) = Ydef_loss;
 fx(11*n_sectors+1) = Caggdef_loss;
 fx(11*n_sectors+2) = Laggdef_loss;
-fx(11*n_sectors+3) = norm_loss;
 
 
 %% Print Section %%

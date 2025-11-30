@@ -149,6 +149,7 @@ params.Gamma_I = invnet_data;
 
 load SS_CDsolution_norm.mat
 % sol_guess=[zeros([11*params.n_sectors,1])-1;0;-1;1];
+sol_init = sol_init(1:11*params.n_sectors+2);
 sol_guess = sol_init;
 
 % Assuming intensitiy shares are equal to expenditure shares
@@ -228,7 +229,7 @@ Gamma_M_guess = ModData.parameters.parGamma_M(1:params.n_sectors-1, :);
 Gamma_M_guess = Gamma_M_guess(:);
 Gamma_I_guess = invnet_data(1:params.n_sectors-1, :);
 Gamma_I_guess = Gamma_I_guess(:);
-sol_guess = [sol_partial(1:11*params.n_sectors+3);log(xi_guess);log(mu_guess);log(alpha_guess);log(Gamma_M_guess);log(Gamma_I_guess)];
+sol_guess = [sol_partial(1:11*params.n_sectors+2);log(xi_guess);log(mu_guess);log(alpha_guess);log(Gamma_M_guess);log(Gamma_I_guess)];
 
 % loop over grid of values to get final answer
 gridpoints = 8;

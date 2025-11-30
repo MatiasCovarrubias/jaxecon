@@ -7,16 +7,24 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
     """
     Create a function to compute Generalized Impulse Responses (GIRs) for analysis variables.
 
+    GIRs are computed by shocking TFP/productivity states only. Capital states evolve
+    deterministically and are not shocked directly.
+
     Args:
         econ_model: Economic model instance
         config: Dictionary with parameters:
             - gir_n_draws: Number of points to sample from ergodic distribution
             - gir_trajectory_length: Length of trajectories to simulate
-            - shock_size: Size of shock to apply (default 0.2 for 20% decrease)
-            - states_to_shock: List of state indices to shock (if None, shocks all available states)
+            - ir_shock_sizes: List of shock sizes as percentages (e.g., [5, 10, 20])
+            - states_to_shock: List of TFP state indices to shock (n_sectors + sector_idx)
             - gir_seed: Random seed
         simul_policies: Simulation policies for extracting price weights (optional, can be passed in GIR_fn)
                        Should be in logdev form when using simulation_verbose_fn
+
+    Shock magnitudes (negative shocks):
+        - 5% shock: TFP drops to 95% of current level, i.e., add log(0.95) ≈ -0.051 to log(A)
+        - 10% shock: TFP drops to 90% of current level, i.e., add log(0.90) ≈ -0.105 to log(A)
+        - 20% shock: TFP drops to 80% of current level, i.e., add log(0.80) ≈ -0.223 to log(A)
 
     Note: This function expects inputs from simulation_verbose_fn which returns states and policies
           in log deviation form (not normalized by standard deviations).
@@ -41,25 +49,37 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
     def create_counterfactual_state(state_logdev, state_idx, shock_size, shock_sign="neg"):
         """
-        Create counterfactual initial state with specified state variable shocked.
+        Create counterfactual initial state with TFP shocked for a specific sector.
 
         Args:
             state_logdev: State in log deviation form (not normalized)
-            state_idx: Index of state variable to shock
+            state_idx: Index of TFP state to shock (should be n_sectors + sector_idx)
             shock_size: Size of shock to apply (as fraction, e.g., 0.2 for 20%)
-            shock_sign: "neg" for negative shock, "pos" for positive shock
+            shock_sign: "neg" for negative shock (decreases TFP), "pos" for positive shock
 
         Returns:
             counterfactual_state_logdev: Modified state in log deviation form
+
+        Shock implementation:
+            For a -20% shock (TFP drops to 80% of current level):
+                A_new = A_current * 0.8
+                In logs: log(A_new) = log(A_current) + log(0.8)
+                Adds log(0.8) ≈ -0.223 to the log level
+
+            For a +20% shock (TFP rises to 120% of current level):
+                A_new = A_current * 1.2
+                In logs: log(A_new) = log(A_current) + log(1.2)
+                Adds log(1.2) ≈ +0.182 to the log level
         """
         # Convert logdevs to actual log levels
         state_notnorm = state_logdev + econ_model.state_ss
 
-        # Apply shock to specified state variable
-        # Since state is in log terms, we add/subtract log(1 + shock_size)
+        # Apply shock to specified state variable in log terms
         if shock_sign == "neg":
-            state_counterfactual_notnorm = state_notnorm.at[state_idx].add(-jnp.log(1 + shock_size))
+            # Negative shock: multiply level by (1 - shock_size), so add log(1 - shock_size) to log
+            state_counterfactual_notnorm = state_notnorm.at[state_idx].add(jnp.log(1 - shock_size))
         else:  # positive shock
+            # Positive shock: multiply level by (1 + shock_size), so add log(1 + shock_size) to log
             state_counterfactual_notnorm = state_notnorm.at[state_idx].add(jnp.log(1 + shock_size))
 
         # Convert back to logdevs
@@ -129,12 +149,12 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         simul_obs, train_state, state_idx, P_weights, Pk_weights, Pm_weights, var_labels, shock_size, shock_sign
     ):
         """
-        Compute GIR for a specific state variable using analysis variables.
+        Compute GIR for a specific TFP state using analysis variables.
 
         Args:
             simul_obs: Simulation observations from ergodic distribution (in logdev form)
             train_state: Trained neural network state
-            state_idx: Index of state to shock
+            state_idx: Index of TFP state to shock (n_sectors + sector_idx)
             P_weights, Pk_weights, Pm_weights: Price weights for aggregation
             var_labels: List of variable labels in consistent order
             shock_size: Size of shock (fraction, e.g., 0.2 for 20%)
@@ -190,8 +210,8 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
     def GIR_fn(simul_obs, train_state, simul_policies_data=None):
         """
-        Main GIR function that computes analysis variable impulse responses for specified states.
-        Computes GIRs for both positive and negative shocks, and for multiple shock sizes.
+        Main GIR function that computes TFP impulse responses for specified sectors.
+        Computes GIRs for both positive and negative TFP shocks, and for multiple shock sizes.
 
         Args:
             simul_obs: Simulation observations from ergodic distribution (in logdev form)
@@ -201,11 +221,11 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         Returns:
             gir_results: Dictionary with structure:
                 {state_name: {
-                    "state_idx": int,
-                    "pos_5": {"gir_analysis_variables": {...}},
-                    "neg_5": {"gir_analysis_variables": {...}},
-                    "pos_10": {...}, "neg_10": {...},
-                    "pos_20": {...}, "neg_20": {...},
+                    "state_idx": int,  # TFP state index (n_sectors + sector_idx)
+                    "pos_5": {"gir_analysis_variables": {...}},   # +5% TFP shock
+                    "neg_5": {"gir_analysis_variables": {...}},   # -5% TFP shock (log(0.95))
+                    "pos_10": {...}, "neg_10": {...},             # ±10% shocks
+                    "pos_20": {...}, "neg_20": {...},             # ±20% shocks (log(0.80) for neg)
                 }}
         """
         # Use provided simul_policies or the one passed during creation
@@ -253,9 +273,10 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
                 for shock_sign in ["pos", "neg"]:
                     current_computation += 1
+                    sector_idx = state_idx - econ_model.n_sectors
                     print(
                         f"      GIR [{current_computation}/{total_computations}]: "
-                        f"state {state_idx}, {shock_sign}_{shock_size_pct}%",
+                        f"TFP sector {sector_idx} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
                         flush=True,
                     )
 

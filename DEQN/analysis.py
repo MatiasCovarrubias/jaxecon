@@ -138,12 +138,9 @@ config = {
     "gir_seed": 42,
     # Combined IR analysis configuration
     # Sectors to analyze: specify sector indices (0-based).
-    # The state index for sector i depends on the shock type:
-    #   - "capital": state_idx = i (capital K_i)
-    #   - "productivity": state_idx = n_sectors + i (productivity A_i)
-    # Note: MATLAB IRs from Dynare are typically capital shocks (deterministic/perfect foresight)
+    # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
+    # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0, 2, 23],
-    "ir_shock_type": "capital",
     "ir_variable_to_plot": "Agg. Consumption",
     "ir_shock_sizes": [5, 10, 20],
     "ir_max_periods": 80,
@@ -240,21 +237,13 @@ def main():
         "params_dtype": precision,
     }
 
-    # Compute states_to_shock from ir_sectors_to_plot and ir_shock_type
-    # State indices:
-    #   - Capital (K): state_idx = sector_idx
-    #   - Productivity (A): state_idx = n_sectors + sector_idx
+    # Compute states_to_shock from ir_sectors_to_plot
+    # GIRs always shock TFP/productivity: state_idx = n_sectors + sector_idx
     ir_sectors = config.get("ir_sectors_to_plot", [0])
-    ir_shock_type = config.get("ir_shock_type", "capital")
-
-    if ir_shock_type == "productivity":
-        states_to_shock = [n_sectors + sector_idx for sector_idx in ir_sectors]
-    else:
-        states_to_shock = ir_sectors
+    states_to_shock = [n_sectors + sector_idx for sector_idx in ir_sectors]
 
     config["states_to_shock"] = states_to_shock
-    print(f"GIR shock type: {ir_shock_type}", flush=True)
-    print(f"GIR states to shock: {states_to_shock} (sectors: {ir_sectors})", flush=True)
+    print(f"GIR: Shocking TFP for sectors {ir_sectors} (state indices: {states_to_shock})", flush=True)
 
     # Create analysis functions
     print("Creating analysis functions...", flush=True)

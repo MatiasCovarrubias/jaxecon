@@ -14,6 +14,10 @@ from .loss import (
 from .simulation import (
     create_episode_simul_fn,
 )
+from .steady_state_solver import (
+    solve_steady_state,
+    SteadyStateSolution,
+)
 
 # Re-export everything that might be imported by existing code
 __all__ = [
@@ -26,4 +30,7 @@ __all__ = [
     "create_batch_loss_fn",
     # Simulation
     "create_episode_simul_fn",
+    # Steady state
+    "solve_steady_state",
+    "SteadyStateSolution",
 ]

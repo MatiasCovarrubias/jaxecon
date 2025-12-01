@@ -7,6 +7,7 @@ jaxlib>=0.7.2
 flax>=0.8.0
 optax>=0.2.0
 jaxopt>=0.8.0
+optimistix>=0.0.6
 
 # Scientific computing
 numpy>=2.0.0

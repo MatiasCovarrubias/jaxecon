@@ -150,7 +150,6 @@ config = {
     "ir_variable_to_plot": "Agg. Consumption",
     "ir_shock_sizes": [5, 10, 20],
     "ir_max_periods": 80,
-    "matlab_ir_file_pattern": "AllSectors_IRS__Oct_25nonlinear_{sign}_{size}.mat",
     # JAX configuration
     "double_precision": True,
 }
@@ -533,26 +532,29 @@ def main():
     print("COMBINED IR ANALYSIS: MATLAB + JAX GIRs", flush=True)
     print("=" * 60, flush=True)
 
+    # The load_matlab_irs function automatically searches for:
+    # 1. ModelData_IRs.mat in the model directory
+    # 2. ModelData_IRs.mat in experiment subfolders
+    # 3. Legacy format files in MATLAB/IRs folder (fallback)
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
     matlab_ir_data = {}
 
-    print(f"\nChecking MATLAB IR directory: {matlab_ir_dir}", flush=True)
+    print("\nLooking for MATLAB IR data...", flush=True)
+    matlab_ir_data = load_matlab_irs(
+        matlab_ir_dir=matlab_ir_dir,
+        shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
+    )
 
-    if os.path.exists(matlab_ir_dir):
-        print("  ✓ Directory exists", flush=True)
-        matlab_ir_data = load_matlab_irs(
-            matlab_ir_dir=matlab_ir_dir,
-            shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
-            file_pattern=config.get("matlab_ir_file_pattern", "AllSectors_IRS__Oct_25nonlinear_{sign}_{size}.mat"),
-        )
-
-        if matlab_ir_data:
-            print(f"\n  ✓ Successfully loaded {len(matlab_ir_data)} shock configurations", flush=True)
-        else:
-            print("\n  ✗ No MATLAB IR files were loaded", flush=True)
+    if matlab_ir_data:
+        print(f"\n  ✓ Successfully loaded {len(matlab_ir_data)} shock configurations", flush=True)
+        for key in matlab_ir_data.keys():
+            n_sectors_loaded = len(matlab_ir_data[key].get("sectors", {}))
+            print(f"    - {key}: {n_sectors_loaded} sectors", flush=True)
     else:
-        print(f"  ✗ Directory NOT FOUND: {matlab_ir_dir}", flush=True)
-        print("    To use MATLAB IRs, create this directory and add the .mat files", flush=True)
+        print("\n  ✗ No MATLAB IR data was loaded", flush=True)
+        print("    To use MATLAB IRs, either:", flush=True)
+        print("    1. Save ModelData_IRs.mat in the model directory, or", flush=True)
+        print("    2. Run MATLAB main.m with config.save_results = true", flush=True)
 
     # Generate combined IR plots (with or without MATLAB data)
     print("\nGenerating IR comparison plots...", flush=True)

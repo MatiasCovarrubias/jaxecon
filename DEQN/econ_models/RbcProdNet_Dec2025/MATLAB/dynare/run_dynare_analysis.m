@@ -70,7 +70,7 @@ simul_T_determ = opts.simul_T_determ;
 
 %% Prepare data for Dynare
 if opts.verbose
-    disp('=== PREPARING DYNARE INPUT ===');
+    fprintf('\n  Preparing Dynare input...\n');
 end
 
 policies_ss = ModData.policies_ss;
@@ -122,7 +122,7 @@ end
 
 if ~have_saved_stoch
     if opts.verbose
-        disp('=== SOLVING LOG-LINEAR MODEL (stoch_simul) ===');
+        fprintf('\n  ── Solving Log-Linear Model (stoch_simul) ──────────────────────\n');
     end
     
     tic;
@@ -140,7 +140,7 @@ if ~have_saved_stoch
     
     elapsed = toc;
     if opts.verbose
-        fprintf('Log-linear solution completed in %.2f seconds.\n', elapsed);
+        fprintf('     ✓ Log-linear solution completed (%.2f s)\n', elapsed);
     end
     
     % Save stochastic objects (determ_simul will overwrite oo_, M_, options_)
@@ -152,11 +152,11 @@ if ~have_saved_stoch
     assignin('base', 'options_stoch_', options_stoch);
     
     if opts.verbose
-        disp('Saved stochastic solution objects (oo_stoch_, M_stoch_, options_stoch_)');
+        fprintf('     ✓ Stochastic objects cached\n');
     end
 else
     if opts.verbose
-        disp('=== USING SAVED STOCHASTIC SOLUTION ===');
+        fprintf('\n  ✓ Using cached stochastic solution\n');
     end
 end
 
@@ -172,7 +172,7 @@ Results.steady_state = oo_.steady_state;
 %% 2. Log-Linear Simulation (with random shocks)
 if opts.run_loglin_simul
     if opts.verbose
-        disp('=== RUNNING LOG-LINEAR SIMULATION ===');
+        fprintf('\n  ── Log-Linear Simulation (T = %d) ────────────────────────────\n', simul_T_loglin);
     end
     
     tic;
@@ -180,10 +180,8 @@ if opts.run_loglin_simul
     % Set RNG seed if provided, otherwise use current state
     if ~isempty(opts.rng_seed)
         if isstruct(opts.rng_seed)
-            % Restore a previously saved RNG state (for exact reproducibility)
             rng(opts.rng_seed);
         else
-            % Set a specific seed number
             rng(opts.rng_seed);
         end
     end
@@ -192,7 +190,7 @@ if opts.run_loglin_simul
     rng_state = rng;
     Results.rng_state = rng_state;
     if opts.verbose
-        fprintf('RNG state saved (Type: %s, Seed: %d)\n', rng_state.Type, rng_state.Seed);
+        fprintf('     RNG: %s (seed = %d)\n', rng_state.Type, rng_state.Seed);
     end
     
     % Generate random shocks
@@ -221,7 +219,7 @@ if opts.run_loglin_simul
     
     elapsed = toc;
     if opts.verbose
-        fprintf('Log-linear simulation completed in %.2f seconds.\n', elapsed);
+        fprintf('     ✓ Completed (%.2f s)\n', elapsed);
     end
     
     Results.SolData = SolData;
@@ -231,7 +229,7 @@ end
 %% 3. Log-Linear Impulse Responses
 if opts.run_loglin_irs
     if opts.verbose
-        disp('=== COMPUTING LOG-LINEAR IMPULSE RESPONSES ===');
+        fprintf('\n  ── Log-Linear IRFs (horizon = %d) ───────────────────────────\n', opts.ir_horizon);
     end
     
     tic;
@@ -253,13 +251,13 @@ if opts.run_loglin_irs
         IRSLoglin_all{idx} = dynare_simul;
         
         if opts.verbose
-            fprintf('  Computed log-linear IR for sector %d\n', sector_idx);
+            fprintf('     • Sector %d\n', sector_idx);
         end
     end
     
     elapsed = toc;
     if opts.verbose
-        fprintf('Log-linear IRFs completed in %.2f seconds.\n', elapsed);
+        fprintf('     ✓ Completed %d sectors (%.2f s)\n', numel(opts.sector_indices), elapsed);
     end
     
     Results.IRSLoglin_raw = IRSLoglin_all;
@@ -269,7 +267,7 @@ end
 %% 4. Perfect Foresight Impulse Responses
 if opts.run_determ_irs
     if opts.verbose
-        disp('=== COMPUTING PERFECT FORESIGHT IMPULSE RESPONSES ===');
+        fprintf('\n  ── Perfect Foresight IRFs (horizon = %d) ──────────────────────\n', opts.ir_horizon);
     end
     
     tic;
@@ -307,13 +305,13 @@ if opts.run_determ_irs
         IRSDeterm_all{idx} = dynare_simul;
         
         if opts.verbose
-            fprintf('  Computed perfect foresight IR for sector %d\n', sector_idx);
+            fprintf('     • Sector %d\n', sector_idx);
         end
     end
     
     elapsed = toc;
     if opts.verbose
-        fprintf('Perfect foresight IRFs completed in %.2f seconds.\n', elapsed);
+        fprintf('     ✓ Completed %d sectors (%.2f s)\n', numel(opts.sector_indices), elapsed);
     end
     
     Results.IRSDeterm_raw = IRSDeterm_all;
@@ -322,7 +320,7 @@ end
 %% 5. Deterministic Simulation (Perfect Foresight with Random Shocks)
 if opts.run_determ_simul
     if opts.verbose
-        fprintf('=== RUNNING DETERMINISTIC SIMULATION (T=%d) ===\n', simul_T_determ);
+        fprintf('\n  ── Deterministic Simulation (T = %d) ─────────────────────────\n', simul_T_determ);
     end
     
     tic;
@@ -337,8 +335,8 @@ if opts.run_determ_simul
     shockssim_determ(2:end-1, :) = shockssim(1:simul_T_determ-2, :);  % Fill simulation periods
     
     if opts.verbose
-        fprintf('  Shock matrix size: %d x %d\n', size(shockssim_determ, 1), size(shockssim_determ, 2));
-        fprintf('  simul_periods: %d\n', simul_periods);
+        fprintf('     Shock matrix: %d × %d | Periods: %d\n', ...
+            size(shockssim_determ, 1), size(shockssim_determ, 2), simul_periods);
     end
     
     % Save to workspace (needed by .mod file)
@@ -365,11 +363,13 @@ if opts.run_determ_simul
         
         elapsed = toc;
         if opts.verbose
-            fprintf('Deterministic simulation completed in %.2f seconds.\n', elapsed);
+            fprintf('     ✓ Completed (%.2f s)\n', elapsed);
         end
     catch ME
         cd(current_dir);
-        warning('Deterministic simulation failed: %s', ME.message);
+        if opts.verbose
+            fprintf('     ⚠ Failed: %s\n', ME.message);
+        end
         Results.SimulDeterm = [];
         Results.determ_simul_error = ME;
     end
@@ -377,12 +377,9 @@ end
 
 %% Summary
 if opts.verbose
-    disp('=== DYNARE ANALYSIS COMPLETE ===');
-    disp('Results structure contains:');
-    fields = fieldnames(Results);
-    for i = 1:length(fields)
-        fprintf('  - %s\n', fields{i});
-    end
+    fprintf('\n  ────────────────────────────────────────────────────────────────\n');
+    fprintf('  ✓ Dynare analysis complete\n');
+    fprintf('    Results: {%s}\n', strjoin(fieldnames(Results)', ', '));
 end
 
 end

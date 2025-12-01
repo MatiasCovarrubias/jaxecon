@@ -186,7 +186,7 @@ StStval.parameters    = struct('parn_sectors', n_sectors, 'parbeta', beta, 'pare
     'parsigma_c', sigma_c, 'parsigma_m', sigma_m, 'parsigma_q', sigma_q, 'parsigma_y', sigma_y,'parsigma_I', sigma_I, 'parsigma_l', sigma_l, ...
     'paralpha', alpha, 'pardelta', delta, 'parmu', mu, 'parrho', rho, 'parxi', xi, ...
     'parGamma_I', Gamma_I, 'parGamma_M', Gamma_M, 'parSigma_A', Sigma_A);
-StStval.policies_ss = [sol(1:11*n_sectors+2);log(P'*Y);log(Pk'*I);log(Pm'*M);V];
+StStval.policies_ss = [sol(1:11*n_sectors+2);log(P'*Y);log(Pk'*I);log(Pm'*M)];
 StStval.endostates_ss = log(K);
 StStval.Cagg_ss = Cagg;
 StStval.Lagg_ss = Lagg;

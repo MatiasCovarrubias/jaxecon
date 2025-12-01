@@ -68,7 +68,10 @@ fsolve_opts = opts.fsolve_options;
 
 %% ========== STAGE 1: Solve Steady State under Cobb-Douglas ==========
 if opts.verbose
-    disp('=== STAGE 1: Solving Steady State under Cobb-Douglas ===');
+    fprintf('\n');
+    fprintf('  ┌─ STAGE 1: Cobb-Douglas Initialization ───────────────────────┐\n');
+    fprintf('  │  σ = 0.99 for all elasticities (CD approximation)            │\n');
+    fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
 
 % Set elasticities close to 1 (Cobb-Douglas)
@@ -105,13 +108,16 @@ fh_compStSt = @(x) ProdNetRbc_SS(x, params, 0);
 [~, ModData] = ProdNetRbc_SS(sol_init, params, 0);
 
 if opts.verbose
-    fprintf('Stage 1 completed in %.2f seconds. Exit flag: %s\n', toc(tic_stage1), exit_flag_str(exfl));
-    fprintf('theta = %.4f\n', ModData.parameters.partheta);
+    fprintf('\n  Stage 1 completed: %s (%.2f s)\n', exit_flag_str(exfl), toc(tic_stage1));
+    fprintf('    θ = %.4f\n', ModData.parameters.partheta);
 end
 
 %% ========== STAGE 2: Lower sigma_l ==========
 if opts.verbose
-    disp('=== STAGE 2: Lowering sigma_l ===');
+    fprintf('\n');
+    fprintf('  ┌─ STAGE 2: Lowering σ_l ──────────────────────────────────────┐\n');
+    fprintf('  │  Homotopy: 0.90 → %.2f (%d steps)                            │\n', sigma_l_target, gridpoints);
+    fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
 
 sol_guess = sol_init;
@@ -127,18 +133,21 @@ for i = 1:gridpoints
     sol_guess = sol_init;
     
     if opts.verbose
-        fprintf('  sigma_l = %.2f: %s (%.2f s)\n', params.sigma_l, exit_flag_str(exfl), toc(tic_iter));
+        fprintf('    [%d/%d] σ_l = %.3f  →  %s (%.2fs)\n', i, gridpoints, params.sigma_l, exit_flag_str(exfl), toc(tic_iter));
     end
 end
 
 if opts.verbose
-    fprintf('Stage 2 completed in %.2f seconds.\n', toc(tic_stage2));
-    fprintf('theta = %.4f\n', ModData.parameters.partheta);
+    fprintf('\n  Stage 2 completed (%.2f s) | θ = %.4f\n', toc(tic_stage2), ModData.parameters.partheta);
 end
 
 %% ========== STAGE 3: Match value added and IO network shares ==========
 if opts.verbose
-    disp('=== STAGE 3: Matching value added and IO network shares ===');
+    fprintf('\n');
+    fprintf('  ┌─ STAGE 3: Value Added & IO Network Shares ───────────────────┐\n');
+    fprintf('  │  Matching μ (VA) and Γ_M (IO network)                        │\n');
+    fprintf('  │  Homotopy: σ_m, σ_q: 0.99 → %.2f, %.2f (%d steps)           │\n', sigma_m_target, sigma_q_target, gridpoints);
+    fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
 
 % Build solution guess for extended problem
@@ -162,19 +171,22 @@ for i = 1:gridpoints
     sol_guess = sol_partial;
     
     if opts.verbose
-        fprintf('  sigma_m = %.2f, sigma_q = %.2f: %s (%.2f s)\n', ...
-            params.sigma_m, params.sigma_q, exit_flag_str(exfl), toc(tic_iter));
+        fprintf('    [%d/%d] σ_m = %.3f, σ_q = %.3f  →  %s (%.2fs)\n', ...
+            i, gridpoints, params.sigma_m, params.sigma_q, exit_flag_str(exfl), toc(tic_iter));
     end
 end
 
 if opts.verbose
-    fprintf('Stage 3 completed in %.2f seconds.\n', toc(tic_stage3));
-    fprintf('theta = %.4f\n', ModData.parameters.partheta);
+    fprintf('\n  Stage 3 completed (%.2f s) | θ = %.4f\n', toc(tic_stage3), ModData.parameters.partheta);
 end
 
 %% ========== STAGE 4: Match all expenditure shares ==========
 if opts.verbose
-    disp('=== STAGE 4: Matching all expenditure shares ===');
+    fprintf('\n');
+    fprintf('  ┌─ STAGE 4: All Expenditure Shares ────────────────────────────┐\n');
+    fprintf('  │  Matching ξ (cons), α (cap), Γ_I (inv network)               │\n');
+    fprintf('  │  Homotopy: σ_c, σ_y, σ_I → %.2f, %.2f, %.2f (%d steps)      │\n', sigma_c_target, sigma_y_target, sigma_I_target, gridpoints);
+    fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
 
 % Build solution guess for fully extended problem
@@ -205,15 +217,17 @@ for i = 1:gridpoints
     sol_guess = sol_final;
     
     if opts.verbose
-        fprintf('  sigma_c = %.2f, sigma_y = %.2f, sigma_I = %.2f: %s (%.2f s)\n', ...
-            params.sigma_c, params.sigma_y, params.sigma_I, exit_flag_str(exfl), toc(tic_iter));
+        fprintf('    [%d/%d] σ_c = %.3f, σ_y = %.3f, σ_I = %.3f  →  %s (%.2fs)\n', ...
+            i, gridpoints, params.sigma_c, params.sigma_y, params.sigma_I, exit_flag_str(exfl), toc(tic_iter));
     end
 end
 
 if opts.verbose
-    fprintf('Stage 4 completed in %.2f seconds.\n', toc(tic_stage4));
-    fprintf('Final theta = %.4f\n', ModData.parameters.partheta);
-    disp('=== STEADY STATE CALIBRATION COMPLETE ===');
+    fprintf('\n  Stage 4 completed (%.2f s) | θ = %.4f\n', toc(tic_stage4), ModData.parameters.partheta);
+    fprintf('\n');
+    fprintf('  ════════════════════════════════════════════════════════════════\n');
+    fprintf('    ✓ STEADY STATE CALIBRATION COMPLETE\n');
+    fprintf('  ════════════════════════════════════════════════════════════════\n');
 end
 
 end

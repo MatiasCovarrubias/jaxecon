@@ -89,9 +89,13 @@ save_label = strcat(config.date, config.exp_label);
 
 %% Set up experiment folder structure
 exp_paths = setup_experiment_folder(save_label);
-disp(['Experiment: ' save_label]);
-disp(['Experiment folder: ' exp_paths.experiment]);
-disp(['Sectors: ' num2str(sector_indices)]);
+fprintf('\n');
+fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+fprintf('║                      EXPERIMENT CONFIGURATION                       ║\n');
+fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
+fprintf('  Experiment:  %s\n', save_label);
+fprintf('  Folder:      %s\n', exp_paths.experiment);
+fprintf('  Sectors:     [%s]\n', num2str(sector_indices));
 
 %% Initialize params
 params = struct();
@@ -104,9 +108,14 @@ params.phi = 4;
 %% Load calibration data
 [calib_data, params] = load_calibration_data(params, sector_indices);
 labels = calib_data.labels;
-disp('*** LOADED CALIBRATION DATA ***');
+fprintf('\n  ✓ Calibration data loaded\n');
 
 %% Steady State Calibration
+fprintf('\n');
+fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+fprintf('║                     STEADY STATE CALIBRATION                        ║\n');
+fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
+
 if config.recalibrate
     params.sigma_c = config.sigma_c;
     params.sigma_m = config.sigma_m;
@@ -114,6 +123,11 @@ if config.recalibrate
     params.sigma_y = config.sigma_y;
     params.sigma_I = config.sigma_I;
     params.sigma_l = config.sigma_l;
+    
+    fprintf('  Target elasticities:\n');
+    fprintf('    σ_c = %.2f    σ_m = %.2f    σ_q = %.2f\n', params.sigma_c, params.sigma_m, params.sigma_q);
+    fprintf('    σ_y = %.2f    σ_I = %.2f    σ_l = %.2f\n', params.sigma_y, params.sigma_I, params.sigma_l);
+    fprintf('\n');
     
     calib_opts = struct();
     calib_opts.gridpoints = 8;
@@ -124,16 +138,17 @@ if config.recalibrate
     
     tic;
     [ModData, params] = calibrate_steady_state(params, calib_opts);
-    fprintf('Calibration time: %.2f seconds.\n', toc);
+    elapsed_calib = toc;
     
     ss_file = 'calibrated_steady_state.mat';
     save(ss_file, 'ModData', 'params');
-    disp(['*** SAVED STEADY STATE: ' ss_file ' ***']);
+    fprintf('\n  ✓ Steady state saved: %s\n', ss_file);
+    fprintf('  ✓ Total calibration time: %.2f seconds\n', elapsed_calib);
 else
     ss_file = 'calibrated_steady_state.mat';
     if exist(ss_file, 'file')
         load(ss_file, 'ModData', 'params');
-        disp(['*** LOADED STEADY STATE: ' ss_file ' ***']);
+        fprintf('  ✓ Loaded saved steady state: %s\n', ss_file);
     else
         error('main:MissingSteadyState', ...
             ['Steady state file not found: %s\n' ...
@@ -142,6 +157,11 @@ else
 end
 
 %% Run Dynare Analysis
+fprintf('\n');
+fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+fprintf('║                        DYNARE ANALYSIS                              ║\n');
+fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
+
 n_shocks = numel(config.shock_values);
 run_any_irs = config.run_loglin_irs || config.run_determ_irs;
 
@@ -168,39 +188,52 @@ if config.run_loglin_simul || config.run_determ_simul
     dynare_opts_base.simul_T_determ = config.simul_T_determ;
     
     params.IRshock = config.shock_values(1).value;
-    fprintf('\n--- Running base simulation ---\n');
+    
+    fprintf('\n  ┌─ Base Simulation ─────────────────────────────────────────────┐\n');
+    fprintf('  │  Configuration:                                               │\n');
     if config.run_loglin_simul
-        fprintf('  - Log-linear stochastic simulation: ON (T=%d)\n', config.simul_T_loglin);
+        fprintf('  │    • Log-linear stochastic: ON  (T = %d)                   │\n', config.simul_T_loglin);
+    else
+        fprintf('  │    • Log-linear stochastic: OFF                              │\n');
     end
     if config.run_determ_simul
-        fprintf('  - Deterministic simulation: ON (T=%d)\n', config.simul_T_determ);
+        fprintf('  │    • Deterministic:         ON  (T = %d)                    │\n', config.simul_T_determ);
+    else
+        fprintf('  │    • Deterministic:         OFF                              │\n');
     end
+    fprintf('  └────────────────────────────────────────────────────────────────┘\n\n');
+    
     tic;
     BaseResults = run_dynare_analysis(ModData, params, dynare_opts_base);
-    fprintf('Base simulation time: %.2f seconds.\n', toc);
+    elapsed_base = toc;
     
     % Check what actually ran
-    yesno = {'NO', 'YES'};
     has_loglin = isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin);
     has_determ = isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm);
-    fprintf('\n--- Base simulation results ---\n');
-    fprintf('  - SimulLoglin: %s\n', yesno{has_loglin + 1});
-    fprintf('  - SimulDeterm: %s\n', yesno{has_determ + 1});
+    
+    fprintf('\n  Base simulation results:\n');
+    if has_loglin, fprintf('    ✓ SimulLoglin computed\n'); else, fprintf('    ✗ SimulLoglin skipped\n'); end
+    if has_determ, fprintf('    ✓ SimulDeterm computed\n'); else, fprintf('    ✗ SimulDeterm skipped\n'); end
     if isfield(BaseResults, 'determ_simul_error')
-        fprintf('  - WARNING: Determ simulation failed: %s\n', BaseResults.determ_simul_error.message);
+        fprintf('    ⚠ Determ simulation failed: %s\n', BaseResults.determ_simul_error.message);
     end
+    fprintf('    • Elapsed time: %.2f seconds\n', elapsed_base);
 end
 
 % Run IRF analysis for each shock value (if enabled)
 if run_any_irs
-    fprintf('\n=== RUNNING IRF ANALYSIS FOR %d SHOCK VALUES ===\n', n_shocks);
+    fprintf('\n  ┌─ Impulse Response Analysis ──────────────────────────────────┐\n');
+    fprintf('  │  Computing IRFs for %d shock configurations                   │\n', n_shocks);
+    fprintf('  │  Sectors: [%s]                                                │\n', num2str(sector_indices));
+    fprintf('  └────────────────────────────────────────────────────────────────┘\n');
     
     for shock_idx = 1:n_shocks
         shock_config = config.shock_values(shock_idx);
         params.IRshock = shock_config.value;
         
-        fprintf('\n=== SHOCK %d/%d: %s (value=%.4f) ===\n', ...
-            shock_idx, n_shocks, shock_config.description, shock_config.value);
+        fprintf('\n  ── Shock %d/%d: %s ──────────────────────────────\n', ...
+            shock_idx, n_shocks, shock_config.description);
+        fprintf('     Shock value: %.4f\n', shock_config.value);
         
         dynare_opts = struct();
         dynare_opts.run_loglin_simul = false;
@@ -216,7 +249,7 @@ if run_any_irs
         
         tic;
         DynareResults = run_dynare_analysis(ModData, params, dynare_opts);
-        fprintf('IRF computation time for shock %d: %.2f seconds.\n', shock_idx, toc);
+        elapsed_irf = toc;
         
         % Copy simulation data from base run (if available)
         if isfield(BaseResults, 'SolData')
@@ -250,11 +283,13 @@ if run_any_irs
         IRFResults = process_sector_irs(DynareResults, params, ModData, labels, ir_opts);
         IRFResults.shock_config = shock_config;
         AllShockResults.IRFResults{shock_idx} = IRFResults;
+        
+        fprintf('     ✓ Completed in %.2f seconds\n', elapsed_irf);
     end
     
-    fprintf('\n=== ALL SHOCKS PROCESSED ===\n');
+    fprintf('\n  ✓ All %d shock configurations processed\n', n_shocks);
 else
-    fprintf('\n=== IRF ANALYSIS SKIPPED (disabled in config) ===\n');
+    fprintf('\n  ⊘ IRF analysis skipped (disabled in config)\n');
 end
 
 %% Build ModelData structure
@@ -331,6 +366,11 @@ if isfield(BaseResults, 'rng_state')
 end
 
 %% Full simulation data (from base run, if available)
+fprintf('\n');
+fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+fprintf('║                       SIMULATION RESULTS                            ║\n');
+fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
+
 if isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin)
     n = params.n_sectors;
     idx = get_variable_indices(n);
@@ -356,11 +396,11 @@ if isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin)
     ModelData.Simulation.Loglin.Cagg_volatility = std(Cagg_loglin)/Cagg_ss;
     ModelData.Simulation.Loglin.Lagg_volatility = std(Lagg_loglin)/Lagg_ss;
     
-    fprintf('\n=== LOG-LINEAR SIMULATION STORED ===\n');
-    fprintf('Simulation size: %d variables x %d periods\n', ...
+    fprintf('\n  Log-Linear Simulation:\n');
+    fprintf('    Size: %d variables × %d periods\n', ...
         size(BaseResults.SimulLoglin, 1), size(BaseResults.SimulLoglin, 2));
-    fprintf('Cagg volatility: %.4f\n', ModelData.Simulation.Loglin.Cagg_volatility);
-    fprintf('Lagg volatility: %.4f\n', ModelData.Simulation.Loglin.Lagg_volatility);
+    fprintf('    Cagg volatility: %.6f\n', ModelData.Simulation.Loglin.Cagg_volatility);
+    fprintf('    Lagg volatility: %.6f\n', ModelData.Simulation.Loglin.Lagg_volatility);
 end
 
 % Deterministic simulation (if available)
@@ -383,36 +423,44 @@ if isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm)
     ModelData.Simulation.Determ.Cagg_volatility = std(Cagg_determ)/Cagg_ss;
     ModelData.Simulation.Determ.Lagg_volatility = std(Lagg_determ)/Lagg_ss;
     
-    fprintf('\n=== DETERMINISTIC SIMULATION STORED ===\n');
-    fprintf('Simulation size: %d variables x %d periods\n', ...
+    fprintf('\n  Deterministic Simulation:\n');
+    fprintf('    Size: %d variables × %d periods\n', ...
         size(BaseResults.SimulDeterm, 1), size(BaseResults.SimulDeterm, 2));
+    fprintf('    Cagg volatility: %.6f\n', ModelData.Simulation.Determ.Cagg_volatility);
+    fprintf('    Lagg volatility: %.6f\n', ModelData.Simulation.Determ.Lagg_volatility);
     
     if isfield(ModelData.Simulation, 'Loglin')
-        fprintf('\n=== VOLATILITY COMPARISON ===\n');
-        fprintf('                     Log-Linear    Deterministic\n');
-        fprintf('Cagg volatility:     %.4f        %.4f\n', ...
+        fprintf('\n  ┌─ Volatility Comparison ─────────────────────────────────────┐\n');
+        fprintf('  │                       Log-Linear     Deterministic           │\n');
+        fprintf('  │  Cagg volatility:     %10.6f     %10.6f             │\n', ...
             ModelData.Simulation.Loglin.Cagg_volatility, ...
             ModelData.Simulation.Determ.Cagg_volatility);
-        fprintf('Lagg volatility:     %.4f        %.4f\n', ...
+        fprintf('  │  Lagg volatility:     %10.6f     %10.6f             │\n', ...
             ModelData.Simulation.Loglin.Lagg_volatility, ...
             ModelData.Simulation.Determ.Lagg_volatility);
+        fprintf('  └────────────────────────────────────────────────────────────────┘\n');
     end
 end
 
 %% Print IRF Summary (if IRFs were computed)
 if run_any_irs && ~isempty(AllShockResults.IRFResults{1})
-    fprintf('\n=== IRF SUMMARY ACROSS ALL SHOCKS ===\n');
-    fprintf('%-15s %-12s %-12s %-12s\n', 'Shock', 'Peak(LL)', 'Peak(Det)', 'Amplif');
-    fprintf('%s\n', repmat('-', 1, 55));
+    fprintf('\n');
+    fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+    fprintf('║                         IRF SUMMARY                                 ║\n');
+    fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
+    fprintf('\n');
+    fprintf('  %-18s %12s %12s %12s\n', 'Shock', 'Peak(LL)', 'Peak(Det)', 'Amplif');
+    fprintf('  %s\n', repmat('─', 1, 56));
     for i = 1:n_shocks
         irf_res = AllShockResults.IRFResults{i};
         shock_cfg = config.shock_values(i);
         avg_peak_ll = mean(irf_res.Statistics.peak_values_loglin);
         avg_peak_det = mean(irf_res.Statistics.peak_values_determ);
         avg_amplif = mean(irf_res.Statistics.amplifications);
-        fprintf('%-15s %-12.4f %-12.4f %-12.4f\n', ...
+        fprintf('  %-18s %12.4f %12.4f %12.4f\n', ...
             shock_cfg.label, avg_peak_ll, avg_peak_det, avg_amplif);
     end
+    fprintf('  %s\n', repmat('─', 1, 56));
 end
 
 %% Save results and finalize
@@ -422,22 +470,28 @@ ModelData.metadata.exp_paths = exp_paths;
 if config.save_results
     filename = fullfile(exp_paths.experiment, 'ModelData.mat');
     save(filename, 'ModelData');
-    disp(['*** SAVED: ' filename ' ***']);
+    fprintf('\n  ✓ Results saved: %s\n', filename);
 end
 
 %% Summary
-fprintf('\n=== ANALYSIS COMPLETE ===\n');
-fprintf('Experiment folder: %s\n', exp_paths.experiment);
-fprintf('\nModelData contents:\n');
-fprintf('  - metadata, calibration, params: ALWAYS\n');
-fprintf('  - SteadyState: ALWAYS\n');
+fprintf('\n');
+fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+fprintf('║                       ANALYSIS COMPLETE                             ║\n');
+fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
+fprintf('\n');
+fprintf('  Experiment: %s\n', save_label);
+fprintf('  Folder:     %s\n', exp_paths.experiment);
+fprintf('\n');
+fprintf('  ModelData contents:\n');
+fprintf('    • metadata, calibration, params  [always]\n');
+fprintf('    • SteadyState                    [always]\n');
 
-yesno = {'NO', 'YES'};
 has_solution = isfield(ModelData, 'Solution');
 has_loglin = isfield(ModelData, 'Simulation') && isfield(ModelData.Simulation, 'Loglin');
 has_determ = isfield(ModelData, 'Simulation') && isfield(ModelData.Simulation, 'Determ');
 has_irfs = isfield(ModelData, 'IRFs');
-fprintf('  - Solution: %s\n', yesno{has_solution + 1});
-fprintf('  - Simulation.Loglin: %s\n', yesno{has_loglin + 1});
-fprintf('  - Simulation.Determ: %s\n', yesno{has_determ + 1});
-fprintf('  - IRFs: %s\n', yesno{has_irfs + 1});
+if has_solution, fprintf('    ✓ Solution\n'); else, fprintf('    ✗ Solution\n'); end
+if has_loglin,   fprintf('    ✓ Simulation.Loglin\n'); else, fprintf('    ✗ Simulation.Loglin\n'); end
+if has_determ,   fprintf('    ✓ Simulation.Determ\n'); else, fprintf('    ✗ Simulation.Determ\n'); end
+if has_irfs,     fprintf('    ✓ IRFs\n'); else, fprintf('    ✗ IRFs\n'); end
+fprintf('\n');

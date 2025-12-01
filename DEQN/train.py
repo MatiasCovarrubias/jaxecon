@@ -178,9 +178,19 @@ def main():
         state_ss = jnp.concatenate([k_ss, a_ss])
         params_original = md["SteadyState"]["parameters"].copy()
         state_sd = jnp.array(md["Simulation"]["states_sd"], dtype=precision)
-        policies_sd = jnp.array(md["Simulation"]["policies_sd"], dtype=precision)
-        policies_ss = jnp.array(md["SteadyState"]["policies_ss"], dtype=precision)
+        policies_sd_raw = jnp.array(md["Simulation"]["policies_sd"], dtype=precision)
+        policies_ss_raw = jnp.array(md["SteadyState"]["policies_ss"], dtype=precision)
         C_matrix = md["Solution"]["StateSpace"]["C"]
+
+        # Handle size mismatch: policies_ss may include V (value function) which isn't in policies_sd
+        if len(policies_ss_raw) != len(policies_sd_raw):
+            n_policies = min(len(policies_ss_raw), len(policies_sd_raw))
+            print(f"  Note: Aligning policy dimensions ({len(policies_ss_raw)} ss, {len(policies_sd_raw)} sd) -> {n_policies}", flush=True)
+            policies_ss = policies_ss_raw[:n_policies]
+            policies_sd = policies_sd_raw[:n_policies]
+        else:
+            policies_ss = policies_ss_raw
+            policies_sd = policies_sd_raw
     elif "SolData" in model_data:
         # Old structure: SolData contains everything
         print("Detected old SolData structure.", flush=True)

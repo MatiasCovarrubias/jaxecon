@@ -154,12 +154,11 @@ def process_dynare_simulation(
 
     # Extract simulation data (after burn-in) - data is in log levels
     simul = simul_data[:, burn_in:]
-    T = simul.shape[1]
 
     # Extract sectoral variables in levels
-    K = jnp.exp(simul[idx["k"][0] : idx["k"][1], :])  # (n_sectors, T)
+    K = jnp.exp(simul[idx["k"][0] : idx["k"][1], :])  # (n_sectors, n_periods)
     Y = jnp.exp(simul[idx["y"][0] : idx["y"][1], :])
-    I = jnp.exp(simul[idx["i"][0] : idx["i"][1], :])
+    Inv = jnp.exp(simul[idx["i"][0] : idx["i"][1], :])
     M = jnp.exp(simul[idx["m"][0] : idx["m"][1], :])
 
     # Extract aggregate variables directly from Dynare (in log levels)
@@ -168,9 +167,9 @@ def process_dynare_simulation(
 
     # Aggregate using nonlinear model's price weights
     # These weights are already in levels (from ergodic distribution)
-    Kagg = K.T @ Pk_weights  # (T,)
+    Kagg = K.T @ Pk_weights  # (n_periods,)
     Yagg = Y.T @ P_weights
-    Iagg = I.T @ Pk_weights
+    Iagg = Inv.T @ Pk_weights
     Magg = M.T @ Pm_weights
 
     # Calculate steady state aggregates using same weights
@@ -178,14 +177,14 @@ def process_dynare_simulation(
     policies_ss_levels = jnp.exp(policies_ss)
 
     Y_ss = policies_ss_levels[10 * n_sectors : 11 * n_sectors]
-    I_ss = policies_ss_levels[6 * n_sectors : 7 * n_sectors]
+    Inv_ss = policies_ss_levels[6 * n_sectors : 7 * n_sectors]
     M_ss = policies_ss_levels[4 * n_sectors : 5 * n_sectors]
     Cagg_ss = policies_ss_levels[11 * n_sectors]
     Lagg_ss = policies_ss_levels[11 * n_sectors + 1]
 
     Kagg_ss = K_ss @ Pk_weights
     Yagg_ss = Y_ss @ P_weights
-    Iagg_ss = I_ss @ Pk_weights
+    Iagg_ss = Inv_ss @ Pk_weights
     Magg_ss = M_ss @ Pm_weights
 
     # Compute log deviations from steady state
@@ -367,12 +366,27 @@ def main():
             raise ValueError("ModelData missing required 'Solution.StateSpace.C' field")
 
         # Required: Simulation stats (states_sd, policies_sd)
-        state_sd = safe_get(md, "Simulation", "states_sd")
-        policies_sd = safe_get(md, "Simulation", "policies_sd")
-        if state_sd is None or policies_sd is None:
+        state_sd_raw = safe_get(md, "Simulation", "states_sd")
+        policies_sd_raw = safe_get(md, "Simulation", "policies_sd")
+        if state_sd_raw is None or policies_sd_raw is None:
             raise ValueError("ModelData missing required 'Simulation.states_sd' or 'Simulation.policies_sd'")
-        state_sd = jnp.array(state_sd, dtype=precision)
-        policies_sd = jnp.array(policies_sd, dtype=precision)
+        state_sd = jnp.array(state_sd_raw, dtype=precision)
+        policies_sd_raw = jnp.array(policies_sd_raw, dtype=precision)
+
+        # Preserve original policies_ss for Dynare processing (needs full aggregate indices)
+        policies_ss_full = policies_ss.copy()
+
+        # Handle size mismatch: policies_ss may include V (value function) which isn't in policies_sd
+        if len(policies_ss) != len(policies_sd_raw):
+            n_policies = min(len(policies_ss), len(policies_sd_raw))
+            print(
+                f"  Note: Aligning policy dimensions ({len(policies_ss)} ss, {len(policies_sd_raw)} sd) -> {n_policies}",
+                flush=True,
+            )
+            policies_ss = policies_ss[:n_policies]
+            policies_sd = policies_sd_raw[:n_policies]
+        else:
+            policies_sd = policies_sd_raw
 
         # Optional: Full Dynare simulations (for comparison analysis)
         loglin_simul = safe_get(md, "Simulation", "Loglin", "full_simul")
@@ -408,6 +422,7 @@ def main():
         state_sd = jnp.array(soldata["states_sd"], dtype=precision)
         policies_sd = jnp.array(soldata["policies_sd"], dtype=precision)
         policies_ss = jnp.array(soldata["policies_ss"], dtype=precision)
+        policies_ss_full = policies_ss  # No truncation in old structure
         C_matrix = soldata["C"]
     else:
         raise ValueError("Unknown model_data structure. Expected 'ModelData' or 'SolData' key.")
@@ -555,6 +570,7 @@ def main():
     print(f"Using price weights from experiment: {first_experiment_label}", flush=True)
 
     # Process Dynare simulations if available
+    # Use policies_ss_full (not truncated) to ensure aggregate indices are valid
     if dynare_simul_loglin is not None:
         print("Processing log-linear (Dynare) simulation...", flush=True)
         loglin_analysis_vars = process_dynare_simulation(
@@ -564,7 +580,7 @@ def main():
             Pk_weights=Pk_weights,
             Pm_weights=Pm_weights,
             state_ss=state_ss,
-            policies_ss=policies_ss,
+            policies_ss=policies_ss_full,
             burn_in=config["burn_in_periods"],
         )
         # Add to analysis data for comparison
@@ -580,7 +596,7 @@ def main():
             Pk_weights=Pk_weights,
             Pm_weights=Pm_weights,
             state_ss=state_ss,
-            policies_ss=policies_ss,
+            policies_ss=policies_ss_full,
             burn_in=min(config["burn_in_periods"], dynare_simul_determ.shape[1] // 10),
         )
         # Add to analysis data for comparison

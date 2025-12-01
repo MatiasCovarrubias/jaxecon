@@ -126,11 +126,11 @@ if config.recalibrate
     [ModData, params] = calibrate_steady_state(params, calib_opts);
     fprintf('Calibration time: %.2f seconds.\n', toc);
     
-    ss_file = fullfile(exp_paths.temp, 'calibrated_steady_state.mat');
+    ss_file = 'calibrated_steady_state.mat';
     save(ss_file, 'ModData', 'params');
     disp(['*** SAVED STEADY STATE: ' ss_file ' ***']);
 else
-    ss_file = fullfile(exp_paths.temp, 'calibrated_steady_state.mat');
+    ss_file = 'calibrated_steady_state.mat';
     if exist(ss_file, 'file')
         load(ss_file, 'ModData', 'params');
         disp(['*** LOADED STEADY STATE: ' ss_file ' ***']);

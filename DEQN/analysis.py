@@ -337,29 +337,65 @@ def main():
     dynare_simul_loglin = None
     dynare_simul_determ = None
 
+    def safe_get(d, *keys, default=None):
+        """Safely navigate nested dict/struct, returning default if any key is missing."""
+        for key in keys:
+            if not isinstance(d, dict) or key not in d:
+                return default
+            d = d[key]
+        return d
+
     if "ModelData" in model_data:
         # New structure: ModelData.SteadyState, ModelData.Simulation, ModelData.Solution
         print("Detected new ModelData structure.", flush=True)
         md = model_data["ModelData"]
-        n_sectors = md["SteadyState"]["parameters"]["parn_sectors"]
-        a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
-        k_ss = jnp.array(md["SteadyState"]["endostates_ss"], dtype=precision)
-        state_ss = jnp.concatenate([k_ss, a_ss])
-        params = md["SteadyState"]["parameters"]
-        state_sd = jnp.array(md["Simulation"]["states_sd"], dtype=precision)
-        policies_sd = jnp.array(md["Simulation"]["policies_sd"], dtype=precision)
-        policies_ss = jnp.array(md["SteadyState"]["policies_ss"], dtype=precision)
-        C_matrix = md["Solution"]["StateSpace"]["C"]
 
-        # Extract Dynare simulations if available
-        if "Simulation" in md:
-            sim = md["Simulation"]
-            if "Loglin" in sim and "full_simul" in sim["Loglin"]:
-                dynare_simul_loglin = jnp.array(sim["Loglin"]["full_simul"], dtype=precision)
-                print(f"  Loaded log-linear simulation: {dynare_simul_loglin.shape}", flush=True)
-            if "Determ" in sim and "full_simul" in sim["Determ"]:
-                dynare_simul_determ = jnp.array(sim["Determ"]["full_simul"], dtype=precision)
-                print(f"  Loaded deterministic simulation: {dynare_simul_determ.shape}", flush=True)
+        # Required: SteadyState (always needed)
+        if "SteadyState" not in md:
+            raise ValueError("ModelData missing required 'SteadyState' field")
+        ss = md["SteadyState"]
+        n_sectors = ss["parameters"]["parn_sectors"]
+        a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
+        k_ss = jnp.array(ss["endostates_ss"], dtype=precision)
+        state_ss = jnp.concatenate([k_ss, a_ss])
+        params = ss["parameters"]
+        policies_ss = jnp.array(ss["policies_ss"], dtype=precision)
+
+        # Required: Solution.StateSpace.C (needed for neural net)
+        C_matrix = safe_get(md, "Solution", "StateSpace", "C")
+        if C_matrix is None:
+            raise ValueError("ModelData missing required 'Solution.StateSpace.C' field")
+
+        # Required: Simulation stats (states_sd, policies_sd)
+        state_sd = safe_get(md, "Simulation", "states_sd")
+        policies_sd = safe_get(md, "Simulation", "policies_sd")
+        if state_sd is None or policies_sd is None:
+            raise ValueError("ModelData missing required 'Simulation.states_sd' or 'Simulation.policies_sd'")
+        state_sd = jnp.array(state_sd, dtype=precision)
+        policies_sd = jnp.array(policies_sd, dtype=precision)
+
+        # Optional: Full Dynare simulations (for comparison analysis)
+        loglin_simul = safe_get(md, "Simulation", "Loglin", "full_simul")
+        if loglin_simul is not None:
+            dynare_simul_loglin = jnp.array(loglin_simul, dtype=precision)
+            print(f"  ✓ Log-linear simulation available: {dynare_simul_loglin.shape}", flush=True)
+        else:
+            print("  - Log-linear simulation: not included", flush=True)
+
+        determ_simul = safe_get(md, "Simulation", "Determ", "full_simul")
+        if determ_simul is not None:
+            dynare_simul_determ = jnp.array(determ_simul, dtype=precision)
+            print(f"  ✓ Deterministic simulation available: {dynare_simul_determ.shape}", flush=True)
+        else:
+            print("  - Deterministic simulation: not included", flush=True)
+
+        # Optional: IRFs (report availability)
+        if safe_get(md, "IRFs") is not None:
+            n_shocks = len(safe_get(md, "IRFs", "by_shock", default=[]))
+            print(f"  ✓ IRFs available: {n_shocks} shock configurations", flush=True)
+        else:
+            print("  - IRFs: not included", flush=True)
+
     elif "SolData" in model_data:
         # Old structure: SolData contains everything
         print("Detected old SolData structure.", flush=True)

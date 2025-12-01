@@ -75,6 +75,7 @@ end
 
 policies_ss = ModData.policies_ss;
 k_ss = ModData.endostates_ss;
+V_ss = ModData.V_ss;
 Cagg_ss = exp(policies_ss(11*n_sectors+1));
 Lagg_ss = exp(policies_ss(11*n_sectors+2));
 
@@ -92,7 +93,7 @@ ax = 0:N-1;
 % Get the path to the dynare folder
 [dynare_folder, ~, ~] = fileparts(mfilename('fullpath'));
 modstruct_path = fullfile(dynare_folder, 'ModStruct_temp.mat');
-save(modstruct_path, 'par*', 'policies_ss', 'k_ss', 'N', 'ax', '-regexp', '^par');
+save(modstruct_path, 'par*', 'policies_ss', 'k_ss', 'V_ss', 'N', 'ax', '-regexp', '^par');
 
 % Also save params struct to base workspace for later use
 assignin('base', 'params', params);

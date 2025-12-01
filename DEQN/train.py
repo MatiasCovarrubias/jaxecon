@@ -155,57 +155,48 @@ def main():
     save_dir = os.path.join(model_dir, "experiments/")
     config["save_dir"] = save_dir
 
-    # Load model data (supports both old and new structure)
+    # Load model data
     print("Loading model data...", flush=True)
-    # Try new naming convention first, fall back to old
     model_path = os.path.join(model_dir, "ModelData.mat")
     if not os.path.exists(model_path):
-        model_path = os.path.join(model_dir, "model_data.mat")
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found. Tried: ModelData.mat and model_data.mat in {model_dir}")
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
     model_data = sio.loadmat(model_path, simplify_cells=True)
     print("Model data loaded successfully.", flush=True)
 
-    # Detect structure and extract data
-    if "ModelData" in model_data:
-        # New structure: ModelData.SteadyState, ModelData.Simulation, ModelData.Solution
-        print("Detected new ModelData structure.", flush=True)
-        md = model_data["ModelData"]
-        n_sectors = md["SteadyState"]["parameters"]["parn_sectors"]
-        a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
-        k_ss = jnp.array(md["SteadyState"]["endostates_ss"], dtype=precision)
-        state_ss = jnp.concatenate([k_ss, a_ss])
-        params_original = md["SteadyState"]["parameters"].copy()
-        state_sd = jnp.array(md["Simulation"]["states_sd"], dtype=precision)
-        policies_sd_raw = jnp.array(md["Simulation"]["policies_sd"], dtype=precision)
-        policies_ss_raw = jnp.array(md["SteadyState"]["policies_ss"], dtype=precision)
-        C_matrix = md["Solution"]["StateSpace"]["C"]
+    # Extract data from ModelData structure
+    if "ModelData" not in model_data:
+        raise ValueError("Expected 'ModelData' key in model file.")
 
-        # Handle size mismatch: policies_ss may include V (value function) which isn't in policies_sd
-        if len(policies_ss_raw) != len(policies_sd_raw):
-            n_policies = min(len(policies_ss_raw), len(policies_sd_raw))
-            print(f"  Note: Aligning policy dimensions ({len(policies_ss_raw)} ss, {len(policies_sd_raw)} sd) -> {n_policies}", flush=True)
-            policies_ss = policies_ss_raw[:n_policies]
-            policies_sd = policies_sd_raw[:n_policies]
-        else:
-            policies_ss = policies_ss_raw
-            policies_sd = policies_sd_raw
-    elif "SolData" in model_data:
-        # Old structure: SolData contains everything
-        print("Detected old SolData structure.", flush=True)
-        soldata = model_data["SolData"]
-        n_sectors = soldata["parameters"]["parn_sectors"]
-        a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
-        k_ss = jnp.array(soldata["k_ss"], dtype=precision)
-        state_ss = jnp.concatenate([k_ss, a_ss])
-        params_original = soldata["parameters"].copy()
-        state_sd = jnp.array(soldata["states_sd"], dtype=precision)
-        policies_sd = jnp.array(soldata["policies_sd"], dtype=precision)
-        policies_ss = jnp.array(soldata["policies_ss"], dtype=precision)
-        C_matrix = soldata["C"]
-    else:
-        raise ValueError("Unknown model_data structure. Expected 'ModelData' or 'SolData' key.")
+    md = model_data["ModelData"]
+
+    # Extract from SteadyState
+    ss = md["SteadyState"]
+    n_sectors = ss["parameters"]["parn_sectors"]
+    a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
+    k_ss = jnp.array(ss["endostates_ss"], dtype=precision)
+    state_ss = jnp.concatenate([k_ss, a_ss])
+    params_original = ss["parameters"].copy()
+    policies_ss = jnp.array(ss["policies_ss"], dtype=precision)
+
+    # Extract from Statistics
+    stats = md["Statistics"]
+    state_sd = jnp.array(stats["states_sd"], dtype=precision)
+    policies_sd = jnp.array(stats["policies_sd"], dtype=precision)
+
+    # Extract from Solution
+    C_matrix = md["Solution"]["StateSpace"]["C"]
+
+    # Ensure policies_ss and policies_sd have matching dimensions
+    if len(policies_ss) != len(policies_sd):
+        n_policies = len(policies_sd)
+        print(f"  ⚠ Aligning policies_ss ({len(policies_ss)}) to policies_sd ({n_policies})", flush=True)
+        policies_ss = policies_ss[:n_policies]
+
+    print(f"  n_sectors: {n_sectors}", flush=True)
+    print(f"  state_ss shape: {state_ss.shape}", flush=True)
+    print(f"  policies_ss shape: {policies_ss.shape}", flush=True)
+    print(f"  policies_sd shape: {policies_sd.shape}", flush=True)
 
     params_train = params_original.copy()
     if config["model_param_overrides"] is not None:

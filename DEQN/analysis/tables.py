@@ -39,8 +39,13 @@ def create_descriptive_stats_table(
     """
     table_data = []
 
+    # TEMPORARY: Skip Utility - Dynare simulations don't have this variable
+    excluded_vars = ["Utility"]
+
     for exp_name, analysis_vars_dict in analysis_variables_data.items():
         for var_label, var_values in analysis_vars_dict.items():
+            if var_label in excluded_vars:
+                continue
             mean_val = np.mean(var_values) * 100
             std_val = np.std(var_values) * 100
             skew_val = skew(var_values)
@@ -132,7 +137,9 @@ def create_comparative_stats_table(
     experiment_names = list(analysis_variables_data.keys())
 
     first_exp = experiment_names[0]
-    var_labels = list(analysis_variables_data[first_exp].keys())
+    # TEMPORARY: Skip Utility - Dynare simulations don't have this variable
+    excluded_vars = ["Utility"]
+    var_labels = [v for v in analysis_variables_data[first_exp].keys() if v not in excluded_vars]
 
     stats_labels = ["Mean", "Sd", "Skewness", "Kurtosis"]
 

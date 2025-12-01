@@ -292,7 +292,7 @@ else
     fprintf('\n  ⊘ IRF analysis skipped (disabled in config)\n');
 end
 
-%% Build ModelData structure
+%% Build ModelData structure (core model - lightweight)
 ModelData = struct();
 
 % Metadata
@@ -302,6 +302,7 @@ ModelData.metadata.save_label = save_label;
 ModelData.metadata.sector_indices = sector_indices;
 ModelData.metadata.sector_labels = labels.sector_labels;
 ModelData.metadata.config = config;
+ModelData.metadata.exp_paths = exp_paths;
 
 % Shock configuration metadata
 ModelData.metadata.shock_configs = config.shock_values;
@@ -342,44 +343,37 @@ if isfield(BaseResults, 'steady_state')
     ModelData.Solution.steady_state = BaseResults.steady_state;
 end
 
-% IRFs (if computed)
-if run_any_irs && ~isempty(AllShockResults.IRFResults{1})
-    ModelData.IRFs.by_shock = AllShockResults.IRFResults;
-    ModelData.IRFs.shock_configs = config.shock_values;
-    ModelData.IRFs.by_label = struct();
-    for i = 1:n_shocks
-        label = matlab.lang.makeValidName(config.shock_values(i).label);
-        ModelData.IRFs.by_label.(label) = AllShockResults.IRFResults{i};
-    end
-end
-
-% Simulation statistics (from base run, if available)
+% Simulation statistics only (NOT full simulations - those go in ModelData_simulation)
 if isfield(BaseResults, 'SolData') && isfield(BaseResults.SolData, 'shocks_sd')
-    ModelData.Simulation.shocks_sd = BaseResults.SolData.shocks_sd;
-    ModelData.Simulation.states_sd = BaseResults.SolData.states_sd;
-    ModelData.Simulation.policies_sd = BaseResults.SolData.policies_sd;
+    ModelData.Statistics.shocks_sd = BaseResults.SolData.shocks_sd;
+    ModelData.Statistics.states_sd = BaseResults.SolData.states_sd;
+    ModelData.Statistics.policies_sd = BaseResults.SolData.policies_sd;
 end
 
-% RNG state for reproducibility
-if isfield(BaseResults, 'rng_state')
-    ModelData.Simulation.rng_state = BaseResults.rng_state;
-end
+%% Build ModelData_simulation structure (full simulation data - heavy)
+ModelData_simulation = struct();
+ModelData_simulation.metadata.save_label = save_label;
+ModelData_simulation.metadata.exp_paths = exp_paths;
 
-%% Full simulation data (from base run, if available)
 fprintf('\n');
 fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
 fprintf('║                       SIMULATION RESULTS                            ║\n');
 fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
 
+has_loglin_simul = false;
+has_determ_simul = false;
+
+% Log-linear simulation (if available)
 if isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin)
+    has_loglin_simul = true;
     n = params.n_sectors;
     idx = get_variable_indices(n);
     Cagg_ss = BaseResults.Cagg_ss;
     Lagg_ss = BaseResults.Lagg_ss;
     
-    ModelData.Simulation.Loglin.full_simul = BaseResults.SimulLoglin;
-    ModelData.Simulation.Loglin.shocks = BaseResults.SolData.shockssim;
-    ModelData.Simulation.Loglin.variable_indices = idx;
+    ModelData_simulation.Loglin.full_simul = BaseResults.SimulLoglin;
+    ModelData_simulation.Loglin.shocks = BaseResults.SolData.shockssim;
+    ModelData_simulation.Loglin.variable_indices = idx;
     
     Cagg_loglin = exp(BaseResults.SimulLoglin(idx.cagg, :));
     Lagg_loglin = exp(BaseResults.SimulLoglin(idx.lagg, :));
@@ -387,63 +381,98 @@ if isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin)
     Iagg_loglin = exp(BaseResults.SimulLoglin(idx.iagg, :));
     Magg_loglin = exp(BaseResults.SimulLoglin(idx.magg, :));
     
-    ModelData.Simulation.Loglin.Cagg = Cagg_loglin;
-    ModelData.Simulation.Loglin.Lagg = Lagg_loglin;
-    ModelData.Simulation.Loglin.Yagg = Yagg_loglin;
-    ModelData.Simulation.Loglin.Iagg = Iagg_loglin;
-    ModelData.Simulation.Loglin.Magg = Magg_loglin;
+    ModelData_simulation.Loglin.Cagg = Cagg_loglin;
+    ModelData_simulation.Loglin.Lagg = Lagg_loglin;
+    ModelData_simulation.Loglin.Yagg = Yagg_loglin;
+    ModelData_simulation.Loglin.Iagg = Iagg_loglin;
+    ModelData_simulation.Loglin.Magg = Magg_loglin;
     
-    ModelData.Simulation.Loglin.Cagg_volatility = std(Cagg_loglin)/Cagg_ss;
-    ModelData.Simulation.Loglin.Lagg_volatility = std(Lagg_loglin)/Lagg_ss;
+    ModelData_simulation.Loglin.Cagg_volatility = std(Cagg_loglin)/Cagg_ss;
+    ModelData_simulation.Loglin.Lagg_volatility = std(Lagg_loglin)/Lagg_ss;
+    
+    % Also store volatilities in ModelData.Statistics for quick access
+    ModelData.Statistics.Loglin.Cagg_volatility = ModelData_simulation.Loglin.Cagg_volatility;
+    ModelData.Statistics.Loglin.Lagg_volatility = ModelData_simulation.Loglin.Lagg_volatility;
     
     fprintf('\n  Log-Linear Simulation:\n');
     fprintf('    Size: %d variables × %d periods\n', ...
         size(BaseResults.SimulLoglin, 1), size(BaseResults.SimulLoglin, 2));
-    fprintf('    Cagg volatility: %.6f\n', ModelData.Simulation.Loglin.Cagg_volatility);
-    fprintf('    Lagg volatility: %.6f\n', ModelData.Simulation.Loglin.Lagg_volatility);
+    fprintf('    Cagg volatility: %.6f\n', ModelData_simulation.Loglin.Cagg_volatility);
+    fprintf('    Lagg volatility: %.6f\n', ModelData_simulation.Loglin.Lagg_volatility);
+end
+
+% RNG state for reproducibility
+if isfield(BaseResults, 'rng_state')
+    ModelData_simulation.rng_state = BaseResults.rng_state;
 end
 
 % Deterministic simulation (if available)
 if isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm)
+    has_determ_simul = true;
     n = params.n_sectors;
     idx = get_variable_indices(n);
     Cagg_ss = BaseResults.Cagg_ss;
     Lagg_ss = BaseResults.Lagg_ss;
     
-    ModelData.Simulation.Determ.full_simul = BaseResults.SimulDeterm;
+    ModelData_simulation.Determ.full_simul = BaseResults.SimulDeterm;
     if isfield(BaseResults, 'shockssim_determ')
-        ModelData.Simulation.Determ.shocks = BaseResults.shockssim_determ;
+        ModelData_simulation.Determ.shocks = BaseResults.shockssim_determ;
     end
     
     Cagg_determ = exp(BaseResults.SimulDeterm(idx.cagg, :));
     Lagg_determ = exp(BaseResults.SimulDeterm(idx.lagg, :));
     
-    ModelData.Simulation.Determ.Cagg = Cagg_determ;
-    ModelData.Simulation.Determ.Lagg = Lagg_determ;
-    ModelData.Simulation.Determ.Cagg_volatility = std(Cagg_determ)/Cagg_ss;
-    ModelData.Simulation.Determ.Lagg_volatility = std(Lagg_determ)/Lagg_ss;
+    ModelData_simulation.Determ.Cagg = Cagg_determ;
+    ModelData_simulation.Determ.Lagg = Lagg_determ;
+    ModelData_simulation.Determ.Cagg_volatility = std(Cagg_determ)/Cagg_ss;
+    ModelData_simulation.Determ.Lagg_volatility = std(Lagg_determ)/Lagg_ss;
+    
+    % Also store volatilities in ModelData.Statistics for quick access
+    ModelData.Statistics.Determ.Cagg_volatility = ModelData_simulation.Determ.Cagg_volatility;
+    ModelData.Statistics.Determ.Lagg_volatility = ModelData_simulation.Determ.Lagg_volatility;
     
     fprintf('\n  Deterministic Simulation:\n');
     fprintf('    Size: %d variables × %d periods\n', ...
         size(BaseResults.SimulDeterm, 1), size(BaseResults.SimulDeterm, 2));
-    fprintf('    Cagg volatility: %.6f\n', ModelData.Simulation.Determ.Cagg_volatility);
-    fprintf('    Lagg volatility: %.6f\n', ModelData.Simulation.Determ.Lagg_volatility);
+    fprintf('    Cagg volatility: %.6f\n', ModelData_simulation.Determ.Cagg_volatility);
+    fprintf('    Lagg volatility: %.6f\n', ModelData_simulation.Determ.Lagg_volatility);
     
-    if isfield(ModelData.Simulation, 'Loglin')
+    if has_loglin_simul
         fprintf('\n  ┌─ Volatility Comparison ─────────────────────────────────────┐\n');
         fprintf('  │                       Log-Linear     Deterministic           │\n');
         fprintf('  │  Cagg volatility:     %10.6f     %10.6f             │\n', ...
-            ModelData.Simulation.Loglin.Cagg_volatility, ...
-            ModelData.Simulation.Determ.Cagg_volatility);
+            ModelData_simulation.Loglin.Cagg_volatility, ...
+            ModelData_simulation.Determ.Cagg_volatility);
         fprintf('  │  Lagg volatility:     %10.6f     %10.6f             │\n', ...
-            ModelData.Simulation.Loglin.Lagg_volatility, ...
-            ModelData.Simulation.Determ.Lagg_volatility);
+            ModelData_simulation.Loglin.Lagg_volatility, ...
+            ModelData_simulation.Determ.Lagg_volatility);
         fprintf('  └────────────────────────────────────────────────────────────────┘\n');
     end
 end
 
-%% Print IRF Summary (if IRFs were computed)
+%% Build ModelData_IRs structure (IRF data)
+ModelData_IRs = struct();
+ModelData_IRs.metadata.save_label = save_label;
+ModelData_IRs.metadata.exp_paths = exp_paths;
+
+has_irfs = false;
+
 if run_any_irs && ~isempty(AllShockResults.IRFResults{1})
+    has_irfs = true;
+    
+    ModelData_IRs.shock_configs = config.shock_values;
+    ModelData_IRs.n_shocks = n_shocks;
+    ModelData_IRs.sector_indices = sector_indices;
+    ModelData_IRs.ir_horizon = config.ir_horizon;
+    
+    ModelData_IRs.by_shock = AllShockResults.IRFResults;
+    ModelData_IRs.by_label = struct();
+    for i = 1:n_shocks
+        label = matlab.lang.makeValidName(config.shock_values(i).label);
+        ModelData_IRs.by_label.(label) = AllShockResults.IRFResults{i};
+    end
+    
+    % Print IRF Summary
     fprintf('\n');
     fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
     fprintf('║                         IRF SUMMARY                                 ║\n');
@@ -463,14 +492,33 @@ if run_any_irs && ~isempty(AllShockResults.IRFResults{1})
     fprintf('  %s\n', repmat('─', 1, 56));
 end
 
-%% Save results and finalize
-% Store experiment paths in ModelData for reference
-ModelData.metadata.exp_paths = exp_paths;
+%% Save results
+fprintf('\n');
+fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+fprintf('║                        SAVING RESULTS                               ║\n');
+fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
 
 if config.save_results
-    filename = fullfile(exp_paths.experiment, 'ModelData.mat');
-    save(filename, 'ModelData');
-    fprintf('\n  ✓ Results saved: %s\n', filename);
+    % Save ModelData (core - lightweight)
+    filename_model = fullfile(exp_paths.experiment, 'ModelData.mat');
+    save(filename_model, 'ModelData');
+    fprintf('\n  ✓ ModelData saved: %s\n', filename_model);
+    
+    % Save ModelData_simulation (full simulations - heavy)
+    if has_loglin_simul || has_determ_simul
+        filename_simul = fullfile(exp_paths.experiment, 'ModelData_simulation.mat');
+        save(filename_simul, 'ModelData_simulation');
+        fprintf('  ✓ ModelData_simulation saved: %s\n', filename_simul);
+    end
+    
+    % Save ModelData_IRs (IRF data)
+    if has_irfs
+        filename_irs = fullfile(exp_paths.experiment, 'ModelData_IRs.mat');
+        save(filename_irs, 'ModelData_IRs');
+        fprintf('  ✓ ModelData_IRs saved: %s\n', filename_irs);
+    end
+else
+    fprintf('\n  ⊘ Saving disabled (config.save_results = false)\n');
 end
 
 %% Summary
@@ -482,16 +530,21 @@ fprintf('\n');
 fprintf('  Experiment: %s\n', save_label);
 fprintf('  Folder:     %s\n', exp_paths.experiment);
 fprintf('\n');
-fprintf('  ModelData contents:\n');
-fprintf('    • metadata, calibration, params  [always]\n');
-fprintf('    • SteadyState                    [always]\n');
 
 has_solution = isfield(ModelData, 'Solution');
-has_loglin = isfield(ModelData, 'Simulation') && isfield(ModelData.Simulation, 'Loglin');
-has_determ = isfield(ModelData, 'Simulation') && isfield(ModelData.Simulation, 'Determ');
-has_irfs = isfield(ModelData, 'IRFs');
-if has_solution, fprintf('    ✓ Solution\n'); else, fprintf('    ✗ Solution\n'); end
-if has_loglin,   fprintf('    ✓ Simulation.Loglin\n'); else, fprintf('    ✗ Simulation.Loglin\n'); end
-if has_determ,   fprintf('    ✓ Simulation.Determ\n'); else, fprintf('    ✗ Simulation.Determ\n'); end
-if has_irfs,     fprintf('    ✓ IRFs\n'); else, fprintf('    ✗ IRFs\n'); end
+has_statistics = isfield(ModelData, 'Statistics');
+
+fprintf('  ModelData (core):\n');
+fprintf('    • metadata, calibration, params    [always]\n');
+fprintf('    • SteadyState                      [always]\n');
+if has_solution,   fprintf('    ✓ Solution (state-space matrices)\n'); else, fprintf('    ✗ Solution\n'); end
+if has_statistics, fprintf('    ✓ Statistics (policies_sd, volatilities)\n'); else, fprintf('    ✗ Statistics\n'); end
+
+fprintf('\n  ModelData_simulation:\n');
+if has_loglin_simul, fprintf('    ✓ Loglin (full simulation + aggregates)\n'); else, fprintf('    ✗ Loglin\n'); end
+if has_determ_simul, fprintf('    ✓ Determ (full simulation + aggregates)\n'); else, fprintf('    ✗ Determ\n'); end
+
+fprintf('\n  ModelData_IRs:\n');
+if has_irfs, fprintf('    ✓ IRFs for %d shock configurations\n', n_shocks); else, fprintf('    ✗ IRFs (not computed)\n'); end
+
 fprintf('\n');

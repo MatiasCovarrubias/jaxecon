@@ -62,6 +62,51 @@ def load_matlab_irs(
     return _load_legacy_format(matlab_ir_dir, shock_sizes, file_pattern)
 
 
+def _parse_shock_label_to_key(label: str, shock_value: float) -> str:
+    """
+    Parse MATLAB shock label to standardized key format.
+
+    Handles labels like:
+    - "neg20pct" → "neg_20"
+    - "pos5pct" → "pos_5"
+    - "neg_5pct" → "neg_5"
+
+    Falls back to computing from shock_value if label format is unexpected.
+
+    Args:
+        label: Shock label from MATLAB (e.g., "neg20pct")
+        shock_value: Numeric shock value as fallback
+
+    Returns:
+        Standardized key like "neg_20" or "pos_5"
+    """
+    import re
+
+    # Try to parse label like "neg20pct", "pos5pct", "neg_5pct"
+    match = re.match(r"(neg|pos)_?(\d+)pct", label, re.IGNORECASE)
+    if match:
+        sign = match.group(1).lower()
+        pct = int(match.group(2))
+        return f"{sign}_{pct}"
+
+    # Fallback: use shock value and description heuristics
+    # In MATLAB: -log(0.8) ≈ 0.223 means A drops to 0.8 (negative shock)
+    # In MATLAB: log(1.2) ≈ 0.182 means A rises to 1.2 (positive shock)
+    # The sign depends on how the label describes it, not just the numeric value
+    if "neg" in label.lower():
+        sign = "neg"
+    elif "pos" in label.lower():
+        sign = "pos"
+    else:
+        # Last resort: compute from value (may be inaccurate)
+        sign = "neg" if shock_value > 0 else "pos"
+
+    # Extract percentage from shock value
+    pct = int(round(abs(1 - np.exp(-abs(shock_value))) * 100))
+
+    return f"{sign}_{pct}"
+
+
 def _load_new_format(filepath: str) -> Dict[str, Any]:
     """
     Load IR data from the new ModelData_IRs.mat format (Dec 2025+).
@@ -116,11 +161,8 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
         shock_label = shock_cfg.get("label", f"shock_{i}")
         shock_desc = shock_cfg.get("description", "")
 
-        # Convert shock value to percentage for key (e.g., -log(0.8) ≈ 0.223 → neg_20)
-        sign = "neg" if shock_value > 0 else "pos"  # Note: positive log-shock = negative TFP
-        pct = int(round(abs(1 - np.exp(-shock_value)) * 100))
-
-        key = f"{sign}_{pct}"
+        # Parse the key from MATLAB label (e.g., "neg20pct" → "neg_20", "pos5pct" → "pos_5")
+        key = _parse_shock_label_to_key(shock_label, shock_value)
 
         print(f"    Processing: {shock_label} ({shock_desc}) → key={key}")
 
@@ -280,6 +322,7 @@ def get_sector_irs(
     sector_idx: int,
     variable_idx: int = 0,
     max_periods: int = 100,
+    skip_initial: bool = False,
 ) -> Dict[str, Dict[str, np.ndarray]]:
     """
     Extract IRs for a specific sector and variable across all shock sizes/signs.
@@ -289,6 +332,10 @@ def get_sector_irs(
         sector_idx: Sector index (0-based)
         variable_idx: Variable index within the IR array
         max_periods: Maximum number of periods to return
+        skip_initial: If True, skip period 0. Default False for correct alignment.
+                      Both MATLAB IRs and GIRs have period 0 = impact response:
+                      - MATLAB: simult_/perfect_foresight start from shocked initial condition
+                      - GIR: trajectory_analysis_variables[0] = analysis at shocked initial state
 
     Returns:
         Dictionary with structure:
@@ -306,8 +353,16 @@ def get_sector_irs(
 
         sector_data = data["sectors"][sector_idx]
 
-        loglin = sector_data["IRSLoglin"][variable_idx, :max_periods]
-        determ = sector_data["IRSDeterm"][variable_idx, :max_periods]
+        # Get the raw data
+        loglin_raw = sector_data["IRSLoglin"][variable_idx, :]
+        determ_raw = sector_data["IRSDeterm"][variable_idx, :]
+
+        if skip_initial:
+            loglin = loglin_raw[1 : max_periods + 1]
+            determ = determ_raw[1 : max_periods + 1]
+        else:
+            loglin = loglin_raw[:max_periods]
+            determ = determ_raw[:max_periods]
 
         result[key] = {
             "loglin": loglin,
@@ -438,6 +493,7 @@ def get_matlab_ir_for_analysis_variable(
     sector_idx: int,
     analysis_var_name: str,
     max_periods: int = 100,
+    skip_initial: bool = False,
 ) -> Optional[Dict[str, Dict[str, np.ndarray]]]:
     """
     Get MATLAB IRs for a given analysis variable name.
@@ -447,6 +503,8 @@ def get_matlab_ir_for_analysis_variable(
         sector_idx: Sector index (0-based)
         analysis_var_name: Name of analysis variable (e.g., "Agg. Consumption")
         max_periods: Maximum number of periods to return
+        skip_initial: If True, skip period 0. Default False for correct alignment.
+                      Both MATLAB IRs and GIRs have period 0 = impact response.
 
     Returns:
         Dictionary with IRs for each shock size/sign, or None if variable not found
@@ -461,7 +519,7 @@ def get_matlab_ir_for_analysis_variable(
 
     var_idx = MATLAB_IR_VARIABLE_INDICES[matlab_var_name]
 
-    return get_sector_irs(ir_data, sector_idx, var_idx, max_periods)
+    return get_sector_irs(ir_data, sector_idx, var_idx, max_periods, skip_initial)
 
 
 def get_amplification_stats(ir_data: Dict[str, Any]) -> Dict[str, Dict[str, np.ndarray]]:

@@ -1,0 +1,448 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{enumitem}
+
+\title{Analysis Methodology for the RBC Production Network Model}
+\author{DEQN Framework}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+This document describes the analysis methodology applied to the RBC Production Network model (\texttt{RbcProdNet\_nonlinear}). The model features 37 sectors with CES production functions, intermediate input linkages, investment flows, and correlated productivity shocks. The analysis framework evaluates trained neural network solutions across the following dimensions: ergodic simulations, welfare costs, stochastic steady states, and generalized impulse responses.
+
+\section{Model Overview}
+
+\subsection{State Variables}
+The model has $2N$ state variables where $N=37$ is the number of sectors:
+\begin{itemize}
+    \item $K_i$ (states $0$ to $N-1$): Capital stock in sector $i$ (in logs). Capital evolves deterministically according to the law of motion with investment.
+    \item $a_i$ (states $N$ to $2N-1$): Productivity level in sector $i$ (in logs, deviation from steady state). This is the only source of uncertainty in the model, following an AR(1) process with correlated innovations:
+    \begin{equation}
+        a_{i,t+1} = \rho \cdot a_{i,t} + \varepsilon_{i,t+1}, \quad \varepsilon_t \sim \mathcal{N}(0, \Sigma_A)
+    \end{equation}
+\end{itemize}
+
+\subsection{Key Parameters}
+\begin{itemize}
+    \item $\alpha$: Capital share in production
+    \item $\beta$: Discount factor
+    \item $\delta$: Depreciation rate
+    \item $\rho$: Persistence of productivity shocks
+    \item $\phi$: Investment adjustment cost parameter
+    \item $\sigma_c, \sigma_m, \sigma_q, \sigma_y, \sigma_I, \sigma_l$: Elasticities of substitution
+    \item $\Gamma_M, \Gamma_I$: Input-output matrices for intermediates and investment
+    \item $\Sigma_A$: Covariance matrix of productivity shocks
+\end{itemize}
+
+\subsection{Policy Variables}
+The neural network outputs $11N + 5$ policy variables:
+\begin{enumerate}
+    \item $C_i$: Sectoral consumption
+    \item $L_i$: Sectoral labor
+    \item $P^k_i$: Capital good prices
+    \item $P^m_i$: Intermediate input prices
+    \item $M_i$: Intermediate inputs used
+    \item $M^{out}_i$: Intermediate outputs sold
+    \item $I_i$: Investment
+    \item $I^{out}_i$: Investment goods sold
+    \item $P_i$: Output prices
+    \item $Q_i$: Gross output
+    \item $Y_i$: Value added
+    \item $C^{agg}, L^{agg}, Y^{agg}, I^{agg}, M^{agg}$: Aggregate variables
+\end{enumerate}
+
+\section{Analysis Components}
+
+\subsection{Ergodic Simulation Analysis}
+
+The simulation analysis generates long trajectories from the trained model to characterize the ergodic distribution of economic outcomes.
+
+\subsubsection{Configuration}
+\begin{itemize}
+    \item \textbf{Episode length}: 64,000 periods (configurable via \texttt{periods\_per\_epis})
+    \item \textbf{Burn-in}: 3,200 periods discarded to ensure convergence to ergodic distribution
+    \item \textbf{Number of seeds}: 16 independent simulations for robustness
+    \item \textbf{Volatility scale}: Adjustable shock magnitude for comparative analysis
+\end{itemize}
+
+\subsubsection{Analysis Variables}
+For each simulation, we compute the following aggregate variables as log deviations from the deterministic steady state:
+\begin{align}
+    \hat{C}^{agg}_t &= \log(C^{agg}_t) - \log(C^{agg}_{ss}) \\
+    \hat{L}^{agg}_t &= \log(L^{agg}_t) - \log(L^{agg}_{ss}) \\
+    \hat{K}^{agg}_t &= \log(K^{agg}_t) - \log(K^{agg}_{ss}) \\
+    \hat{Y}^{agg}_t &= \log(Y^{agg}_t) - \log(Y^{agg}_{ss}) \\
+    \hat{M}^{agg}_t &= \log(M^{agg}_t) - \log(M^{agg}_{ss}) \\
+    \hat{I}^{agg}_t &= \log(I^{agg}_t) - \log(I^{agg}_{ss})
+\end{align}
+
+Aggregate variables are computed using price weights from the average simulation prices:
+\begin{equation}
+    K^{agg}_t = \sum_{i=1}^N K_{it} \cdot \bar{P}^k_i
+\end{equation}
+
+\subsubsection{Descriptive Statistics}
+For each analysis variable, we report:
+\begin{itemize}
+    \item Mean (as percentage deviation from steady state)
+    \item Standard deviation (as percentage)
+    \item Skewness
+    \item Excess kurtosis
+\end{itemize}
+
+\subsection{Welfare Analysis}
+
+\subsubsection{Utility Function}
+The representative household's period utility is:
+\begin{equation}
+    U_t = \frac{1}{1 - \varepsilon_c^{-1}} \left( C^{agg}_t - \theta \frac{1}{1 + \varepsilon_l^{-1}} (L^{agg}_t)^{1 + \varepsilon_l^{-1}} \right)^{1 - \varepsilon_c^{-1}}
+\end{equation}
+
+\subsubsection{Welfare Cost Calculation}
+The welfare cost measures the consumption-equivalent loss from business cycle fluctuations:
+
+\begin{enumerate}
+    \item Compute steady-state welfare:
+    \begin{equation}
+        W_{ss} = \frac{U_{ss}}{1 - \beta}
+    \end{equation}
+    
+    \item Estimate stochastic welfare from simulation trajectories using multiple random starting points:
+    \begin{equation}
+        W = \mathbb{E}\left[ \sum_{t=0}^{T} \beta^t U_t \right]
+    \end{equation}
+    
+    \item Welfare loss (in percentage):
+    \begin{equation}
+        \text{Welfare Loss} = \left(1 - \frac{W}{W_{ss}}\right) \times 100
+    \end{equation}
+\end{enumerate}
+
+\subsubsection{Configuration}
+\begin{itemize}
+    \item \textbf{Number of trajectories}: 16,000
+    \item \textbf{Trajectory length}: 100 periods
+    \item \textbf{Random seed}: Configurable for reproducibility
+\end{itemize}
+
+\subsection{Stochastic Steady State}
+
+The stochastic steady state represents the resting point of the system when the shocks are zero.
+
+\subsubsection{Methodology}
+\begin{enumerate}
+    \item Sample $n$ points from the ergodic distribution (default: 2,000 draws)
+    \item For each sampled state, simulate forward for $T$ periods (default: 500) with zero shocks
+    \item Average the final states and policies across all draws
+    \item Verify convergence by checking that the standard deviation across draws is small
+\end{enumerate}
+
+\subsubsection{Convergence Check}
+If $\max(\sigma_{\text{stoch\_ss}}) > 0.001$, an error is raised indicating insufficient convergence.
+
+\subsection{Generalized Impulse Responses (GIRs)}
+
+GIRs measure the dynamic response of the economy to a shock, accounting for the nonlinearity of the model.
+
+\subsubsection{Methodology}
+
+The GIR procedure follows these steps:
+
+\begin{enumerate}
+    \item \textbf{Sample from ergodic distribution}: Draw $n$ initial states from the simulation (default: 1,000 draws)
+    
+    \item \textbf{Generate shock trajectories}: For each initial state $s_0$, generate a sequence of future shocks $\{\varepsilon_1, \varepsilon_2, \ldots, \varepsilon_T\}$
+    
+    \item \textbf{Simulate baseline trajectory}: Starting from $s_0$, simulate forward using the shock sequence
+    
+    \item \textbf{Create counterfactual state}: Apply an impulse to the productivity of sector $i$:
+    \begin{align}
+        s_0^{cf} &= s_0 + \Delta \quad \text{where} \\
+        \Delta_j &= \begin{cases}
+            \log(1 \mp \text{shock\_size}) & \text{if } j = N + i \text{ (productivity of sector } i\text{)} \\
+            0 & \text{otherwise}
+        \end{cases}
+    \end{align}
+    
+    \item \textbf{Simulate counterfactual trajectory}: Starting from $s_0^{cf}$, simulate forward using the \textit{same} shock sequence
+    
+    \item \textbf{Compute impulse response}: The GIR is the difference between counterfactual and baseline paths:
+    \begin{equation}
+        \text{GIR}_t = x_t^{cf} - x_t^{baseline}
+    \end{equation}
+    
+    \item \textbf{Average across draws}: The final GIR averages over all sampled initial conditions
+\end{enumerate}
+
+\subsubsection{Shock Configuration}
+The model features productivity (TFP) shocks only. Capital evolves deterministically according to the investment decision. For the GIR analysis, we shock the productivity states:
+\begin{itemize}
+    \item \textbf{Productivity shocks}: State index $= N + i$ for sector $i$ (i.e., states 37 to 73 for $N=37$ sectors)
+    \item \textbf{Shock sizes}: 5\%, 10\%, 20\% (configurable)
+    \item \textbf{Shock signs}: Both positive and negative
+    \item \textbf{Trajectory length}: 100 periods (configurable)
+\end{itemize}
+
+\subsubsection{Shock Implementation}
+The shock is applied multiplicatively to TFP in log space. For a negative $x$\% shock:
+\begin{equation}
+    A^{cf} = A^{current} \times (1 - x/100) \quad \Rightarrow \quad \log(A^{cf}) = \log(A^{current}) + \log(1 - x/100)
+\end{equation}
+
+Specifically:
+\begin{itemize}
+    \item 5\% negative shock: $\log(A^{cf}) = \log(A^{current}) + \log(0.95) \approx \log(A^{current}) - 0.051$
+    \item 10\% negative shock: $\log(A^{cf}) = \log(A^{current}) + \log(0.90) \approx \log(A^{current}) - 0.105$
+    \item 20\% negative shock: $\log(A^{cf}) = \log(A^{current}) + \log(0.80) \approx \log(A^{current}) - 0.223$
+\end{itemize}
+
+For positive shocks, the signs are reversed (e.g., $+\log(1.20) \approx +0.182$ for a 20\% positive shock).
+
+\subsubsection{Comparison with Log-Linear IRs}
+When available, GIRs are compared with impulse responses from log-linearized MATLAB/Dynare solutions (perfect foresight paths). This comparison:
+\begin{itemize}
+    \item Validates the nonlinear solution against standard benchmarks
+    \item Quantifies the importance of nonlinearities for different shock sizes
+    \item Identifies asymmetries between positive and negative productivity shocks
+\end{itemize}
+
+\section{MATLAB Benchmark Calculations}
+
+The MATLAB/Dynare code provides benchmark impulse responses for comparison with the neural network solution. This section documents the calibration, steady state computation, and IR calculation procedures.
+
+\subsection{Calibration Procedure}
+
+The model is calibrated using U.S. sectoral data from the BEA. The calibration proceeds in stages:
+
+\subsubsection{Data Sources}
+\begin{itemize}
+    \item \textbf{Consumption shares} ($\xi$): Average sectoral consumption expenditure shares from BEA
+    \item \textbf{Capital shares} ($\alpha$): Average capital expenditure shares by sector (floored at 5\%)
+    \item \textbf{Value-added shares} ($\mu$): Average ratio of value added to gross output
+    \item \textbf{Input-output matrix} ($\Gamma_M$): Average IO flows, normalized with entries floored at 1\%
+    \item \textbf{Investment matrix} ($\Gamma_I$): Average investment flows across sectors
+    \item \textbf{Depreciation rates} ($\delta$): Sector-specific rates from BEA fixed assets
+    \item \textbf{TFP process}: Estimated AR(1) process with covariance matrix $\Sigma_A$
+\end{itemize}
+
+\subsubsection{Steady State Computation}
+
+The steady state is solved iteratively, starting from a Cobb-Douglas specification and gradually lowering elasticities to target values:
+
+\begin{enumerate}
+    \item \textbf{Stage 1}: Solve with all $\sigma = 0.99$ (near Cobb-Douglas)
+    \item \textbf{Stage 2}: Lower $\sigma_l$ to target value while matching labor reallocation
+    \item \textbf{Stage 3}: Lower $\sigma_m, \sigma_q$ while matching value-added and IO shares
+    \item \textbf{Stage 4}: Lower $\sigma_c, \sigma_y, \sigma_I$ while matching all expenditure shares
+\end{enumerate}
+
+The steady state solver (\texttt{ProdNetRbc\_SS.m}) jointly determines:
+\begin{itemize}
+    \item Sectoral quantities: $C_i, L_i, M_i, I_i, Q_i, Y_i$
+    \item Sectoral prices: $P_i, P^k_i, P^m_i$
+    \item Aggregates: $C^{agg}, L^{agg}$
+    \item Preference parameter: $\theta$ (calibrated to normalize marginal utility)
+\end{itemize}
+
+\subsection{Log-Linear Solution (Dynare)}
+
+The log-linearized model is solved using Dynare (\texttt{stoch\_simul.mod}):
+
+\begin{enumerate}
+    \item Variables are expressed as log deviations from steady state
+    \item First-order perturbation around the deterministic steady state
+    \item Shocks are specified with the estimated covariance matrix $\Sigma_A$
+    \item Policy functions are linear: $x_t = C \cdot s_{t-1} + D \cdot \varepsilon_t$
+\end{enumerate}
+
+The solution yields state-space matrices $(A, B, C, D)$ where:
+\begin{align}
+    s_t &= A \cdot s_{t-1} + B \cdot \varepsilon_t \quad \text{(state evolution)} \\
+    x_t &= C \cdot s_{t-1} + D \cdot \varepsilon_t \quad \text{(policy functions)}
+\end{align}
+
+\subsection{Impulse Response Computation}
+
+Two types of impulse responses are computed for each sector:
+
+\subsubsection{Log-Linear IRs}
+
+Starting from steady state, apply a TFP shock to sector $i$ and simulate using the linear policy functions:
+\begin{enumerate}
+    \item Set initial state: $a_i(0) = \text{shock\_size}$ (e.g., $\log(0.95)$ for $-5\%$)
+    \item Simulate forward with zero future shocks: $\varepsilon_t = 0$ for $t > 0$
+    \item Record deviations from steady state for all variables
+\end{enumerate}
+
+\subsubsection{Perfect Foresight (Deterministic) IRs}
+
+Solve the fully nonlinear model under perfect foresight (\texttt{determ\_irs.mod}):
+\begin{enumerate}
+    \item Set initial TFP: $a_i(0) = \text{shock\_size}$
+    \item Solve for the perfect foresight transition path back to steady state
+    \item No future uncertainty: agents know the exact path of TFP recovery
+\end{enumerate}
+
+This captures nonlinearities in the transition dynamics but ignores precautionary behavior.
+
+\subsection{Units and Normalization}
+
+\textbf{Critical for comparison}: All impulse responses are stored in \textbf{log deviations from steady state} (not percentages):
+
+\begin{itemize}
+    \item \textbf{MATLAB output} (\texttt{ProcessIRs.m}): Variables are computed as
+    \begin{equation}
+        \hat{x}_t = \log(x_t) - \log(x_{ss})
+    \end{equation}
+    
+    \item \textbf{JAX GIR output}: Also in log deviations from steady state
+    
+    \item \textbf{Plotting}: Both are multiplied by 100 to display as percentages
+\end{itemize}
+
+\subsubsection{MATLAB IR Variable Mapping}
+
+The \texttt{ProcessIRs.m} function outputs a matrix with rows corresponding to:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{clll}
+\toprule
+\textbf{Row} & \textbf{Variable} & \textbf{Description} & \textbf{Units} \\
+\midrule
+0 & $A_i$ & TFP of shocked sector & \textbf{Levels} (not log dev) \\
+1 & $\hat{C}^{agg}$ & Aggregate consumption & Log deviation \\
+2 & $\hat{L}^{agg}$ & Aggregate labor & Log deviation \\
+3 & $V_c$ & Continuation value & Level \\
+4 & $\hat{C}_i$ & Sectoral consumption & Log deviation \\
+5 & $\hat{P}_i$ & Output price & Log deviation \\
+6 & $\hat{I}^{out}_i$ & Investment outputs sold & Log deviation \\
+7 & $\hat{M}^{out}_i$ & Intermediate outputs sold & Log deviation \\
+8 & $\hat{L}_i$ & Sectoral labor & Log deviation \\
+9 & $\hat{I}_i$ & Sectoral investment & Log deviation \\
+10 & $\hat{M}_i$ & Intermediate inputs & Log deviation \\
+11 & $\hat{Y}_i$ & Sectoral value added & Log deviation \\
+12 & $\hat{Q}_i$ & Gross output & Log deviation \\
+13--22 & Client & Client sector variables & (same ordering) \\
+23 & $\hat{K}_i$ & Capital of shocked sector & Log deviation \\
+24 & $\hat{Y}^{agg}$ & Aggregate output & Log deviation \\
+25 & $\hat{P}^m_{client}$ & Intermediate price of client & Log deviation \\
+26 & $\hat{\gamma}_{ij}$ & Expenditure share change & Log deviation \\
+\bottomrule
+\end{tabular}
+\caption{MATLAB IR output variable ordering from \texttt{ProcessIRs.m}}
+\end{table}
+
+\textbf{Important}: Row 0 (TFP) is in \textbf{levels}, not log deviations. For a $-20\%$ shock, $A_i(0) = 0.8$. All other rows are in log deviations from steady state.
+
+\textbf{Note}: The Python loader (\texttt{matlab\_irs.py}) contains a variable index mapping that should be verified against the actual saved \texttt{.mat} files using the \texttt{inspect\_matlab\_ir\_structure()} function.
+
+\subsubsection{Shock Sign Convention}
+
+In the MATLAB code, shocks are defined with the following convention:
+\begin{itemize}
+    \item \texttt{params.IRshock = -0.0513}: This is $\log(0.95) \approx -0.0513$
+    \item For a \textbf{positive} 5\% shock (TFP increases to 105\%): set $a_i(0) = -\text{IRshock} = +0.0513$
+    \item For a \textbf{negative} 5\% shock (TFP decreases to 95\%): set $a_i(0) = +\text{IRshock} = -0.0513$
+\end{itemize}
+
+This matches the JAX convention where a negative shock adds $\log(1 - \text{shock\_size})$ to the log level.
+
+\subsection{Amplification Metrics}
+
+The MATLAB code computes several diagnostic metrics:
+\begin{itemize}
+    \item \textbf{Peak values}: Maximum absolute response for each variable
+    \item \textbf{Peak periods}: Time at which peak response occurs
+    \item \textbf{Half-lives}: Time for response to decay to half of peak
+    \item \textbf{Amplification}: Difference between perfect foresight and log-linear peaks
+    \begin{equation}
+        \text{Amplification}_i = \text{peak}^{determ}_i - \text{peak}^{loglin}_i
+    \end{equation}
+\end{itemize}
+
+Positive amplification indicates that nonlinearities magnify the response relative to the log-linear approximation.
+
+\section{Comparative Analysis}
+
+The framework supports analyzing multiple trained models (experiments) simultaneously, enabling:
+
+\subsection{Volatility Comparative}
+Compare solutions trained under different shock volatilities:
+\begin{itemize}
+    \item Baseline volatility
+    \item Scaled volatility (e.g., 0.1$\times$, 0.5$\times$, 1.5$\times$ baseline)
+\end{itemize}
+
+This reveals how the optimal policy functions change with the magnitude of uncertainty.
+
+\subsection{Architecture Comparative}
+Compare solutions from different neural network architectures or training configurations.
+
+\section{Output Files}
+
+The analysis generates the following outputs in the analysis directory:
+
+\subsection{Configuration}
+\begin{itemize}
+    \item \texttt{config.json}: Full analysis configuration for reproducibility
+\end{itemize}
+
+\subsection{Tables (LaTeX)}
+\begin{itemize}
+    \item \texttt{descriptive\_stats\_table.tex}: Descriptive statistics for each experiment
+    \item \texttt{descriptive\_stats\_comparative.tex}: Side-by-side comparison across experiments
+    \item \texttt{welfare\_table.tex}: Welfare costs for each experiment
+    \item \texttt{stochastic\_ss\_table.tex}: Stochastic steady state values
+\end{itemize}
+
+\subsection{Figures}
+\begin{itemize}
+    \item \texttt{simulation/}: Ergodic histograms and sectoral plots
+    \item \texttt{IRs/}: Impulse response comparisons (JAX GIRs vs MATLAB)
+\end{itemize}
+
+\section{Upstreamness Measures}
+
+The model also computes sectoral upstreamness measures following the production network literature:
+
+\subsection{Intermediate Input Upstreamness ($U^M$)}
+\begin{equation}
+    U^M = (I - \Delta^M)^{-1} \mathbf{1}
+\end{equation}
+where $\Delta^M$ captures the intermediate input linkages weighted by prices and quantities.
+
+\subsection{Investment Flow Upstreamness ($U^I$)}
+\begin{equation}
+    U^I = (I - \Delta^I)^{-1} \mathbf{1}
+\end{equation}
+where $\Delta^I$ captures the investment good linkages.
+
+\subsection{Simple Upstreamness}
+\begin{equation}
+    U^{simple}_i = \frac{M^{out}_i}{Q_i}
+\end{equation}
+The ratio of intermediate outputs to gross output for each sector.
+
+\section{Implementation Notes}
+
+\subsection{Normalization}
+All state and policy variables are internally normalized by their steady-state standard deviations for numerical stability during neural network training and evaluation.
+
+\subsection{Precision}
+The analysis supports both single (float32) and double (float64) precision. Double precision is recommended for welfare and GIR calculations.
+
+\subsection{JIT Compilation}
+All analysis functions are JIT-compiled using JAX for efficient execution on CPU, GPU, or TPU.
+
+\end{document}
+

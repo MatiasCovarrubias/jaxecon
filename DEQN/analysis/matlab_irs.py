@@ -322,7 +322,7 @@ def get_sector_irs(
     sector_idx: int,
     variable_idx: int = 0,
     max_periods: int = 100,
-    skip_initial: bool = False,
+    skip_initial: bool = True,
 ) -> Dict[str, Dict[str, np.ndarray]]:
     """
     Extract IRs for a specific sector and variable across all shock sizes/signs.
@@ -332,10 +332,17 @@ def get_sector_irs(
         sector_idx: Sector index (0-based)
         variable_idx: Variable index within the IR array
         max_periods: Maximum number of periods to return
-        skip_initial: If True, skip period 0. Default False for correct alignment.
-                      Both MATLAB IRs and GIRs have period 0 = impact response:
-                      - MATLAB: simult_/perfect_foresight start from shocked initial condition
-                      - GIR: trajectory_analysis_variables[0] = analysis at shocked initial state
+        skip_initial: If True, skip period 0 (default True for correct alignment).
+                      
+                      Dynare timing convention:
+                      - MATLAB IR index 0: Initial condition with shocked TFP, but policies
+                        are still at steady state (no response yet)
+                      - MATLAB IR index 1+: Policies respond to the shocked TFP
+                      
+                      Python GIR:
+                      - GIR index 0: Policy response to shocked state (first response)
+                      
+                      With skip_initial=True: MATLAB[1:] aligns with Python GIR[0:]
 
     Returns:
         Dictionary with structure:
@@ -493,7 +500,7 @@ def get_matlab_ir_for_analysis_variable(
     sector_idx: int,
     analysis_var_name: str,
     max_periods: int = 100,
-    skip_initial: bool = False,
+    skip_initial: bool = True,
 ) -> Optional[Dict[str, Dict[str, np.ndarray]]]:
     """
     Get MATLAB IRs for a given analysis variable name.
@@ -503,8 +510,8 @@ def get_matlab_ir_for_analysis_variable(
         sector_idx: Sector index (0-based)
         analysis_var_name: Name of analysis variable (e.g., "Agg. Consumption")
         max_periods: Maximum number of periods to return
-        skip_initial: If True, skip period 0. Default False for correct alignment.
-                      Both MATLAB IRs and GIRs have period 0 = impact response.
+        skip_initial: If True, skip period 0 (default True for correct alignment).
+                      MATLAB IR[0] is initial condition; GIR[0] is first response.
 
     Returns:
         Dictionary with IRs for each shock size/sign, or None if variable not found

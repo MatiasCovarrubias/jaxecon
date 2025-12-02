@@ -18,13 +18,21 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             - ir_shock_sizes: List of shock sizes as percentages (e.g., [5, 10, 20])
             - states_to_shock: List of TFP state indices to shock (n_sectors + sector_idx)
             - gir_seed: Random seed
+            - gir_from_steady_state: If True, compute IRFs from steady state (like MATLAB)
+                                     instead of averaging over ergodic distribution (default: False)
+            - gir_symmetric_shocks: If True, positive shock is symmetric with negative
+                                    (A_pos = 1/A_neg), not (1 + shock_size) (default: True)
         simul_policies: Simulation policies for extracting price weights (optional, can be passed in GIR_fn)
                        Should be in logdev form when using simulation_verbose_fn
 
-    Shock magnitudes (negative shocks):
-        - 5% shock: TFP drops to 95% of current level, i.e., add log(0.95) ≈ -0.051 to log(A)
-        - 10% shock: TFP drops to 90% of current level, i.e., add log(0.90) ≈ -0.105 to log(A)
-        - 20% shock: TFP drops to 80% of current level, i.e., add log(0.80) ≈ -0.223 to log(A)
+    Shock magnitudes:
+        With gir_symmetric_shocks=True (default):
+            - 20% negative: A drops to 0.80, shock = log(0.80) = -0.223
+            - 20% positive: A rises to 1.25 (= 1/0.80), shock = log(1.25) = +0.223 (symmetric!)
+
+        With gir_symmetric_shocks=False (legacy):
+            - 20% negative: A drops to 0.80, shock = log(0.80) = -0.223
+            - 20% positive: A rises to 1.20, shock = log(1.20) = +0.182 (NOT symmetric)
 
     Note: This function expects inputs from simulation_verbose_fn which returns states and policies
           in log deviation form (not normalized by standard deviations).
@@ -60,27 +68,41 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         Returns:
             counterfactual_state_logdev: Modified state in log deviation form
 
-        Shock implementation:
+        Shock implementation (with gir_symmetric_shocks=True, default):
             For a -20% shock (TFP drops to 80% of current level):
-                A_new = A_current * 0.8
-                In logs: log(A_new) = log(A_current) + log(0.8)
-                Adds log(0.8) ≈ -0.223 to the log level
+                A_neg = 1 - shock_size = 0.8
+                In logs: adds log(0.8) ≈ -0.223 to the log level
 
+            For a +20% SYMMETRIC shock (same magnitude in log space):
+                A_pos = 1 / A_neg = 1 / 0.8 = 1.25
+                In logs: adds -log(0.8) = log(1.25) ≈ +0.223 to the log level
+
+        Shock implementation (with gir_symmetric_shocks=False, legacy):
             For a +20% shock (TFP rises to 120% of current level):
-                A_new = A_current * 1.2
-                In logs: log(A_new) = log(A_current) + log(1.2)
-                Adds log(1.2) ≈ +0.182 to the log level
+                A_pos = 1 + shock_size = 1.2
+                In logs: adds log(1.2) ≈ +0.182 to the log level (NOT symmetric!)
         """
         # Convert logdevs to actual log levels
         state_notnorm = state_logdev + econ_model.state_ss
 
+        # Check if symmetric shocks are enabled (default: True)
+        symmetric_shocks = config.get("gir_symmetric_shocks", True)
+
         # Apply shock to specified state variable in log terms
         if shock_sign == "neg":
-            # Negative shock: multiply level by (1 - shock_size), so add log(1 - shock_size) to log
-            state_counterfactual_notnorm = state_notnorm.at[state_idx].add(jnp.log(1 - shock_size))
+            # Negative shock: A_neg = 1 - shock_size (e.g., 0.8 for 20% shock)
+            # Add log(A_neg) = log(1 - shock_size) to log level
+            log_shock = jnp.log(1 - shock_size)
+            state_counterfactual_notnorm = state_notnorm.at[state_idx].add(log_shock)
         else:  # positive shock
-            # Positive shock: multiply level by (1 + shock_size), so add log(1 + shock_size) to log
-            state_counterfactual_notnorm = state_notnorm.at[state_idx].add(jnp.log(1 + shock_size))
+            if symmetric_shocks:
+                # Symmetric positive shock: A_pos = 1 / A_neg = 1 / (1 - shock_size)
+                # Add log(A_pos) = -log(1 - shock_size) to log level (same magnitude, opposite sign)
+                log_shock = -jnp.log(1 - shock_size)
+            else:
+                # Legacy positive shock: A_pos = 1 + shock_size (NOT symmetric)
+                log_shock = jnp.log(1 + shock_size)
+            state_counterfactual_notnorm = state_notnorm.at[state_idx].add(log_shock)
 
         # Convert back to logdevs
         state_counterfactual_logdev = state_counterfactual_notnorm - econ_model.state_ss

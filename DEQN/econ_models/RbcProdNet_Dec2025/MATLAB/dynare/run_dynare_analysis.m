@@ -170,6 +170,24 @@ Results.oo_ = oo_;
 Results.M_ = M_;
 Results.steady_state = oo_.steady_state;
 
+%% Extract Theoretical Statistics from State Space
+% These are model-implied moments computed analytically from the solution,
+% not from simulation. Available immediately after stoch_simul with periods=0.
+TheoStats = compute_theoretical_statistics(oo_, M_, policies_ss, n_sectors);
+Results.TheoStats = TheoStats;
+
+if opts.verbose && ~isempty(fieldnames(TheoStats))
+    fprintf('\n  ── Theoretical Moments (from state-space solution) ─────────────\n');
+    fprintf('     σ(Y_agg):  %.4f   (aggregate GDP)\n', TheoStats.sigma_VA_agg);
+    fprintf('     σ(C_agg):  %.4f   (aggregate consumption)\n', TheoStats.sigma_C_agg);
+    fprintf('     σ(L_agg):  %.4f   (aggregate labor)\n', TheoStats.sigma_L_agg);
+    fprintf('     σ(I_agg):  %.4f   (aggregate investment)\n', TheoStats.sigma_I_agg);
+    fprintf('     σ(M_agg):  %.4f   (aggregate intermediates)\n', TheoStats.sigma_M_agg);
+    if isfield(TheoStats, 'rho_VA_agg')
+        fprintf('     ρ(Y_agg):  %.4f   (GDP autocorrelation)\n', TheoStats.rho_VA_agg);
+    end
+end
+
 %% 2. Log-Linear Simulation (with random shocks)
 if opts.run_loglin_simul
     if opts.verbose
@@ -520,7 +538,11 @@ function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n
 %
 % OUTPUTS:
 %   ModelStats - Structure with:
-%     - sigma_VA_agg: Aggregate GDP volatility
+%     - sigma_VA_agg: Aggregate GDP volatility (from model's yagg)
+%     - sigma_L_agg: Aggregate labor volatility (from model's lagg, CES aggregator)
+%     - sigma_L_hc_agg: Aggregate labor volatility (headcount = simple sum, comparable to data)
+%     - sigma_I_agg: Aggregate investment volatility (from model's iagg)
+%     - sigma_M_agg: Aggregate intermediates volatility (from model's magg)
 %     - sigma_L_avg: VA-weighted avg sectoral labor volatility
 %     - sigma_I_avg: VA-weighted avg sectoral investment volatility
 %     - rho_VA_agg: Aggregate GDP autocorrelation
@@ -552,9 +574,21 @@ function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n
     
     %% ===== AGGREGATE VOLATILITIES (from Dynare aggregate variables) =====
     sigma_VA_agg = std(yagg_simul);
-    sigma_L_agg = std(lagg_simul);
+    sigma_L_agg = std(lagg_simul);  % From model's CES aggregator (preferences-based)
     sigma_I_agg = std(iagg_simul);
     sigma_M_agg = std(magg_simul);
+    
+    % Compute headcount labor aggregate (simple sum, comparable to data)
+    % l_simul is in log deviations, so exp(l_simul) gives L_j(t)/L_j^ss
+    l_ss_idx = (idx.l(1):idx.l(2)) - idx.ss_offset;
+    l_ss_log = policies_ss(l_ss_idx);
+    l_ss = exp(l_ss_log);  % Steady state labor by sector
+    
+    % L_hc(t) = sum_j L_j(t) = sum_j L_j^ss * exp(l_simul(j,t))
+    L_hc_ss = sum(l_ss);
+    L_hc_levels = l_ss' * exp(l_simul);  % Sum of sectoral labor in levels
+    lagg_hc_simul = log(L_hc_levels) - log(L_hc_ss);  % Log deviation from SS
+    sigma_L_hc_agg = std(lagg_hc_simul);
     
     % Aggregate GDP autocorrelation
     rho_VA_agg = corr(yagg_simul(1:end-1)', yagg_simul(2:end)');
@@ -579,7 +613,8 @@ function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n
     
     % Aggregate volatilities
     ModelStats.sigma_VA_agg = sigma_VA_agg;
-    ModelStats.sigma_L_agg = sigma_L_agg;
+    ModelStats.sigma_L_agg = sigma_L_agg;      % From CES aggregator (preferences)
+    ModelStats.sigma_L_hc_agg = sigma_L_hc_agg; % Headcount (simple sum, comparable to data)
     ModelStats.sigma_I_agg = sigma_I_agg;
     ModelStats.sigma_M_agg = sigma_M_agg;
     

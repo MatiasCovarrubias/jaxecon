@@ -136,20 +136,20 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
     [~, VA_agg_cycle] = hpfilter(log_VA_agg, hp_lambda);
     sigma_VA_agg = std(VA_agg_cycle);
     
-    % Aggregate labor (VA-weighted sum)
-    L_agg = EMP_clean * va_weights';
+    % Aggregate labor (simple sum of headcount, analogous to model's Lagg_hc)
+    L_agg = sum(EMP_clean, 2);
     log_L_agg = log(L_agg);
     [~, L_agg_cycle] = hpfilter(log_L_agg, hp_lambda);
     sigma_L_agg = std(L_agg_cycle);
     
-    % Aggregate investment (VA-weighted sum)
-    I_agg = Inv_clean * va_weights';
+    % Aggregate investment (simple sum in dollars, analogous to model's iagg)
+    I_agg = sum(Inv_clean, 2);
     log_I_agg = log(I_agg);
     [~, I_agg_cycle] = hpfilter(log_I_agg, hp_lambda);
     sigma_I_agg = std(I_agg_cycle);
     
-    % Aggregate intermediates (GO-weighted sum)
-    M_agg = M_clean * go_weights';
+    % Aggregate intermediates (simple sum in dollars, analogous to model's magg)
+    M_agg = sum(M_clean, 2);
     log_M_agg = log(M_agg);
     [~, M_agg_cycle] = hpfilter(log_M_agg, hp_lambda);
     sigma_M_agg = std(M_agg_cycle);

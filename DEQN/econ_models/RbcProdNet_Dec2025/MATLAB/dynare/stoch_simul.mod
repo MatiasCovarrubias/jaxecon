@@ -41,4 +41,4 @@ end;
 
 //stoch_simul(order=2, periods=0, irf=0, nocorr, nograph, pruning,nofunctions);
 //stoch_simul(order=2, periods=0, irf=60, replic=100, nocorr, nofunctions) cagg lagg;
-stoch_simul(order=2, periods=0, irf=0, nocorr,nograph, nofunctions) cagg lagg yagg iagg magg;
+stoch_simul(order=2, periods=0, irf=0, ar=1, nocorr, nograph, nofunctions) cagg lagg yagg iagg magg;

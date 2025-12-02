@@ -4,11 +4,33 @@ clearvars -global;
 clc; 
 
 %% Add paths (must be first to access utility functions)
-addpath('calibration');
-addpath('steady_state');
-addpath('dynare');
-addpath('utils');
-addpath('plotting');
+% Use fullfile with mfilename to ensure we use THIS folder's functions, not cached ones
+current_folder = fileparts(mfilename('fullpath'));
+
+% Remove any old RbcProdNet folders from path to avoid loading wrong functions
+old_paths = {'RbcProdNet_Oct2025', 'RbcProdNet_nonlinear', 'RbcProdNet_newcalib'};
+for i = 1:numel(old_paths)
+    paths_to_remove = genpath(fullfile(fileparts(current_folder), old_paths{i}));
+    if ~isempty(paths_to_remove)
+        rmpath(paths_to_remove);
+    end
+end
+
+% Clear cached functions to ensure we use the correct versions
+clear GraphIRs process_sector_irs process_ir_data run_dynare_analysis;
+
+% Add paths with priority (prepend to path)
+addpath(fullfile(current_folder, 'plotting'), '-begin');
+addpath(fullfile(current_folder, 'utils'), '-begin');
+addpath(fullfile(current_folder, 'dynare'), '-begin');
+addpath(fullfile(current_folder, 'steady_state'), '-begin');
+addpath(fullfile(current_folder, 'calibration'), '-begin');
+
+% Verify correct GraphIRs is loaded
+graphirs_path = which('GraphIRs');
+if ~contains(graphirs_path, 'Dec2025')
+    warning('GraphIRs loaded from unexpected path: %s', graphirs_path);
+end
 
 %% Verify required data files exist
 required_files = {'calibration_data.mat', 'TFP_process.mat'};
@@ -282,9 +304,20 @@ if run_any_irs
         
         AllShockResults.DynareResults{shock_idx} = DynareResults;
         
+        % Copy shared data to BaseResults if not already present (from first IRF run)
+        if shock_idx == 1
+            if ~isfield(BaseResults, 'TheoStats') && isfield(DynareResults, 'TheoStats')
+                BaseResults.TheoStats = DynareResults.TheoStats;
+            end
+            if ~isfield(BaseResults, 'Cagg_ss') && isfield(DynareResults, 'Cagg_ss')
+                BaseResults.Cagg_ss = DynareResults.Cagg_ss;
+                BaseResults.Lagg_ss = DynareResults.Lagg_ss;
+            end
+        end
+        
         % Process IRFs for this shock
         ir_opts = struct();
-        ir_opts.plot_graphs = ~config.compute_all_sectors && (shock_idx == 1);
+        ir_opts.plot_graphs = ~config.compute_all_sectors;  % Plot for each shock (not just first)
         ir_opts.save_graphs = config.save_results;
         ir_opts.save_intermediate = config.save_results && config.compute_all_sectors;
         ir_opts.save_interval = 5;
@@ -358,6 +391,11 @@ if isfield(BaseResults, 'steady_state')
     ModelData.Solution.steady_state = BaseResults.steady_state;
 end
 
+% Theoretical statistics (from state-space solution, always available after stoch_simul)
+if isfield(BaseResults, 'TheoStats') && ~isempty(fieldnames(BaseResults.TheoStats))
+    ModelData.Statistics.TheoStats = BaseResults.TheoStats;
+end
+
 % Simulation statistics only (NOT full simulations - those go in ModelData_simulation)
 if isfield(BaseResults, 'SolData') && isfield(BaseResults.SolData, 'shocks_sd')
     ModelData.Statistics.shocks_sd = BaseResults.SolData.shocks_sd;
@@ -415,41 +453,48 @@ if isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin)
     fprintf('    Cagg volatility: %.6f\n', ModelData_simulation.Loglin.Cagg_volatility);
     fprintf('    Lagg volatility: %.6f\n', ModelData_simulation.Loglin.Lagg_volatility);
     
-    % Display Model vs Empirical comparison
+    % Store simulation-based model statistics (for sectoral averages)
     if isfield(BaseResults, 'ModelStats')
         model_stats = BaseResults.ModelStats;
-        emp_tgt = calib_data.empirical_targets;
-        
-        fprintf('\n  ┌─ Model vs Empirical Comparison ───────────────────────────────┐\n');
-        fprintf('  │                                    Model      Empirical  Ratio │\n');
-        fprintf('  │  ── Aggregate volatilities ─────────────────────────────────── │\n');
-        fprintf('  │  σ(Y_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
-            model_stats.sigma_VA_agg, emp_tgt.sigma_VA_agg, ...
-            model_stats.sigma_VA_agg / emp_tgt.sigma_VA_agg);
-        fprintf('  │  σ(L_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
-            model_stats.sigma_L_agg, emp_tgt.sigma_L_agg, ...
-            model_stats.sigma_L_agg / emp_tgt.sigma_L_agg);
-        fprintf('  │  σ(I_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
-            model_stats.sigma_I_agg, emp_tgt.sigma_I_agg, ...
-            model_stats.sigma_I_agg / emp_tgt.sigma_I_agg);
-        fprintf('  │  σ(M_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
-            model_stats.sigma_M_agg, emp_tgt.sigma_M_agg, ...
-            model_stats.sigma_M_agg / emp_tgt.sigma_M_agg);
-        fprintf('  │  ── Average sectoral volatilities ──────────────────────────── │\n');
+        ModelData_simulation.Loglin.ModelStats = model_stats;
+        ModelData.Statistics.Loglin.ModelStats = model_stats;
+    end
+end
+
+% Display Model vs Empirical comparison using THEORETICAL moments
+if isfield(BaseResults, 'TheoStats') && ~isempty(fieldnames(BaseResults.TheoStats))
+    theo_stats = BaseResults.TheoStats;
+    emp_tgt = calib_data.empirical_targets;
+    
+    fprintf('\n  ┌─ Model vs Empirical Comparison ────────────────────────────────┐\n');
+    fprintf('  │                                    Model      Empirical  Ratio │\n');
+    fprintf('  │  ── Aggregate volatilities (theoretical) ─────────────────────  │\n');
+    fprintf('  │  σ(Y_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
+        theo_stats.sigma_VA_agg, emp_tgt.sigma_VA_agg, ...
+        theo_stats.sigma_VA_agg / emp_tgt.sigma_VA_agg);
+    fprintf('  │  σ(I_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
+        theo_stats.sigma_I_agg, emp_tgt.sigma_I_agg, ...
+        theo_stats.sigma_I_agg / emp_tgt.sigma_I_agg);
+    fprintf('  │  σ(M_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
+        theo_stats.sigma_M_agg, emp_tgt.sigma_M_agg, ...
+        theo_stats.sigma_M_agg / emp_tgt.sigma_M_agg);
+    
+    % Labor uses simulation-based headcount (model's lagg is CES, not comparable to data)
+    if isfield(BaseResults, 'ModelStats')
+        model_stats = BaseResults.ModelStats;
+        fprintf('  │  ── Labor aggregate (headcount, from simulation) ─────────────  │\n');
+        fprintf('  │  σ(L_hc):                         %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_L_hc_agg, emp_tgt.sigma_L_agg, ...
+            model_stats.sigma_L_hc_agg / emp_tgt.sigma_L_agg);
+        fprintf('  │  ── Average sectoral volatilities (from simulation) ────────── │\n');
         fprintf('  │  σ(L) avg:                        %6.4f      %6.4f    %5.2f │\n', ...
             model_stats.sigma_L_avg, emp_tgt.sigma_L_avg, ...
             model_stats.sigma_L_avg / emp_tgt.sigma_L_avg);
         fprintf('  │  σ(I) avg:                        %6.4f      %6.4f    %5.2f │\n', ...
             model_stats.sigma_I_avg, emp_tgt.sigma_I_avg, ...
             model_stats.sigma_I_avg / emp_tgt.sigma_I_avg);
-        fprintf('  └────────────────────────────────────────────────────────────────┘\n');
-        
-        % Store model statistics in ModelData_simulation.Loglin
-        ModelData_simulation.Loglin.ModelStats = model_stats;
-        
-        % Also store in ModelData.Statistics for convenience
-        ModelData.Statistics.Loglin.ModelStats = model_stats;
     end
+    fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
 
 % RNG state for reproducibility
@@ -584,11 +629,13 @@ fprintf('\n');
 
 has_solution = isfield(ModelData, 'Solution');
 has_statistics = isfield(ModelData, 'Statistics');
+has_theo_stats = has_statistics && isfield(ModelData.Statistics, 'TheoStats');
 
 fprintf('  ModelData (core):\n');
 fprintf('    • metadata, calibration, params    [always]\n');
 fprintf('    • SteadyState                      [always]\n');
 if has_solution,   fprintf('    ✓ Solution (state-space matrices)\n'); else, fprintf('    ✗ Solution\n'); end
+if has_theo_stats, fprintf('    ✓ TheoStats (theoretical moments from solution)\n'); else, fprintf('    ✗ TheoStats\n'); end
 if has_statistics, fprintf('    ✓ Statistics (policies_sd, volatilities)\n'); else, fprintf('    ✗ Statistics\n'); end
 
 fprintf('\n  ModelData_simulation:\n');

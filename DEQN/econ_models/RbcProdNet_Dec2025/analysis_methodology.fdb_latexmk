@@ -1,6 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1764498293 "/Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet_nonlinear/analysis_methodology.tex" "analysis_methodology.pdf" "analysis_methodology" 1764498293 0
-  "/Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet_nonlinear/analysis_methodology.tex" 1764498292 19555 b56372d45929a384cb154d46a245cb24 ""
+["pdflatex"] 1764669155 "/Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet_Dec2025/analysis_methodology.tex" "analysis_methodology.pdf" "analysis_methodology" 1764669155 0
+  "/Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet_Dec2025/analysis_methodology.tex" 1764669154 19555 b56372d45929a384cb154d46a245cb24 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/jknappen/ec/tcrm1095.tfm" 1136768653 1536 02c06700a42be0f5a28664c7273f82e7 ""
@@ -107,9 +107,9 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1707159474 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1707159445 7883458 9f66061db12ffb12e606293a811abc0f ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "analysis_methodology.aux" 1764498293 7050 bcd71d86b7fd14db0032bd1a04100b8d "pdflatex"
-  "analysis_methodology.out" 1764498293 7960 4fd3ce3afe20d68732c890da9c16ae64 "pdflatex"
-  "analysis_methodology.tex" 1764498292 19555 b56372d45929a384cb154d46a245cb24 ""
+  "analysis_methodology.aux" 1764669155 7050 bcd71d86b7fd14db0032bd1a04100b8d "pdflatex"
+  "analysis_methodology.out" 1764669155 7960 4fd3ce3afe20d68732c890da9c16ae64 "pdflatex"
+  "analysis_methodology.tex" 1764669154 19555 b56372d45929a384cb154d46a245cb24 ""
   (generated)
   "analysis_methodology.aux"
   "analysis_methodology.log"

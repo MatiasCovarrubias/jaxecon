@@ -40,7 +40,7 @@ var
     @#for j in 1:n_sectors
         y_@{j}
     @#endfor
-    cagg lagg yagg iagg magg V Vc
+    cagg lagg yagg iagg magg
     ;
 
 predetermined_variables 
@@ -179,8 +179,6 @@ exp(magg) = (
         @#endfor
         );
 
-V=(1/(1-eps_c^(-1)))*(exp(cagg)-theta*(1/(1+eps_l^(-1)))*exp(lagg)^(1+eps_l^(-1)))^(1-eps_c^(-1))+beta*V(+1);
-Vc = (1/Cagg_ss)*(( V*(1-beta)*(1-eps_c^(-1)) )^(1/(1-eps_c^(-1)))+theta*(1/(1+eps_l^(-1)))*Lagg_ss^(1+eps_l^(-1)))  - 1;
 end;
 
 

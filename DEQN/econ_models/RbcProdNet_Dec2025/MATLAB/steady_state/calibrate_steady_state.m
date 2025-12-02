@@ -89,7 +89,7 @@ params.mu = params.vash_data;
 params.Gamma_M = params.ionet_data;
 params.Gamma_I = params.invnet_data;
 
-% Load initial guess
+% Load initial guess (11*n + 2 variables: policies + Cagg + Lagg)
 if exist(opts.sol_guess_file, 'file')
     loaded = load(opts.sol_guess_file);
     if isfield(loaded, 'sol_init')

@@ -112,7 +112,6 @@ Qdef_loss = Q./ Qdef - 1;
 Ydef_loss = Y./ Ydef - 1;
 Caggdef_loss = Cagg/Caggdef - 1;
 Laggdef_loss = Lagg/Laggdef - 1;
-%norm_loss = Cagg/1-1;
 
 % Moments matching equations
 xi_loss = cons_share./consshare_data-1;
@@ -139,7 +138,6 @@ fx(9*n_sectors+1:10*n_sectors) = Qdef_loss;
 fx(10*n_sectors+1:11*n_sectors) = Ydef_loss;
 fx(11*n_sectors+1) = Caggdef_loss;
 fx(11*n_sectors+2) = Laggdef_loss;
-%fx(11*n_sectors+3) = norm_loss;
 fx(11*n_sectors+3:12*n_sectors+2) = xi_loss;
 fx(12*n_sectors+3:13*n_sectors+2) = mu_loss;
 fx(13*n_sectors+3:14*n_sectors+2) = alpha_loss;

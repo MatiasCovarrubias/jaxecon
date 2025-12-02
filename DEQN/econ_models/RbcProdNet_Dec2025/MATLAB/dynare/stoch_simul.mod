@@ -23,8 +23,6 @@ lagg = policies_ss(11*parn_sectors+2);
 yagg = policies_ss(11*parn_sectors+3);
 iagg = policies_ss(11*parn_sectors+4);
 magg = policies_ss(11*parn_sectors+5);
-V = V_ss;
-Vc = 0;
         
 end;
 
@@ -42,5 +40,5 @@ shocks;
 end;
 
 //stoch_simul(order=2, periods=0, irf=0, nocorr, nograph, pruning,nofunctions);
-//stoch_simul(order=2, periods=0, irf=60, replic=100, nocorr, nofunctions) cagg lagg V;
-stoch_simul(order=2, periods=0, irf=0, nocorr,nograph, nofunctions) cagg lagg yagg iagg magg V;
+//stoch_simul(order=2, periods=0, irf=60, replic=100, nocorr, nofunctions) cagg lagg;
+stoch_simul(order=2, periods=0, irf=0, nocorr,nograph, nofunctions) cagg lagg yagg iagg magg;

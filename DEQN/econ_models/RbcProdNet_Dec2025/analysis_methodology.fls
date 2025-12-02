@@ -1,8 +1,8 @@
-PWD /Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet_nonlinear
+PWD /Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet_Dec2025
 INPUT /usr/local/texlive/2023/texmf.cnf
 INPUT /usr/local/texlive/2023/texmf-dist/web2c/texmf.cnf
 INPUT /usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt
-INPUT /Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet_nonlinear/analysis_methodology.tex
+INPUT /Users/matiascovarrubias/jaxecon/DEQN/econ_models/RbcProdNet_Dec2025/analysis_methodology.tex
 OUTPUT analysis_methodology.log
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/article.cls
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/article.cls

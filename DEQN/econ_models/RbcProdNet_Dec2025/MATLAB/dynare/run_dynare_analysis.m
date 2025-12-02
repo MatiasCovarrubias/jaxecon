@@ -75,9 +75,9 @@ end
 
 policies_ss = ModData.policies_ss;
 k_ss = ModData.endostates_ss;
-V_ss = ModData.V_ss;
-Cagg_ss = exp(policies_ss(11*n_sectors+1));
-Lagg_ss = exp(policies_ss(11*n_sectors+2));
+idx = get_variable_indices(n_sectors);
+Cagg_ss = exp(policies_ss(idx.cagg - idx.ss_offset));
+Lagg_ss = exp(policies_ss(idx.lagg - idx.ss_offset));
 
 % Extract parameters and assign to base workspace for Dynare
 params_vars = struct2cell(ModData.parameters);
@@ -93,7 +93,7 @@ ax = 0:N-1;
 % Get the path to the dynare folder
 [dynare_folder, ~, ~] = fileparts(mfilename('fullpath'));
 modstruct_path = fullfile(dynare_folder, 'ModStruct_temp.mat');
-save(modstruct_path, 'par*', 'policies_ss', 'k_ss', 'V_ss', 'N', 'ax', '-regexp', '^par');
+save(modstruct_path, 'par*', 'policies_ss', 'k_ss', 'N', 'ax', '-regexp', '^par');
 
 % Also save params struct to base workspace for later use
 assignin('base', 'params', params);
@@ -207,12 +207,12 @@ if opts.run_loglin_simul
     SolData.shockssim = shockssim;
     
     % Compute simulation statistics
-    varlev = exp(dynare_simul_loglin(1:13*n_sectors+5,:));
+    varlev = exp(dynare_simul_loglin(1:idx.n_dynare,:));
     variables_var = var(dynare_simul_loglin, 0, 2);
     
     shocks_sd = sqrt(var(shockssim, 0, 1)).';
-    states_sd = sqrt(variables_var(1:2*n_sectors));
-    policies_sd = sqrt(variables_var(2*n_sectors+1:13*n_sectors+5));
+    states_sd = sqrt(variables_var(1:idx.n_states));
+    policies_sd = sqrt(variables_var(idx.n_states+1:idx.n_dynare));
     
     SolData.shocks_sd = shocks_sd;
     SolData.states_sd = states_sd;
@@ -225,6 +225,17 @@ if opts.run_loglin_simul
     
     Results.SolData = SolData;
     Results.SimulLoglin = dynare_simul_loglin;
+    
+    % Compute model statistics (comparable to HP-filtered empirical targets)
+    ModelStats = compute_model_statistics(dynare_simul_loglin, idx, policies_ss, n_sectors);
+    Results.ModelStats = ModelStats;
+    
+    if opts.verbose
+        fprintf('\n     Model Statistics (log-linear simulation):\n');
+        fprintf('       σ(Y_agg):  %.4f\n', ModelStats.sigma_VA_agg);
+        fprintf('       σ(L) avg:  %.4f\n', ModelStats.sigma_L_avg);
+        fprintf('       σ(I) avg:  %.4f\n', ModelStats.sigma_I_avg);
+    end
 end
 
 %% 3. Log-Linear Impulse Responses
@@ -236,8 +247,8 @@ if opts.run_loglin_irs
     tic;
     IRSLoglin_all = cell(numel(opts.sector_indices), 1);
     
-    for idx = 1:numel(opts.sector_indices)
-        sector_idx = opts.sector_indices(idx);
+    for ii = 1:numel(opts.sector_indices)
+        sector_idx = opts.sector_indices(ii);
         
         % Set shock in initial TFP
         steady_state_shocked = oo_.steady_state;
@@ -249,7 +260,7 @@ if opts.run_loglin_irs
         % Simulate
         dynare_simul = simult_(M_, options_, steady_state_shocked, oo_.dr, shockssim_ir, opts.modorder);
         
-        IRSLoglin_all{idx} = dynare_simul;
+        IRSLoglin_all{ii} = dynare_simul;
         
         if opts.verbose
             fprintf('     • Sector %d\n', sector_idx);
@@ -274,8 +285,8 @@ if opts.run_determ_irs
     tic;
     IRSDeterm_all = cell(numel(opts.sector_indices), 1);
     
-    for idx = 1:numel(opts.sector_indices)
-        sector_idx = opts.sector_indices(idx);
+    for ii = 1:numel(opts.sector_indices)
+        sector_idx = opts.sector_indices(ii);
         
         % Set initial shock
         shocksim_0 = zeros([n_sectors, 1]);
@@ -303,7 +314,7 @@ if opts.run_determ_irs
         Simulated_time_series = evalin('base', 'Simulated_time_series');
         dynare_simul = Simulated_time_series.data';
         
-        IRSDeterm_all{idx} = dynare_simul;
+        IRSDeterm_all{ii} = dynare_simul;
         
         if opts.verbose
             fprintf('     • Sector %d\n', sector_idx);
@@ -492,5 +503,99 @@ function SolData = extract_state_space(oo_, M_, n_sectors, policies_ss)
         'i', i_ind, 'iout', iout_ind, 'p', p_ind, 'q', q_ind, 'y', y_ind, ...
         'cagg', cagg_ind, 'lagg', lagg_ind, 'yagg', yagg_ind, ...
         'iagg', iagg_ind, 'magg', magg_ind);
+end
+
+function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n_sectors)
+% COMPUTE_MODEL_STATISTICS Compute business cycle statistics from Dynare simulation
+%
+% Dynare simulation output is in log-deviations from steady state.
+% These are directly comparable to HP-filtered empirical data 
+% (both represent cyclical components around trend/steady state).
+%
+% INPUTS:
+%   dynare_simul - Simulation output (n_vars x T), in log deviations
+%   idx          - Variable indices structure from get_variable_indices
+%   policies_ss  - Steady state policies (for computing VA weights)
+%   n_sectors    - Number of sectors
+%
+% OUTPUTS:
+%   ModelStats - Structure with:
+%     - sigma_VA_agg: Aggregate GDP volatility
+%     - sigma_L_avg: VA-weighted avg sectoral labor volatility
+%     - sigma_I_avg: VA-weighted avg sectoral investment volatility
+%     - rho_VA_agg: Aggregate GDP autocorrelation
+%     - avg_pairwise_corr_VA: Average pairwise correlation of sectoral VA
+
+    % Extract simulated series (log deviations from SS)
+    y_simul = dynare_simul(idx.y(1):idx.y(2), :);      % Sectoral VA
+    l_simul = dynare_simul(idx.l(1):idx.l(2), :);      % Sectoral labor
+    i_simul = dynare_simul(idx.i(1):idx.i(2), :);      % Sectoral investment
+    m_simul = dynare_simul(idx.m(1):idx.m(2), :);      % Sectoral intermediates
+    q_simul = dynare_simul(idx.q(1):idx.q(2), :);      % Sectoral gross output
+    yagg_simul = dynare_simul(idx.yagg, :);            % Aggregate GDP
+    lagg_simul = dynare_simul(idx.lagg, :);            % Aggregate labor
+    iagg_simul = dynare_simul(idx.iagg, :);            % Aggregate investment
+    magg_simul = dynare_simul(idx.magg, :);            % Aggregate intermediates
+    
+    % Compute VA-based weights from steady state
+    % policies_ss index = Dynare index - ss_offset
+    y_ss_idx = (idx.y(1):idx.y(2)) - idx.ss_offset;
+    y_ss_log = policies_ss(y_ss_idx);
+    y_ss = exp(y_ss_log);
+    va_weights = y_ss' / sum(y_ss);
+    
+    % Compute GO-based weights from steady state (Q = gross output)
+    q_ss_idx = (idx.q(1):idx.q(2)) - idx.ss_offset;
+    q_ss_log = policies_ss(q_ss_idx);
+    q_ss = exp(q_ss_log);
+    go_weights = q_ss' / sum(q_ss);
+    
+    %% ===== AGGREGATE VOLATILITIES (from Dynare aggregate variables) =====
+    sigma_VA_agg = std(yagg_simul);
+    sigma_L_agg = std(lagg_simul);
+    sigma_I_agg = std(iagg_simul);
+    sigma_M_agg = std(magg_simul);
+    
+    % Aggregate GDP autocorrelation
+    rho_VA_agg = corr(yagg_simul(1:end-1)', yagg_simul(2:end)');
+    
+    %% ===== SECTORAL STATISTICS =====
+    % Sectoral VA pairwise correlations
+    corr_matrix_VA = corr(y_simul');
+    upper_tri_idx = triu(true(n_sectors), 1);
+    pairwise_corrs = corr_matrix_VA(upper_tri_idx);
+    avg_pairwise_corr_VA = mean(pairwise_corrs);
+    
+    % Sectoral labor volatility (VA-weighted average)
+    sigma_L_sectoral = std(l_simul, 0, 2)';
+    sigma_L_avg = sum(va_weights .* sigma_L_sectoral);
+    
+    % Sectoral investment volatility (VA-weighted average)
+    sigma_I_sectoral = std(i_simul, 0, 2)';
+    sigma_I_avg = sum(va_weights .* sigma_I_sectoral);
+    
+    %% Store results
+    ModelStats = struct();
+    
+    % Aggregate volatilities
+    ModelStats.sigma_VA_agg = sigma_VA_agg;
+    ModelStats.sigma_L_agg = sigma_L_agg;
+    ModelStats.sigma_I_agg = sigma_I_agg;
+    ModelStats.sigma_M_agg = sigma_M_agg;
+    
+    % Other aggregate moments
+    ModelStats.rho_VA_agg = rho_VA_agg;
+    ModelStats.avg_pairwise_corr_VA = avg_pairwise_corr_VA;
+    
+    % Sectoral moments (VA-weighted averages)
+    ModelStats.sigma_L_avg = sigma_L_avg;
+    ModelStats.sigma_I_avg = sigma_I_avg;
+    
+    % Full distributions (for diagnostics)
+    ModelStats.sigma_L_sectoral = sigma_L_sectoral;
+    ModelStats.sigma_I_sectoral = sigma_I_sectoral;
+    ModelStats.corr_matrix_VA = corr_matrix_VA;
+    ModelStats.va_weights = va_weights;
+    ModelStats.go_weights = go_weights;
 end
 

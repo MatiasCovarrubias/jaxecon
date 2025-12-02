@@ -84,7 +84,6 @@ Qdef_loss = Q./ Qdef - 1;
 Ydef_loss = Y./ Ydef - 1;
 Caggdef_loss = Cagg/Caggdef - 1;
 Laggdef_loss = Lagg/Laggdef - 1;
-%norm_loss    = Cagg/1 - 1;
 
 
 fx = zeros(11*n_sectors+2,1);
@@ -101,7 +100,6 @@ fx(9*n_sectors+1:10*n_sectors) = Qdef_loss;
 fx(10*n_sectors+1:11*n_sectors) = Ydef_loss;
 fx(11*n_sectors+1) = Caggdef_loss;
 fx(11*n_sectors+2) = Laggdef_loss;
-%fx(11*n_sectors+3) = norm_loss;
 
 
 %% Print Section %%

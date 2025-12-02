@@ -246,12 +246,8 @@ end
 %% ==================== Panel Plotting Functions ====================
 
 function plot_aggregate_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off)
-    n_cols = 3;
+    n_cols = 2;
     n_rows = 2;
-    if n_series == 2
-        n_cols = 2;
-        n_rows = 2;
-    end
     
     subplot(n_rows, n_cols, 1);
     plot_subplot_multi(ax, 1, d1, d2, d3, 1, N, padding, specs, 0);
@@ -267,14 +263,8 @@ function plot_aggregate_panel(ax, N, d1, d2, d3, n_series, padding, specs, legen
     title('$L$', 'Interpreter', 'latex', 'Fontsize', 12);
     
     subplot(n_rows, n_cols, 4);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 4, N, padding, specs, t_off);
-    title('$Vc$', 'Interpreter', 'latex', 'Fontsize', 12);
-    
-    if n_series == 1
-        subplot(n_rows, n_cols, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 25, N, padding, specs, t_off);
-        title('$Y$', 'Interpreter', 'latex', 'Fontsize', 12);
-    end
+    plot_subplot_multi(ax, 0, d1, d2, d3, 24, N, padding, specs, t_off);
+    title('$Y$', 'Interpreter', 'latex', 'Fontsize', 12);
 end
 
 function plot_sector_inputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off)
@@ -284,19 +274,19 @@ function plot_sector_inputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, l
     legend(legend_entries, 'Location', 'southeast');
     
     subplot(2, 3, 2);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 9, N, padding, specs, t_off);
+    plot_subplot_multi(ax, 0, d1, d2, d3, 8, N, padding, specs, t_off);
     title('$L_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     
     subplot(2, 3, 3);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 10, N, padding, specs, t_off);
+    plot_subplot_multi(ax, 0, d1, d2, d3, 9, N, padding, specs, t_off);
     title('$I_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     
     subplot(2, 3, 4);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 11, N, padding, specs, t_off);
+    plot_subplot_multi(ax, 0, d1, d2, d3, 10, N, padding, specs, t_off);
     title('$M_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     
     subplot(2, 3, 5);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 12, N, padding, specs, t_off);
+    plot_subplot_multi(ax, 0, d1, d2, d3, 11, N, padding, specs, t_off);
     title('$Y_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
 end
 
@@ -308,46 +298,46 @@ function plot_sector_outputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, 
     
     subplot(2, 3, 2);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 6, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 5, N, padding, specs, t_off);
         title('$P_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 5, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 4, N, padding, specs, t_off);
         title('$C_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     end
     
     subplot(2, 3, 3);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 13, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 12, N, padding, specs, t_off);
         title('$Q_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 6, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 5, N, padding, specs, t_off);
         title('$P_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     end
     
     subplot(2, 3, 4);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 5, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 4, N, padding, specs, t_off);
         title('$C_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 8, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 7, N, padding, specs, t_off);
         title('$M^{out}_j$', 'Interpreter', 'latex', 'Fontsize', 12);
     end
     
     subplot(2, 3, 5);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 8, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 7, N, padding, specs, t_off);
         title('$M^{out}_j$', 'Interpreter', 'latex', 'Fontsize', 12);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 7, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 6, N, padding, specs, t_off);
         title('$I^{out}_j$', 'Interpreter', 'latex', 'Fontsize', 12);
     end
     
     subplot(2, 3, 6);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 7, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 6, N, padding, specs, t_off);
         title('$I^{out}_j$', 'Interpreter', 'latex', 'Fontsize', 12);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 13, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 12, N, padding, specs, t_off);
         title('$Q_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
     end
 end
@@ -355,49 +345,49 @@ end
 function plot_client_inputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off)
     if n_series < 3
         subplot(2, 3, 1);
-        plot_subplot_multi(ax, 1, d1, d2, d3, 14, N, padding, specs, 0);
+        plot_subplot_multi(ax, 1, d1, d2, d3, 13, N, padding, specs, 0);
         title('$A_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         legend(legend_entries, 'Location', 'southeast');
         
         subplot(2, 3, 2);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 19, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 18, N, padding, specs, t_off);
         title('$L_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 3);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 20, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 19, N, padding, specs, t_off);
         title('$I_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 4);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 21, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 20, N, padding, specs, t_off);
         title('$M_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 22, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 21, N, padding, specs, t_off);
         title('$Y_j$', 'Interpreter', 'latex', 'Fontsize', 12);
     else
         subplot(2, 3, 1);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 19, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 18, N, padding, specs, t_off);
         title('$L_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 2);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 20, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 19, N, padding, specs, t_off);
         title('$I_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 3);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 21, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 20, N, padding, specs, t_off);
         title('$M_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         legend(legend_entries, 'Location', 'southeast');
         
         subplot(2, 3, 4);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 22, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 21, N, padding, specs, t_off);
         title('$Y_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 26, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 25, N, padding, specs, t_off);
         title('$P^m_{j}$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 6);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 27, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 26, N, padding, specs, t_off);
         title('$\hat{\gamma}_{ij}$ (Expend. Share)', 'Interpreter', 'latex', 'Fontsize', 12);
     end
 end
@@ -405,49 +395,49 @@ end
 function plot_client_outputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off)
     if n_series < 3
         subplot(2, 3, 1);
-        plot_subplot_multi(ax, 1, d1, d2, d3, 14, N, padding, specs, 0);
+        plot_subplot_multi(ax, 1, d1, d2, d3, 13, N, padding, specs, 0);
         title('$A_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         legend(legend_entries, 'Location', 'southeast');
         
         subplot(2, 3, 2);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 15, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 14, N, padding, specs, t_off);
         title('$C_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 3);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 16, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 15, N, padding, specs, t_off);
         title('$P_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 4);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 18, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 17, N, padding, specs, t_off);
         title('$M^{out}_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 17, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 16, N, padding, specs, t_off);
         title('$I^{out}_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 6);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 23, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 22, N, padding, specs, t_off);
         title('$Q_j$', 'Interpreter', 'latex', 'Fontsize', 12);
     else
         subplot(2, 3, 1);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 16, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 15, N, padding, specs, t_off);
         title('$P_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 2);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 23, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 22, N, padding, specs, t_off);
         title('$Q_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 3);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 15, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 14, N, padding, specs, t_off);
         title('$C_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         legend(legend_entries, 'Location', 'southeast');
         
         subplot(2, 3, 4);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 18, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 17, N, padding, specs, t_off);
         title('$M^{out}_j$', 'Interpreter', 'latex', 'Fontsize', 12);
         
         subplot(2, 3, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 17, N, padding, specs, t_off);
+        plot_subplot_multi(ax, 0, d1, d2, d3, 16, N, padding, specs, t_off);
         title('$I^{out}_j$', 'Interpreter', 'latex', 'Fontsize', 12);
     end
 end

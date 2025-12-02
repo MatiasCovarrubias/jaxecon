@@ -110,6 +110,18 @@ params.phi = 4;
 labels = calib_data.labels;
 fprintf('\n  ✓ Calibration data loaded\n');
 
+% Display empirical targets
+emp_tgt = calib_data.empirical_targets;
+fprintf('\n  Empirical Targets (HP-filtered, λ=%d):\n', emp_tgt.hp_lambda);
+fprintf('    ── Aggregate volatilities ──\n');
+fprintf('    σ(Y_agg):         %.4f   (aggregate GDP)\n', emp_tgt.sigma_VA_agg);
+fprintf('    σ(L_agg):         %.4f   (aggregate labor, VA-weighted)\n', emp_tgt.sigma_L_agg);
+fprintf('    σ(I_agg):         %.4f   (aggregate investment, VA-weighted)\n', emp_tgt.sigma_I_agg);
+fprintf('    σ(M_agg):         %.4f   (aggregate intermediates, GO-weighted)\n', emp_tgt.sigma_M_agg);
+fprintf('    ── Average sectoral volatilities ──\n');
+fprintf('    σ(L) avg:         %.4f   (VA-weighted avg of sectoral labor vol)\n', emp_tgt.sigma_L_avg);
+fprintf('    σ(I) avg:         %.4f   (VA-weighted avg of sectoral investment vol)\n', emp_tgt.sigma_I_avg);
+
 %% Steady State Calibration
 fprintf('\n');
 fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
@@ -320,6 +332,9 @@ ModelData.metadata.shock_values = shock_values_meta;
 ModelData.calibration = calib_data;
 ModelData.params = params;
 
+% Empirical targets (always available, independent of simulation)
+ModelData.EmpiricalTargets = calib_data.empirical_targets;
+
 % Steady State (always available from ModData)
 ModelData.SteadyState.parameters = ModData.parameters;
 ModelData.SteadyState.policies_ss = ModData.policies_ss;
@@ -399,6 +414,42 @@ if isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin)
         size(BaseResults.SimulLoglin, 1), size(BaseResults.SimulLoglin, 2));
     fprintf('    Cagg volatility: %.6f\n', ModelData_simulation.Loglin.Cagg_volatility);
     fprintf('    Lagg volatility: %.6f\n', ModelData_simulation.Loglin.Lagg_volatility);
+    
+    % Display Model vs Empirical comparison
+    if isfield(BaseResults, 'ModelStats')
+        model_stats = BaseResults.ModelStats;
+        emp_tgt = calib_data.empirical_targets;
+        
+        fprintf('\n  ┌─ Model vs Empirical Comparison ───────────────────────────────┐\n');
+        fprintf('  │                                    Model      Empirical  Ratio │\n');
+        fprintf('  │  ── Aggregate volatilities ─────────────────────────────────── │\n');
+        fprintf('  │  σ(Y_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_VA_agg, emp_tgt.sigma_VA_agg, ...
+            model_stats.sigma_VA_agg / emp_tgt.sigma_VA_agg);
+        fprintf('  │  σ(L_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_L_agg, emp_tgt.sigma_L_agg, ...
+            model_stats.sigma_L_agg / emp_tgt.sigma_L_agg);
+        fprintf('  │  σ(I_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_I_agg, emp_tgt.sigma_I_agg, ...
+            model_stats.sigma_I_agg / emp_tgt.sigma_I_agg);
+        fprintf('  │  σ(M_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_M_agg, emp_tgt.sigma_M_agg, ...
+            model_stats.sigma_M_agg / emp_tgt.sigma_M_agg);
+        fprintf('  │  ── Average sectoral volatilities ──────────────────────────── │\n');
+        fprintf('  │  σ(L) avg:                        %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_L_avg, emp_tgt.sigma_L_avg, ...
+            model_stats.sigma_L_avg / emp_tgt.sigma_L_avg);
+        fprintf('  │  σ(I) avg:                        %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_I_avg, emp_tgt.sigma_I_avg, ...
+            model_stats.sigma_I_avg / emp_tgt.sigma_I_avg);
+        fprintf('  └────────────────────────────────────────────────────────────────┘\n');
+        
+        % Store model statistics in ModelData_simulation.Loglin
+        ModelData_simulation.Loglin.ModelStats = model_stats;
+        
+        % Also store in ModelData.Statistics for convenience
+        ModelData.Statistics.Loglin.ModelStats = model_stats;
+    end
 end
 
 % RNG state for reproducibility

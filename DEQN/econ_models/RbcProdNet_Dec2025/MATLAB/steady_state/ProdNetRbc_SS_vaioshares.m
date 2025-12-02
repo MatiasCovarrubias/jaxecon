@@ -96,7 +96,6 @@ Qdef_loss = Q./ Qdef - 1;
 Ydef_loss = Y./ Ydef - 1;
 Caggdef_loss = Cagg/Caggdef - 1;
 Laggdef_loss = Lagg/Laggdef - 1;
-%norm_loss = Cagg/1-1;
 % Moments
 mu_loss = va_share(1:n_sectors)./vashare_data(1:n_sectors) - 1;
 Gamma_M_loss = ionet(1:n_sectors-1,:)./ionet_data(1:n_sectors-1,:)-1;
@@ -116,7 +115,6 @@ fx(9*n_sectors+1:10*n_sectors) = Qdef_loss;
 fx(10*n_sectors+1:11*n_sectors) = Ydef_loss;
 fx(11*n_sectors+1) = Caggdef_loss;
 fx(11*n_sectors+2) = Laggdef_loss;
-%fx(11*n_sectors+3) = norm_loss;
 fx(11*n_sectors+3:12*n_sectors+2) = mu_loss;
 fx(12*n_sectors+3:12*n_sectors+2+n_sectors*(n_sectors-1)) = Gamma_M_loss;
 % disp(mu_loss)

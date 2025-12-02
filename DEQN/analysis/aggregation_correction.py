@@ -288,4 +288,3 @@ def _get_variable_indices(n_sectors: int) -> dict:
         "iagg": 13 * n + 3,
         "magg": 13 * n + 4,
     }
-

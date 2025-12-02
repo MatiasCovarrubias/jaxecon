@@ -24,8 +24,6 @@ lagg = policies_ss(11*parn_sectors+2);
 yagg = policies_ss(11*parn_sectors+3);
 iagg = policies_ss(11*parn_sectors+4);
 magg = policies_ss(11*parn_sectors+5);
-V = V_ss;
-Vc = 0;
         
 end;
 
@@ -54,8 +52,6 @@ lagg = policies_ss(11*parn_sectors+2);
 yagg = policies_ss(11*parn_sectors+3);
 iagg = policies_ss(11*parn_sectors+4);
 magg = policies_ss(11*parn_sectors+5);
-V = V_ss;
-Vc = 0;
         
 end;
 

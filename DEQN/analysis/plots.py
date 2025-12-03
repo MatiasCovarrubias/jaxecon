@@ -982,6 +982,211 @@ def plot_sector_ir_by_shock_size(
     return fig, axes
 
 
+def plot_sectoral_capital_stochss(
+    stochastic_ss_states: Dict[str, Any],
+    save_dir: str,
+    analysis_name: str,
+    econ_model: Any,
+    figsize: Tuple[float, float] = (12, 8),
+    display_dpi: int = 100,
+):
+    """
+    Create publication-quality bar graph of sectoral capital at the stochastic steady state.
+
+    This plot shows the sectoral capital distribution at the stochastic steady state,
+    which is where the economy converges when there are no future shocks but starting
+    from the ergodic distribution.
+
+    Parameters:
+    -----------
+    stochastic_ss_states : dict
+        Dictionary mapping experiment labels to stochastic SS states (in logdev form).
+        Each state array has shape (n_states,) where first n_sectors entries are capital.
+    save_dir : str
+        Directory where the figure should be saved
+    analysis_name : str
+        Name of the analysis to include in the filename
+    econ_model : Any
+        Economic model instance (used to get n_sectors and labels)
+    figsize : tuple, optional
+        Figure size (width, height) in inches
+    display_dpi : int, optional
+        DPI for display (default 100). Saved figures always use 300 DPI.
+
+    Returns:
+    --------
+    fig, ax : matplotlib figure and axis objects
+    """
+    n_sectors = econ_model.n_sectors
+    sector_labels = econ_model.labels
+    experiment_names = list(stochastic_ss_states.keys())
+    n_experiments = len(experiment_names)
+
+    # Get sectoral capital for each experiment
+    experiment_capital = {}
+    for exp_name in experiment_names:
+        stoch_ss_state = stochastic_ss_states[exp_name]
+        experiment_capital[exp_name] = stoch_ss_state[:n_sectors]
+
+    # Sort by first experiment's capital values
+    first_exp = experiment_names[0]
+    sorted_indices = np.argsort(experiment_capital[first_exp])[::-1]
+    sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
+
+    x = np.arange(n_sectors)
+    bar_width = 0.8 / n_experiments
+
+    for i, exp_name in enumerate(experiment_names):
+        sorted_capital = experiment_capital[exp_name][sorted_indices]
+        offset = (i - n_experiments / 2 + 0.5) * bar_width
+
+        ax.bar(
+            x + offset,
+            sorted_capital * 100,
+            bar_width,
+            label=exp_name,
+            color=colors[i % len(colors)],
+            alpha=0.9,
+            edgecolor="black",
+            linewidth=0.5,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
+
+    ax.tick_params(axis="both", which="major")
+
+    ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel("Stochastic SS Capital (% Dev. from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_title("Sectoral Capital at Stochastic Steady State", fontweight="bold", fontsize=LARGE_SIZE)
+
+    ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+
+    ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    filename = f"sectoral_capital_stochss_{analysis_name}.png" if analysis_name else "sectoral_capital_stochss.png"
+    save_path = os.path.join(save_dir, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    print(f"    Saved: {filename}")
+    plt.show()
+
+    return fig, ax
+
+
+def plot_sectoral_capital_comparison(
+    simul_obs: Any,
+    stochastic_ss_state: Any,
+    save_dir: str,
+    analysis_name: str,
+    econ_model: Any,
+    experiment_label: str,
+    figsize: Tuple[float, float] = (14, 8),
+    display_dpi: int = 100,
+):
+    """
+    Create publication-quality bar graph comparing ergodic mean vs stochastic SS sectoral capital.
+
+    This plot shows both the average sectoral capital from the ergodic distribution
+    and the sectoral capital at the stochastic steady state side by side.
+
+    Parameters:
+    -----------
+    simul_obs : array
+        Simulation observations array of shape (n_periods, n_obs)
+    stochastic_ss_state : array
+        Stochastic steady state (in logdev form) with shape (n_states,)
+    save_dir : str
+        Directory where the figure should be saved
+    analysis_name : str
+        Name of the analysis to include in the filename
+    econ_model : Any
+        Economic model instance (used to get n_sectors and labels)
+    experiment_label : str
+        Label for the experiment
+    figsize : tuple, optional
+        Figure size (width, height) in inches
+    display_dpi : int, optional
+        DPI for display (default 100). Saved figures always use 300 DPI.
+
+    Returns:
+    --------
+    fig, ax : matplotlib figure and axis objects
+    """
+    n_sectors = econ_model.n_sectors
+    sector_labels = econ_model.labels
+
+    # Get ergodic mean capital
+    ergodic_capital = np.mean(simul_obs, axis=0)[:n_sectors]
+
+    # Get stochastic SS capital
+    stochss_capital = stochastic_ss_state[:n_sectors]
+
+    # Sort by ergodic capital values
+    sorted_indices = np.argsort(ergodic_capital)[::-1]
+    sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
+    sorted_ergodic = ergodic_capital[sorted_indices]
+    sorted_stochss = stochss_capital[sorted_indices]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
+
+    x = np.arange(n_sectors)
+    bar_width = 0.35
+
+    ax.bar(
+        x - bar_width / 2,
+        sorted_ergodic * 100,
+        bar_width,
+        label="Ergodic Mean",
+        color=colors[0],
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.5,
+    )
+
+    ax.bar(
+        x + bar_width / 2,
+        sorted_stochss * 100,
+        bar_width,
+        label="Stochastic SS",
+        color=colors[1],
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.5,
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
+
+    ax.tick_params(axis="both", which="major")
+
+    ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel("Capital (% Deviations from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_title(f"Sectoral Capital: Ergodic Mean vs Stochastic SS ({experiment_label})", fontweight="bold", fontsize=LARGE_SIZE)
+
+    ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+
+    ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    safe_label = experiment_label.replace(" ", "_").replace(".", "").replace("/", "_")
+    filename = f"sectoral_capital_comparison_{safe_label}_{analysis_name}.png" if analysis_name else f"sectoral_capital_comparison_{safe_label}.png"
+    save_path = os.path.join(save_dir, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    print(f"    Saved: {filename}")
+    plt.show()
+
+    return fig, ax
+
+
 def plot_gir_heatmap(
     gir_data: Dict[str, Any],
     aggregate_idx: int = 0,

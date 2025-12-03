@@ -82,6 +82,8 @@ from DEQN.analysis.matlab_irs import load_matlab_irs  # noqa: E402
 from DEQN.analysis.plots import (  # noqa: E402
     plot_ergodic_histograms,
     plot_sector_ir_by_shock_size,
+    plot_sectoral_capital_comparison,
+    plot_sectoral_capital_stochss,
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
@@ -165,10 +167,6 @@ Model = model_module.Model
 # Import model-specific plots module and registry
 plots_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.plots")
 MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", [])
-
-# Import stochastic SS capital plot functions (if available)
-plot_sectoral_capital_stochss = getattr(plots_module, "plot_sectoral_capital_stochss", None)
-plot_sectoral_capital_comparison = getattr(plots_module, "plot_sectoral_capital_comparison", None)
 
 
 # ============================================================================
@@ -632,7 +630,7 @@ def main():
     print("\nGenerating stochastic steady state plots...", flush=True)
 
     # Plot stochastic SS sectoral capital distribution (comparison across experiments)
-    if plot_sectoral_capital_stochss is not None and stochastic_ss_states:
+    if stochastic_ss_states:
         try:
             plot_sectoral_capital_stochss(
                 stochastic_ss_states=stochastic_ss_states,
@@ -643,25 +641,22 @@ def main():
             print("  ✓ Stochastic SS sectoral capital plot generated", flush=True)
         except Exception as e:
             print(f"  ✗ Failed to create stochastic SS capital plot: {e}", flush=True)
-    else:
-        print("  - Stochastic SS capital plot not available", flush=True)
 
     # Plot comparison of ergodic mean vs stochastic SS for each experiment
-    if plot_sectoral_capital_comparison is not None:
-        for experiment_label, sim_data in raw_simulation_data.items():
-            if experiment_label in stochastic_ss_states:
-                try:
-                    plot_sectoral_capital_comparison(
-                        simul_obs=sim_data["simul_obs"],
-                        stochastic_ss_state=stochastic_ss_states[experiment_label],
-                        save_dir=simulation_dir,
-                        analysis_name=config["analysis_name"],
-                        econ_model=econ_model,
-                        experiment_label=experiment_label,
-                    )
-                    print(f"  ✓ Capital comparison plot for {experiment_label}", flush=True)
-                except Exception as e:
-                    print(f"  ✗ Failed to create capital comparison for {experiment_label}: {e}", flush=True)
+    for experiment_label, sim_data in raw_simulation_data.items():
+        if experiment_label in stochastic_ss_states:
+            try:
+                plot_sectoral_capital_comparison(
+                    simul_obs=sim_data["simul_obs"],
+                    stochastic_ss_state=stochastic_ss_states[experiment_label],
+                    save_dir=simulation_dir,
+                    analysis_name=config["analysis_name"],
+                    econ_model=econ_model,
+                    experiment_label=experiment_label,
+                )
+                print(f"  ✓ Capital comparison plot for {experiment_label}", flush=True)
+            except Exception as e:
+                print(f"  ✗ Failed to create capital comparison for {experiment_label}: {e}", flush=True)
 
     print("Analysis completed successfully.", flush=True)
 

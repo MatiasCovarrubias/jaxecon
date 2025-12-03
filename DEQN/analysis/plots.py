@@ -879,45 +879,45 @@ def plot_sector_ir_by_shock_size(
             if state_name and state_name in gir_data[exp_name]:
                 state_gir_data = gir_data[exp_name][state_name]
 
-                # Plot GIR (averaged over ergodic distribution)
-                if pos_key in state_gir_data:
-                    gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
-                    if variable_to_plot in gir_vars_pos:
-                        response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
-                        label = f"GIR ({exp_name})" if j == 0 else None
-                        ax.plot(
-                            time_periods[: len(response_pos)],
-                            response_pos,
-                            color=colors[k % len(colors)],
-                            linewidth=2.5,
-                            alpha=0.9,
-                            label=label,
-                        )
+                # GIR plotting (averaged over ergodic distribution) - currently disabled
+                # To re-enable, uncomment the following block:
+                # if pos_key in state_gir_data:
+                #     gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
+                #     if variable_to_plot in gir_vars_pos:
+                #         response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
+                #         label = f"GIR ({exp_name})" if j == 0 else None
+                #         ax.plot(
+                #             time_periods[: len(response_pos)],
+                #             response_pos,
+                #             color=colors[k % len(colors)],
+                #             linewidth=2.5,
+                #             alpha=0.9,
+                #             label=label,
+                #         )
+                #
+                # if neg_key in state_gir_data:
+                #     gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
+                #     if variable_to_plot in gir_vars_neg:
+                #         response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
+                #         ax.plot(
+                #             time_periods[: len(response_neg)],
+                #             response_neg,
+                #             color=colors[k % len(colors)],
+                #             linewidth=2.5,
+                #             alpha=0.9,
+                #         )
 
-                if neg_key in state_gir_data:
-                    gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
-                    if variable_to_plot in gir_vars_neg:
-                        response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
-                        ax.plot(
-                            time_periods[: len(response_neg)],
-                            response_neg,
-                            color=colors[k % len(colors)],
-                            linewidth=2.5,
-                            alpha=0.9,
-                        )
-
-                # Plot IR from stochastic steady state (if available)
+                # Plot IR from stochastic steady state (primary IR method)
                 if pos_stochss_key in state_gir_data:
                     gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_pos_stochss:
                         response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
-                        label_stochss = f"IR from Stoch SS ({exp_name})" if j == 0 else None
+                        label_stochss = f"Nonlinear ({exp_name})" if j == 0 else None
                         ax.plot(
                             time_periods[: len(response_pos_stochss)],
                             response_pos_stochss,
-                            color=colors[(k + 5) % len(colors)],
-                            linewidth=2.0,
-                            linestyle=":",
+                            color=colors[k % len(colors)],
+                            linewidth=2.5,
                             alpha=0.9,
                             label=label_stochss,
                         )
@@ -929,9 +929,8 @@ def plot_sector_ir_by_shock_size(
                         ax.plot(
                             time_periods[: len(response_neg_stochss)],
                             response_neg_stochss,
-                            color=colors[(k + 5) % len(colors)],
-                            linewidth=2.0,
-                            linestyle=":",
+                            color=colors[k % len(colors)],
+                            linewidth=2.5,
                             alpha=0.9,
                         )
 

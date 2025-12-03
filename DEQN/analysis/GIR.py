@@ -327,8 +327,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
         gir_results = {}
 
-        # Calculate total computations (2 for pos/neg, optionally x2 for stoch SS)
-        n_ir_types = 2 if not compute_stochss_irs else 4
+        # Calculate total computations (2 for pos/neg shocks from stoch SS only)
+        # GIR computation is currently disabled
+        n_ir_types = 2 if compute_stochss_irs else 0
         total_computations = len(states_to_shock) * len(ir_shock_sizes) * n_ir_types
         current_computation = 0
 
@@ -341,39 +342,42 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
             gir_results[state_name] = {"state_idx": state_idx}
 
-            # Compute GIR for each shock size and sign
+            # Compute IR for each shock size and sign
             for shock_size_pct in ir_shock_sizes:
                 shock_size = shock_size_pct / 100.0  # Convert percentage to fraction
 
                 for shock_sign in ["pos", "neg"]:
-                    current_computation += 1
                     sector_idx = state_idx - econ_model.n_sectors
-                    print(
-                        f"      GIR [{current_computation}/{total_computations}]: "
-                        f"TFP sector {sector_idx} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
-                        flush=True,
-                    )
 
-                    gir_analysis_vars_array = compute_state_GIR(
-                        simul_obs,
-                        train_state,
-                        state_idx,
-                        P_weights,
-                        Pk_weights,
-                        Pm_weights,
-                        var_labels,
-                        shock_size,
-                        shock_sign,
-                    )
-
-                    # Convert array back to dictionary format
-                    gir_analysis_vars_dict = {
-                        label: gir_analysis_vars_array[:, i] for i, label in enumerate(var_labels)
-                    }
-
-                    # Store with key like "pos_5", "neg_10", etc.
-                    key = f"{shock_sign}_{shock_size_pct}"
-                    gir_results[state_name][key] = {"gir_analysis_variables": gir_analysis_vars_dict}
+                    # GIR computation (averaged over ergodic distribution) - currently disabled
+                    # To re-enable, uncomment the following block:
+                    # current_computation += 1
+                    # print(
+                    #     f"      GIR [{current_computation}/{total_computations}]: "
+                    #     f"TFP sector {sector_idx} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
+                    #     flush=True,
+                    # )
+                    #
+                    # gir_analysis_vars_array = compute_state_GIR(
+                    #     simul_obs,
+                    #     train_state,
+                    #     state_idx,
+                    #     P_weights,
+                    #     Pk_weights,
+                    #     Pm_weights,
+                    #     var_labels,
+                    #     shock_size,
+                    #     shock_sign,
+                    # )
+                    #
+                    # # Convert array back to dictionary format
+                    # gir_analysis_vars_dict = {
+                    #     label: gir_analysis_vars_array[:, i] for i, label in enumerate(var_labels)
+                    # }
+                    #
+                    # # Store with key like "pos_5", "neg_10", etc.
+                    # key = f"{shock_sign}_{shock_size_pct}"
+                    # gir_results[state_name][key] = {"gir_analysis_variables": gir_analysis_vars_dict}
                     
                     # Compute IR from stochastic steady state if provided
                     if compute_stochss_irs:

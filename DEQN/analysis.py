@@ -318,7 +318,7 @@ def main():
     states_to_shock = [n_sectors + sector_idx for sector_idx in ir_sectors]
 
     config["states_to_shock"] = states_to_shock
-    print(f"GIR: Shocking TFP for sectors {ir_sectors} (state indices: {states_to_shock})", flush=True)
+    print(f"IR: Shocking TFP for sectors {ir_sectors} (state indices: {states_to_shock})", flush=True)
 
     # Create analysis functions
     print("Creating analysis functions...", flush=True)

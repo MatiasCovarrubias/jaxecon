@@ -950,12 +950,12 @@ def plot_sector_ir_by_shock_size(
 
     handles, labels = axes[0].get_legend_handles_labels()
     if handles:
-        fig.legend(
+        axes[0].legend(
             handles,
             labels,
             loc="upper right",
             fontsize=SMALL_SIZE - 1,
-            bbox_to_anchor=(0.98, 0.98),
+            framealpha=0.9,
         )
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])

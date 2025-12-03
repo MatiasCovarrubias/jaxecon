@@ -758,11 +758,14 @@ def plot_sector_ir_by_shock_size(
     """
     Create a figure with subplots for each shock size, showing positive and negative IRs.
     Each subplot shows positive IRs in upper quadrant and negative IRs in lower quadrant.
+    Includes both GIRs (averaged over ergodic distribution) and IRs from stochastic steady state.
 
     Parameters:
     -----------
     gir_data : dict
-        Dictionary containing GIR results from JAX analysis
+        Dictionary containing GIR results from JAX analysis.
+        May include both regular GIRs (pos_5, neg_5, etc.) and stochastic SS IRs
+        (pos_5_stochss, neg_5_stochss, etc.)
     matlab_ir_data : dict
         Dictionary from load_matlab_irs containing MATLAB IRs
     sector_idx : int
@@ -824,6 +827,8 @@ def plot_sector_ir_by_shock_size(
 
         pos_key = f"pos_{shock_size}"
         neg_key = f"neg_{shock_size}"
+        pos_stochss_key = f"pos_{shock_size}_stochss"
+        neg_stochss_key = f"neg_{shock_size}_stochss"
 
         matlab_irs = get_matlab_ir_for_analysis_variable(matlab_ir_data, sector_idx, variable_to_plot, max_periods)
 
@@ -874,6 +879,7 @@ def plot_sector_ir_by_shock_size(
             if state_name and state_name in gir_data[exp_name]:
                 state_gir_data = gir_data[exp_name][state_name]
 
+                # Plot GIR (averaged over ergodic distribution)
                 if pos_key in state_gir_data:
                     gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_pos:
@@ -900,6 +906,35 @@ def plot_sector_ir_by_shock_size(
                             alpha=0.9,
                         )
 
+                # Plot IR from stochastic steady state (if available)
+                if pos_stochss_key in state_gir_data:
+                    gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
+                    if variable_to_plot in gir_vars_pos_stochss:
+                        response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
+                        label_stochss = f"IR from Stoch SS ({exp_name})" if j == 0 else None
+                        ax.plot(
+                            time_periods[: len(response_pos_stochss)],
+                            response_pos_stochss,
+                            color=colors[(k + 5) % len(colors)],
+                            linewidth=2.0,
+                            linestyle=":",
+                            alpha=0.9,
+                            label=label_stochss,
+                        )
+
+                if neg_stochss_key in state_gir_data:
+                    gir_vars_neg_stochss = state_gir_data[neg_stochss_key].get("gir_analysis_variables", {})
+                    if variable_to_plot in gir_vars_neg_stochss:
+                        response_neg_stochss = gir_vars_neg_stochss[variable_to_plot][:max_periods] * 100
+                        ax.plot(
+                            time_periods[: len(response_neg_stochss)],
+                            response_neg_stochss,
+                            color=colors[(k + 5) % len(colors)],
+                            linewidth=2.0,
+                            linestyle=":",
+                            alpha=0.9,
+                        )
+
         ax.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax.grid(True, alpha=0.3)
         ax.set_title(f"±{shock_size}% shock", fontweight="bold", fontsize=MEDIUM_SIZE)
@@ -922,7 +957,7 @@ def plot_sector_ir_by_shock_size(
             handles,
             labels,
             loc="lower center",
-            ncol=len(handles),
+            ncol=min(len(handles), 4),
             fontsize=SMALL_SIZE,
             bbox_to_anchor=(0.5, -0.08),
         )

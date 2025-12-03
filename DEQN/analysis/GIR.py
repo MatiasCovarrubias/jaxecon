@@ -230,7 +230,51 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
         return gir_analysis_variables
 
-    def GIR_fn(simul_obs, train_state, simul_policies_data=None):
+    def compute_ir_from_state(
+        initial_state_logdev, train_state, state_idx, P_weights, Pk_weights, Pm_weights, var_labels, shock_size, shock_sign
+    ):
+        """
+        Compute IR from a specific initial state (e.g., stochastic steady state).
+        
+        Unlike GIR which averages over many draws from the ergodic distribution,
+        this computes the IR from a single deterministic starting point.
+        
+        Args:
+            initial_state_logdev: Initial state in log deviation form
+            train_state: Trained neural network state
+            state_idx: Index of TFP state to shock (n_sectors + sector_idx)
+            P_weights, Pk_weights, Pm_weights: Price weights for aggregation
+            var_labels: List of variable labels in consistent order
+            shock_size: Size of shock (fraction, e.g., 0.2 for 20%)
+            shock_sign: "neg" or "pos"
+            
+        Returns:
+            ir_analysis_variables: Impulse response for analysis variables [T+1, n_analysis_vars]
+        """
+        # Generate zero shocks for the trajectory (no uncertainty after initial shock)
+        zero_shocks = jnp.zeros((config["gir_trajectory_length"], econ_model.n_sectors))
+        
+        # Original trajectory (no shock)
+        traj_analysis_vars_orig = simul_trajectory_analysis_variables(
+            econ_model, train_state, zero_shocks, initial_state_logdev, P_weights, Pk_weights, Pm_weights, var_labels
+        )
+        
+        # Create counterfactual initial state with specified shock
+        obs_counterfactual_logdev = create_counterfactual_state(
+            initial_state_logdev, state_idx, shock_size, shock_sign
+        )
+        
+        # Counterfactual trajectory (with initial shock, then no shocks)
+        traj_analysis_vars_counter = simul_trajectory_analysis_variables(
+            econ_model, train_state, zero_shocks, obs_counterfactual_logdev, P_weights, Pk_weights, Pm_weights, var_labels
+        )
+        
+        # Impulse response is difference
+        ir_analysis_variables = traj_analysis_vars_counter - traj_analysis_vars_orig
+        
+        return ir_analysis_variables
+
+    def GIR_fn(simul_obs, train_state, simul_policies_data=None, stoch_ss_state_logdev=None):
         """
         Main GIR function that computes TFP impulse responses for specified sectors.
         Computes GIRs for both positive and negative TFP shocks, and for multiple shock sizes.
@@ -239,15 +283,18 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             simul_obs: Simulation observations from ergodic distribution (in logdev form)
             train_state: Trained neural network state
             simul_policies_data: Simulation policies for extracting price weights (in logdev form)
+            stoch_ss_state_logdev: Optional stochastic steady state (in logdev form).
+                                   If provided, also computes IRs from this state.
 
         Returns:
             gir_results: Dictionary with structure:
                 {state_name: {
                     "state_idx": int,  # TFP state index (n_sectors + sector_idx)
-                    "pos_5": {"gir_analysis_variables": {...}},   # +5% TFP shock
-                    "neg_5": {"gir_analysis_variables": {...}},   # -5% TFP shock (log(0.95))
-                    "pos_10": {...}, "neg_10": {...},             # ±10% shocks
-                    "pos_20": {...}, "neg_20": {...},             # ±20% shocks (log(0.80) for neg)
+                    "pos_5": {"gir_analysis_variables": {...}},   # +5% TFP shock (GIR)
+                    "neg_5": {"gir_analysis_variables": {...}},   # -5% TFP shock (GIR)
+                    "pos_5_stochss": {"gir_analysis_variables": {...}},   # +5% from stoch SS
+                    "neg_5_stochss": {"gir_analysis_variables": {...}},   # -5% from stoch SS
+                    ...
                 }}
         """
         # Use provided simul_policies or the one passed during creation
@@ -274,10 +321,15 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
         # Get shock sizes from config (as percentages, e.g., [5, 10, 20])
         ir_shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
+        
+        # Check if we should compute stochastic SS IRs
+        compute_stochss_irs = stoch_ss_state_logdev is not None
 
         gir_results = {}
 
-        total_computations = len(states_to_shock) * len(ir_shock_sizes) * 2  # 2 for pos/neg
+        # Calculate total computations (2 for pos/neg, optionally x2 for stoch SS)
+        n_ir_types = 2 if not compute_stochss_irs else 4
+        total_computations = len(states_to_shock) * len(ir_shock_sizes) * n_ir_types
         current_computation = 0
 
         # Compute GIR for each specified state
@@ -322,6 +374,36 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                     # Store with key like "pos_5", "neg_10", etc.
                     key = f"{shock_sign}_{shock_size_pct}"
                     gir_results[state_name][key] = {"gir_analysis_variables": gir_analysis_vars_dict}
+                    
+                    # Compute IR from stochastic steady state if provided
+                    if compute_stochss_irs:
+                        current_computation += 1
+                        print(
+                            f"      IR from Stoch SS [{current_computation}/{total_computations}]: "
+                            f"TFP sector {sector_idx} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
+                            flush=True,
+                        )
+                        
+                        stochss_ir_array = compute_ir_from_state(
+                            stoch_ss_state_logdev,
+                            train_state,
+                            state_idx,
+                            P_weights,
+                            Pk_weights,
+                            Pm_weights,
+                            var_labels,
+                            shock_size,
+                            shock_sign,
+                        )
+                        
+                        # Convert array back to dictionary format
+                        stochss_ir_dict = {
+                            label: stochss_ir_array[:, i] for i, label in enumerate(var_labels)
+                        }
+                        
+                        # Store with key like "pos_5_stochss", "neg_10_stochss", etc.
+                        stochss_key = f"{shock_sign}_{shock_size_pct}_stochss"
+                        gir_results[state_name][stochss_key] = {"gir_analysis_variables": stochss_ir_dict}
 
         return gir_results
 

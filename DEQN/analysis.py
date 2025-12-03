@@ -166,6 +166,10 @@ Model = model_module.Model
 plots_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.plots")
 MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", [])
 
+# Import stochastic SS capital plot functions (if available)
+plot_sectoral_capital_stochss = getattr(plots_module, "plot_sectoral_capital_stochss", None)
+plot_sectoral_capital_comparison = getattr(plots_module, "plot_sectoral_capital_comparison", None)
+
 
 # ============================================================================
 # MAIN FUNCTION
@@ -328,6 +332,7 @@ def main():
     raw_simulation_data = {}
     welfare_costs = {}
     stochastic_ss_data = {}
+    stochastic_ss_states = {}  # Store stochastic SS states for GIR computation
     gir_data = {}
 
     # Data collection loop
@@ -374,6 +379,9 @@ def main():
         if stoch_ss_obs_std.max() > 0.001:
             raise ValueError("Stochastic steady state standard deviation too large")
 
+        # Store stochastic SS state for GIR computation (in logdev form)
+        stochastic_ss_states[experiment_label] = stoch_ss_obs
+
         # Get average prices from simulation policies
         simul_policies_mean = jnp.mean(simul_policies, axis=0)
         P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
@@ -388,8 +396,8 @@ def main():
         # Store stochastic steady state data as dictionary
         stochastic_ss_data[experiment_label] = stoch_ss_analysis_variables
 
-        # Calculate and store GIR
-        gir_results = gir_fn(simul_obs, train_state, simul_policies)
+        # Calculate and store GIR (including IRs from stochastic steady state)
+        gir_results = gir_fn(simul_obs, train_state, simul_policies, stoch_ss_obs)
         gir_data[experiment_label] = gir_results
 
     print("Data collection completed successfully.", flush=True)
@@ -618,6 +626,43 @@ def main():
     else:
         print("  No model-specific plots registered.", flush=True)
 
+    # ============================================================================
+    # STOCHASTIC STEADY STATE ANALYSIS: Capital Distribution Plots
+    # ============================================================================
+    print("\nGenerating stochastic steady state plots...", flush=True)
+
+    # Plot stochastic SS sectoral capital distribution (comparison across experiments)
+    if plot_sectoral_capital_stochss is not None and stochastic_ss_states:
+        try:
+            plot_sectoral_capital_stochss(
+                stochastic_ss_states=stochastic_ss_states,
+                save_dir=simulation_dir,
+                analysis_name=config["analysis_name"],
+                econ_model=econ_model,
+            )
+            print("  ✓ Stochastic SS sectoral capital plot generated", flush=True)
+        except Exception as e:
+            print(f"  ✗ Failed to create stochastic SS capital plot: {e}", flush=True)
+    else:
+        print("  - Stochastic SS capital plot not available", flush=True)
+
+    # Plot comparison of ergodic mean vs stochastic SS for each experiment
+    if plot_sectoral_capital_comparison is not None:
+        for experiment_label, sim_data in raw_simulation_data.items():
+            if experiment_label in stochastic_ss_states:
+                try:
+                    plot_sectoral_capital_comparison(
+                        simul_obs=sim_data["simul_obs"],
+                        stochastic_ss_state=stochastic_ss_states[experiment_label],
+                        save_dir=simulation_dir,
+                        analysis_name=config["analysis_name"],
+                        econ_model=econ_model,
+                        experiment_label=experiment_label,
+                    )
+                    print(f"  ✓ Capital comparison plot for {experiment_label}", flush=True)
+                except Exception as e:
+                    print(f"  ✗ Failed to create capital comparison for {experiment_label}: {e}", flush=True)
+
     print("Analysis completed successfully.", flush=True)
 
     return {
@@ -625,6 +670,7 @@ def main():
         "raw_simulation_data": raw_simulation_data,
         "welfare_costs": welfare_costs,
         "stochastic_ss_data": stochastic_ss_data,
+        "stochastic_ss_states": stochastic_ss_states,
         "gir_data": gir_data,
         "matlab_ir_data": matlab_ir_data,
     }

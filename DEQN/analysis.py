@@ -178,50 +178,42 @@ MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", [])
 
 
 def main():
-    print(f"Analysis: {config['analysis_name']}", flush=True)
-
-    # Environment and precision setup
-    print("Setting up precision...", flush=True)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SETUP
+    # ═══════════════════════════════════════════════════════════════════════════
     precision = jnp.float64 if config["double_precision"] else jnp.float32
     if config["double_precision"]:
         jax_config.update("jax_enable_x64", True)
-    print("Precision setup complete.", flush=True)
 
     model_dir = os.path.join(base_dir, config["model_dir"])
     save_dir = os.path.join(model_dir, "experiments/")
 
-    # Create analysis directory structure
     analysis_dir = os.path.join(model_dir, "analysis", config["analysis_name"])
     simulation_dir = os.path.join(analysis_dir, "simulation")
     irs_dir = os.path.join(analysis_dir, "IRs")
 
-    # Create all directories
     os.makedirs(analysis_dir, exist_ok=True)
     os.makedirs(simulation_dir, exist_ok=True)
     os.makedirs(irs_dir, exist_ok=True)
 
-    # Save analysis configuration as JSON
     config_path = os.path.join(analysis_dir, "config.json")
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
-    print(f"Analysis configuration saved to: {config_path}", flush=True)
 
-    # Load model data (core)
-    print("Loading model data...", flush=True)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LOAD MODEL DATA
+    # ═══════════════════════════════════════════════════════════════════════════
     model_path = os.path.join(model_dir, "ModelData.mat")
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
 
     model_data = sio.loadmat(model_path, simplify_cells=True)
-    print("  ✓ ModelData.mat loaded", flush=True)
 
-    # Extract data from ModelData structure
     if "ModelData" not in model_data:
         raise ValueError("Expected 'ModelData' key in model file.")
 
     md = model_data["ModelData"]
 
-    # Extract from SteadyState
     ss = md["SteadyState"]
     n_sectors = ss["parameters"]["parn_sectors"]
     a_ss = jnp.zeros(shape=(n_sectors,), dtype=precision)
@@ -230,24 +222,15 @@ def main():
     params = ss["parameters"]
     policies_ss = jnp.array(ss["policies_ss"], dtype=precision)
 
-    # Extract from Statistics
     stats = md["Statistics"]
     state_sd = jnp.array(stats["states_sd"], dtype=precision)
     policies_sd = jnp.array(stats["policies_sd"], dtype=precision)
 
-    # Extract from Solution
     C_matrix = md["Solution"]["StateSpace"]["C"]
 
-    # Ensure policies_ss and policies_sd have matching dimensions
-    # (Old checkpoints were trained with truncated policies_ss to match policies_sd)
     if len(policies_ss) != len(policies_sd):
         n_policies = len(policies_sd)
-        print(f"    ⚠ Aligning policies_ss ({len(policies_ss)}) to policies_sd ({n_policies})", flush=True)
         policies_ss = policies_ss[:n_policies]
-
-    print(f"    n_sectors: {n_sectors}", flush=True)
-    print(f"    policies_ss shape: {policies_ss.shape}", flush=True)
-    print(f"    policies_sd shape: {policies_sd.shape}", flush=True)
 
     # Load simulation data (optional - for Dynare comparison)
     dynare_simul_loglin = None
@@ -255,39 +238,21 @@ def main():
     simul_path = os.path.join(model_dir, "ModelData_simulation.mat")
 
     if os.path.exists(simul_path):
-        print("  ✓ ModelData_simulation.mat found", flush=True)
         simul_data = sio.loadmat(simul_path, simplify_cells=True)
         simul = simul_data.get("ModelData_simulation", {})
 
         if "Loglin" in simul and "full_simul" in simul["Loglin"]:
             dynare_simul_loglin = jnp.array(simul["Loglin"]["full_simul"], dtype=precision)
-            print(f"    ✓ Log-linear simulation: {dynare_simul_loglin.shape}", flush=True)
-        else:
-            print("    - Log-linear simulation: not included", flush=True)
 
         if "Determ" in simul and "full_simul" in simul["Determ"]:
             dynare_simul_determ = jnp.array(simul["Determ"]["full_simul"], dtype=precision)
-            print(f"    ✓ Deterministic simulation: {dynare_simul_determ.shape}", flush=True)
-        else:
-            print("    - Deterministic simulation: not included", flush=True)
-    else:
-        print("  - ModelData_simulation.mat: not found (Dynare comparison disabled)", flush=True)
 
     # Load IRF data (optional - for MATLAB IR comparison)
     irs_path = os.path.join(model_dir, "ModelData_IRs.mat")
     if os.path.exists(irs_path):
-        irs_data = sio.loadmat(irs_path, simplify_cells=True)
-        irs = irs_data.get("ModelData_IRs", {})
-        n_ir_shocks = irs.get("n_shocks", 0)
-        print(f"  ✓ ModelData_IRs.mat found: {n_ir_shocks} shock configurations", flush=True)
-    else:
-        print("  - ModelData_IRs.mat: not found", flush=True)
-
-    # Print parameters
-    print("Parameters:\n", params)
+        sio.loadmat(irs_path, simplify_cells=True)
 
     # Create economic model
-    print("Creating economic model...", flush=True)
     econ_model = Model(
         parameters=params,
         state_ss=state_ss,
@@ -296,15 +261,11 @@ def main():
         policies_sd=policies_sd,
         double_precision=config["double_precision"],
     )
-    print("Economic model created successfully.", flush=True)
 
     # Load experiment data
-    print("Loading experiment data...", flush=True)
     experiments_to_analyze = config["experiments_to_analyze"]
     experiments_data = load_experiment_data(experiments_to_analyze, save_dir)
-    print("Experiment data loaded successfully.", flush=True)
 
-    # Define shared nn_config (features will be set per experiment)
     nn_config_base = {
         "C": C_matrix,
         "states_sd": state_sd,
@@ -312,136 +273,108 @@ def main():
         "params_dtype": precision,
     }
 
-    # Compute states_to_shock from ir_sectors_to_plot
-    # GIRs always shock TFP/productivity: state_idx = n_sectors + sector_idx
     ir_sectors = config.get("ir_sectors_to_plot", [0])
     states_to_shock = [n_sectors + sector_idx for sector_idx in ir_sectors]
-
     config["states_to_shock"] = states_to_shock
-    print(f"IR: Shocking TFP for sectors {ir_sectors} (state indices: {states_to_shock})", flush=True)
 
     # Create analysis functions
-    print("Creating analysis functions...", flush=True)
     simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config))
     welfare_fn = jax.jit(get_welfare_fn(econ_model, config))
     stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, config))
     stoch_ss_loss_fn = create_stochss_loss_fn(econ_model, mc_draws=32)
     gir_fn = jax.jit(create_GIR_fn(econ_model, config))
-    print("Analysis functions created successfully.", flush=True)
 
     # Storage for analysis results
     analysis_variables_data = {}
     raw_simulation_data = {}
     welfare_costs = {}
     stochastic_ss_data = {}
-    stochastic_ss_states = {}  # Store stochastic SS states for GIR computation
-    stochastic_ss_policies = {}  # Store stochastic SS policies for sectoral plots
-    stochastic_ss_loss = {}  # Store loss evaluation at stochastic SS
+    stochastic_ss_states = {}
+    stochastic_ss_policies = {}
+    stochastic_ss_loss = {}
     gir_data = {}
 
-    # Data collection loop
-    print("Collecting analysis data...", flush=True)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SIMULATION & WELFARE RESULTS
+    # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  SIMULATION & WELFARE RESULTS")
+    print("═" * 72)
+    print(f"  Analysis: {config['analysis_name']}")
+    print(f"  Model: {config['model_dir']}")
+    print(f"  Experiments: {list(experiments_to_analyze.keys())}")
+    print(f"  Sectors: {n_sectors}")
+    print("─" * 72, flush=True)
+
     for experiment_label, exp_data in experiments_data.items():
-        print(f"  Processing: {experiment_label}", flush=True)
+        print(f"\n  ▶ {experiment_label}", flush=True)
 
         experiment_config = exp_data["config"]
         experiment_name = exp_data["results"]["exper_name"]
 
-        # Build nn_config with experiment-specific features
         nn_config = nn_config_base.copy()
         nn_config["features"] = experiment_config["layers"] + [econ_model.dim_policies]
 
-        # Load trained model (using same initialization approach as training)
         train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
 
-        # Generate simulation data
         simul_obs, simul_policies, simul_analysis_variables = simulation_analysis(
             train_state, econ_model, config, simulation_fn
         )
 
-        # Store raw simulation data for model-specific plots
         raw_simulation_data[experiment_label] = {
             "simul_obs": simul_obs,
             "simul_policies": simul_policies,
             "simul_analysis_variables": simul_analysis_variables,
         }
 
-        # Store analysis variables for general analysis
         analysis_variables_data[experiment_label] = simul_analysis_variables
 
-        # Calculate utilities separately using the new utility method
         simul_utilities = jax.vmap(econ_model.utility_from_policies)(simul_policies)
 
-        # Calculate welfare from simulation
         welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
         welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config["welfare_seed"]))
 
-        # Compute consumption-equivalent welfare cost (Vc < 0 means loss)
         Vc = econ_model.consumption_equivalent(welfare)
-        welfare_cost_ce = -Vc * 100  # Convert to positive percentage
+        welfare_cost_ce = -Vc * 100
         welfare_costs[experiment_label] = welfare_cost_ce
 
-        # Verification: Vc at steady state should be ~0
-        Vc_ss = econ_model.consumption_equivalent(welfare_ss)
-        print(f"    Welfare: Vc = {Vc:.6f}, Vc_ss = {Vc_ss:.6f} (should be ~0)", flush=True)
-        print(f"    Consumption-equivalent welfare cost: {welfare_cost_ce:.4f}%", flush=True)
-
-        # Calculate and store stochastic steady state
         stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
         if stoch_ss_obs_std.max() > 0.001:
             raise ValueError("Stochastic steady state standard deviation too large")
 
-        # Store stochastic SS state for GIR computation (in logdev form)
         stochastic_ss_states[experiment_label] = stoch_ss_obs
-
-        # Store stochastic SS policies for sectoral plots (in logdev form)
         stochastic_ss_policies[experiment_label] = stoch_ss_policy
 
-        # Get average prices from simulation policies
         simul_policies_mean = jnp.mean(simul_policies, axis=0)
         P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
         Pk_mean = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
         Pm_mean = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
 
-        # Calculate stochastic steady state analysis variables (returns dictionary)
         stoch_ss_analysis_variables = econ_model.get_analysis_variables(
             stoch_ss_obs, stoch_ss_policy, P_mean, Pk_mean, Pm_mean
         )
 
-        # Store stochastic steady state data as dictionary
         stochastic_ss_data[experiment_label] = stoch_ss_analysis_variables
 
-        # Evaluate equilibrium condition loss at stochastic steady state
         loss_results = stoch_ss_loss_fn(stoch_ss_obs, stoch_ss_policy, train_state, random.PRNGKey(config["seed"]))
         stochastic_ss_loss[experiment_label] = loss_results
 
-        # Print loss diagnostics
-        print("    Stochastic SS Loss Diagnostics:", flush=True)
-        print(f"      Mean Loss (MSE): {loss_results['mean_loss']:.6e}", flush=True)
-        print(f"      Mean Accuracy: {loss_results['mean_accuracy']:.6f}", flush=True)
-        print(f"      Min Accuracy: {loss_results['min_accuracy']:.6f}", flush=True)
+        print(f"    Welfare cost (CE): {welfare_cost_ce:.4f}%")
+        print(
+            f"    Equilibrium accuracy: {loss_results['mean_accuracy']:.4f} (min: {loss_results['min_accuracy']:.4f})",
+            flush=True,
+        )
 
-        # Calculate and store GIR (including IRs from stochastic steady state)
         gir_results = gir_fn(simul_obs, train_state, simul_policies, stoch_ss_obs)
         gir_data[experiment_label] = gir_results
 
-    print("Data collection completed successfully.", flush=True)
-
-    # ============================================================================
-    # COMPUTE ERGODIC PRICES AND STEADY STATE CORRECTIONS
-    # ============================================================================
-    # Use average prices from the first experiment's ergodic distribution
-    # to aggregate all simulations consistently
+    # Compute ergodic prices and steady state corrections
     first_experiment_label = list(analysis_variables_data.keys())[0]
     first_sim_data = raw_simulation_data[first_experiment_label]
 
-    # Get ergodic prices from nonlinear simulation
     simul_policies = first_sim_data["simul_policies"]
     P_ergodic, Pk_ergodic, Pm_ergodic = compute_ergodic_prices_from_simulation(simul_policies, policies_ss, n_sectors)
 
-    print(f"Using ergodic prices from experiment: {first_experiment_label}", flush=True)
-
-    # Compute steady state correction factors for price-weighted aggregates
     ss_corrections = compute_ergodic_steady_state(
         policies_ss=policies_ss,
         state_ss=state_ss,
@@ -451,31 +384,14 @@ def main():
         n_sectors=n_sectors,
     )
 
-    # Print correction diagnostics
-    print("  Steady state corrections (log scale):", flush=True)
-    print(f"    Yagg: {ss_corrections['Yagg_correction']:.6f}", flush=True)
-    print(f"    Kagg: {ss_corrections['Kagg_correction']:.6f}", flush=True)
-    print(f"    Iagg: {ss_corrections['Iagg_correction']:.6f}", flush=True)
-    print(f"    Magg: {ss_corrections['Magg_correction']:.6f}", flush=True)
-
-    # ============================================================================
-    # RECENTER NONLINEAR SIMULATION ANALYSIS VARIABLES
-    # ============================================================================
-    # Apply corrections to nonlinear simulation data so all use consistent SS
-    print("\nRecentering nonlinear simulation data with ergodic-price SS...", flush=True)
+    # Recenter nonlinear simulation data
     for exp_label in list(analysis_variables_data.keys()):
         analysis_variables_data[exp_label] = recenter_analysis_variables(
             analysis_variables_data[exp_label], ss_corrections
         )
 
-    # ============================================================================
-    # PROCESS DYNARE SIMULATIONS (if available)
-    # ============================================================================
-    # Process Dynare simulations using consistent ergodic-price aggregation
+    # Process Dynare simulations (if available)
     if dynare_simul_loglin is not None:
-        print("\nProcessing log-linear (Dynare) simulation with consistent aggregation...", flush=True)
-        print(f"    Dynare simulation shape: {dynare_simul_loglin.shape}", flush=True)
-
         loglin_analysis_vars = process_simulation_with_consistent_aggregation(
             simul_data=dynare_simul_loglin,
             policies_ss=policies_ss,
@@ -488,19 +404,14 @@ def main():
             source_label="Log-Linear (Dynare)",
         )
 
-        # Check for NaN values in results
         for var_name, var_values in loglin_analysis_vars.items():
             n_nan = jnp.sum(jnp.isnan(var_values))
             if n_nan > 0:
                 print(f"    ⚠ WARNING: {var_name} has {n_nan} NaN values!", flush=True)
 
-        # Add to analysis data for comparison
         analysis_variables_data["Log-Linear (Dynare)"] = loglin_analysis_vars
-        print("  ✓ Log-linear simulation processed with consistent aggregation.", flush=True)
 
     if dynare_simul_determ is not None:
-        print("\nProcessing deterministic (Dynare) simulation with consistent aggregation...", flush=True)
-
         determ_analysis_vars = process_simulation_with_consistent_aggregation(
             simul_data=dynare_simul_determ,
             policies_ss=policies_ss,
@@ -513,16 +424,11 @@ def main():
             source_label="Deterministic (Dynare)",
         )
 
-        # Add to analysis data for comparison
         analysis_variables_data["Deterministic (Dynare)"] = determ_analysis_vars
-        print("  ✓ Deterministic simulation processed with consistent aggregation.", flush=True)
 
-    # ============================================================================
-    # GENERAL ANALYSIS: Tables and Plots
-    # ============================================================================
-    print("Generating general analysis tables and figures...", flush=True)
-
-    # Descriptive statistics tables (in simulation folder)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # DESCRIPTIVE STATISTICS
+    # ═══════════════════════════════════════════════════════════════════════════
     create_descriptive_stats_table(
         analysis_variables_data=analysis_variables_data,
         save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
@@ -536,75 +442,43 @@ def main():
             analysis_name=config["analysis_name"],
         )
 
-    # Welfare table (in analysis directory)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # WELFARE COSTS
+    # ═══════════════════════════════════════════════════════════════════════════
     create_welfare_table(
         welfare_data=welfare_costs,
         save_path=os.path.join(analysis_dir, "welfare_table.tex"),
         analysis_name=config["analysis_name"],
     )
 
-    # Stochastic steady state table (in analysis directory)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STOCHASTIC STEADY STATE
+    # ═══════════════════════════════════════════════════════════════════════════
     create_stochastic_ss_table(
         stochastic_ss_data=stochastic_ss_data,
         save_path=os.path.join(analysis_dir, "stochastic_ss_table.tex"),
         analysis_name=config["analysis_name"],
     )
 
-    # Analysis variable histograms (in simulation folder)
-    # Filter out deterministic solution for histograms
+    # Generate histograms (filter out deterministic solution)
     histogram_data = {k: v for k, v in analysis_variables_data.items() if "Deterministic" not in k}
     plot_ergodic_histograms(
         analysis_variables_data=histogram_data, save_dir=simulation_dir, analysis_name=config["analysis_name"]
     )
 
-    # Note: plot_gir_responses uses old GIR data structure.
-    # Combined IR plots below handle both positive and negative shocks.
-
-    # ============================================================================
-    # COMBINED IR ANALYSIS: MATLAB + JAX GIRs
-    # ============================================================================
-    print("\n" + "=" * 60, flush=True)
-    print("COMBINED IR ANALYSIS: MATLAB + JAX GIRs", flush=True)
-    print("=" * 60, flush=True)
-
-    # The load_matlab_irs function automatically searches for:
-    # 1. ModelData_IRs.mat in the model directory
-    # 2. ModelData_IRs.mat in experiment subfolders
-    # 3. Legacy format files in MATLAB/IRs folder (fallback)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # IMPULSE RESPONSES
+    # ═══════════════════════════════════════════════════════════════════════════
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
-    matlab_ir_data = {}
-
-    print("\nLooking for MATLAB IR data...", flush=True)
     matlab_ir_data = load_matlab_irs(
         matlab_ir_dir=matlab_ir_dir,
         shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
     )
 
-    if matlab_ir_data:
-        print(f"\n  ✓ Successfully loaded {len(matlab_ir_data)} shock configurations", flush=True)
-        for key in matlab_ir_data.keys():
-            n_sectors_loaded = len(matlab_ir_data[key].get("sectors", {}))
-            print(f"    - {key}: {n_sectors_loaded} sectors", flush=True)
-    else:
-        print("\n  ✗ No MATLAB IR data was loaded", flush=True)
-        print("    To use MATLAB IRs, either:", flush=True)
-        print("    1. Save ModelData_IRs.mat in the model directory, or", flush=True)
-        print("    2. Run MATLAB main.m with config.save_results = true", flush=True)
-
-    # Generate combined IR plots (with or without MATLAB data)
-    print("\nGenerating IR comparison plots...", flush=True)
-
     sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
     ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
     shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
     max_periods = config.get("ir_max_periods", 80)
-
-    print(f"  Variables: {ir_variables}", flush=True)
-    print(f"  Shock sizes: {shock_sizes}", flush=True)
-    print(f"  Sectors to plot: {sectors_to_plot}", flush=True)
-
-    total_plots = len(sectors_to_plot) * len(ir_variables)
-    plot_idx = 0
 
     for sector_idx in sectors_to_plot:
         sector_label = (
@@ -612,12 +486,6 @@ def main():
         )
 
         for ir_variable in ir_variables:
-            plot_idx += 1
-            print(
-                f"\n  [{plot_idx}/{total_plots}] Sector {sector_idx} ({sector_label}), Variable: {ir_variable}...",
-                flush=True,
-            )
-
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
                 matlab_ir_data=matlab_ir_data,
@@ -631,20 +499,12 @@ def main():
                 n_sectors=n_sectors,
             )
 
-    print("\n  ✓ Combined IR analysis completed.", flush=True)
-
-    # ============================================================================
-    # MODEL-SPECIFIC ANALYSIS: Plots
-    # ============================================================================
-    print("Generating model-specific plots...", flush=True)
-
+    # Model-specific plots
     if MODEL_SPECIFIC_PLOTS:
         for plot_spec in MODEL_SPECIFIC_PLOTS:
             plot_name = plot_spec["name"]
             plot_function = plot_spec["function"]
-            print(f"  - Running model-specific plot: {plot_name}", flush=True)
 
-            # Run the plot for each experiment (save in simulation folder)
             for experiment_label, sim_data in raw_simulation_data.items():
                 try:
                     plot_function(
@@ -656,32 +516,13 @@ def main():
                         econ_model=econ_model,
                         experiment_label=experiment_label,
                     )
-                    print(f"    ✓ {plot_name} for {experiment_label}", flush=True)
                 except Exception as e:
                     print(f"    ✗ Failed to create {plot_name} for {experiment_label}: {e}", flush=True)
-    else:
-        print("  No model-specific plots registered.", flush=True)
 
-    # ============================================================================
-    # COMPUTE UPSTREAMNESS MEASURES
-    # ============================================================================
-    print("\nComputing upstreamness measures...", flush=True)
+    # Compute upstreamness measures
     upstreamness_data = econ_model.upstreamness()
-    print(
-        f"  ✓ IO upstreamness (U_M) range: [{float(upstreamness_data['U_M'].min()):.2f}, {float(upstreamness_data['U_M'].max()):.2f}]",
-        flush=True,
-    )
-    print(
-        f"  ✓ Investment upstreamness (U_I) range: [{float(upstreamness_data['U_I'].min()):.2f}, {float(upstreamness_data['U_I'].max()):.2f}]",
-        flush=True,
-    )
 
-    # ============================================================================
-    # STOCHASTIC STEADY STATE ANALYSIS: Sectoral Distribution Plots
-    # ============================================================================
-    print("\nGenerating stochastic steady state plots...", flush=True)
-
-    # Plot stochastic SS sectoral distributions for K, L, Y, M, Q
+    # Stochastic SS sectoral plots
     if stochastic_ss_policies:
         for var_name in ["K", "L", "Y", "M", "Q"]:
             try:
@@ -694,16 +535,10 @@ def main():
                     econ_model=econ_model,
                     upstreamness_data=upstreamness_data,
                 )
-                print(f"  ✓ Stochastic SS sectoral {var_name} plot generated", flush=True)
             except Exception as e:
-                print(f"  ✗ Failed to create stochastic SS {var_name} plot: {e}", flush=True)
+                print(f"    ✗ Failed to create stochastic SS {var_name} plot: {e}", flush=True)
 
-    # ============================================================================
-    # ERGODIC DISTRIBUTION ANALYSIS: Sectoral Variable Plots
-    # ============================================================================
-    print("\nGenerating ergodic distribution plots...", flush=True)
-
-    # Plot ergodic mean sectoral distributions for K, L, Y, M, Q
+    # Ergodic sectoral plots
     if raw_simulation_data:
         for var_name in ["K", "L", "Y", "M", "Q"]:
             try:
@@ -715,11 +550,12 @@ def main():
                     econ_model=econ_model,
                     upstreamness_data=upstreamness_data,
                 )
-                print(f"  ✓ Ergodic sectoral {var_name} plot generated", flush=True)
             except Exception as e:
-                print(f"  ✗ Failed to create ergodic {var_name} plot: {e}", flush=True)
+                print(f"    ✗ Failed to create ergodic {var_name} plot: {e}", flush=True)
 
-    print("Analysis completed successfully.", flush=True)
+    print("\n" + "═" * 72)
+    print("  ANALYSIS COMPLETE")
+    print("═" * 72, flush=True)
 
     return {
         "analysis_variables_data": analysis_variables_data,

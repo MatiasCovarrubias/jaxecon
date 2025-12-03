@@ -160,23 +160,63 @@ end
 if opts.plot_graphs
     fprintf('Generating plots...\n');
     
-    % Build cell arrays for GraphIRs (expects cell format)
-    IRSLoglin_cells = cell(n_analyzed, 1);
-    IRSDeterm_cells = cell(n_analyzed, 1);
-    for idx = 1:n_analyzed
-        IRSLoglin_cells{idx} = IRFs{idx}.IRSLoglin;
-        IRSDeterm_cells{idx} = IRFs{idx}.IRSDeterm;
-    end
-    
     ax = 0:(opts.ir_plot_length - 1);
-    graph_opts = struct();
-    graph_opts.figures_folder = opts.exp_paths.figures;
-    graph_opts.save_label = opts.save_label;
-    graph_opts.save_figures = opts.save_graphs;
-    graph_opts.shock_description = opts.shock_description;
     
-    GraphIRs(IRSDeterm_cells, IRSLoglin_cells, [], ax, opts.ir_plot_length, ...
-        labels, opts.range_padding, graph_opts);
+    % Plot each sector separately to avoid overwriting
+    for idx = 1:n_analyzed
+        % Create single-sector data cells
+        IRSLoglin_single = {IRFs{idx}.IRSLoglin};
+        IRSDeterm_single = {IRFs{idx}.IRSDeterm};
+        
+        % Create single-sector labels structure
+        labels_single = struct();
+        labels_single.sector_indices = sector_indices(idx);
+        labels_single.client_indices = labels.client_indices(idx);
+        
+        % Handle cell vs array label formats
+        if iscell(labels.sector_labels)
+            labels_single.sector_labels = labels.sector_labels(idx);
+            labels_single.client_labels = labels.client_labels(idx);
+        else
+            labels_single.sector_labels = labels.sector_labels(idx);
+            labels_single.client_labels = labels.client_labels(idx);
+        end
+        
+        if isfield(labels, 'sector_labels_latex')
+            if iscell(labels.sector_labels_latex)
+                labels_single.sector_labels_latex = labels.sector_labels_latex(idx);
+                labels_single.client_labels_latex = labels.client_labels_latex(idx);
+            else
+                labels_single.sector_labels_latex = labels.sector_labels_latex(idx);
+                labels_single.client_labels_latex = labels.client_labels_latex(idx);
+            end
+        end
+        
+        if isfield(labels, 'sector_labels_filename')
+            if iscell(labels.sector_labels_filename)
+                labels_single.sector_labels_filename = labels.sector_labels_filename(idx);
+            else
+                labels_single.sector_labels_filename = labels.sector_labels_filename(idx);
+            end
+        end
+        
+        % Build graph options for this sector
+        graph_opts = struct();
+        graph_opts.figures_folder = opts.exp_paths.figures;
+        graph_opts.save_figures = opts.save_graphs;
+        graph_opts.shock_description = opts.shock_description;
+        
+        % Include sector index in save_label to distinguish files
+        if ~isempty(opts.save_label)
+            graph_opts.save_label = sprintf('%s_sec%d', opts.save_label, sector_indices(idx));
+        else
+            graph_opts.save_label = sprintf('sec%d', sector_indices(idx));
+        end
+        
+        fprintf('  Plotting sector %d (%d/%d)...\n', sector_indices(idx), idx, n_analyzed);
+        GraphIRs(IRSDeterm_single, IRSLoglin_single, [], ax, opts.ir_plot_length, ...
+            labels_single, opts.range_padding, graph_opts);
+    end
 end
 
 %% Print summary

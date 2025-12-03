@@ -382,11 +382,6 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                     # Compute IR from stochastic steady state if provided
                     if compute_stochss_irs:
                         current_computation += 1
-                        print(
-                            f"      IR from Stoch SS [{current_computation}/{total_computations}]: "
-                            f"TFP sector {sector_idx} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
-                            flush=True,
-                        )
                         
                         stochss_ir_array = compute_ir_from_state(
                             stoch_ss_state_logdev,

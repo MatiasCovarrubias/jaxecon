@@ -369,7 +369,7 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
         for exp_name in experiment_names:
             ss_vars_dict = stochastic_ss_data[exp_name]
             if var_label in ss_vars_dict:
-                value = float(ss_vars_dict[var_label])
+                value = float(ss_vars_dict[var_label]) * 100
                 latex_code += f" & {value:.4f}"
             else:
                 latex_code += " & —"
@@ -379,7 +379,7 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
     latex_code += (
-        r"\textit{Note: Values show percentage deviations from deterministic steady state. For example, 0.1 = 0.1\%.}"
+        r"\textit{Note: Values show percentage deviations from deterministic steady state.}"
         + "\n"
     )
 

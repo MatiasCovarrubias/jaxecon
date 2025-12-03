@@ -82,8 +82,6 @@ from DEQN.analysis.matlab_irs import load_matlab_irs  # noqa: E402
 from DEQN.analysis.plots import (  # noqa: E402
     plot_ergodic_histograms,
     plot_sector_ir_by_shock_size,
-    plot_sectoral_capital_comparison,
-    plot_sectoral_capital_stochss,
     plot_sectoral_variable_ergodic,
     plot_sectoral_variable_stochss,
 )
@@ -665,26 +663,27 @@ def main():
         print("  No model-specific plots registered.", flush=True)
 
     # ============================================================================
-    # STOCHASTIC STEADY STATE ANALYSIS: Capital Distribution Plots
+    # COMPUTE UPSTREAMNESS MEASURES
+    # ============================================================================
+    print("\nComputing upstreamness measures...", flush=True)
+    upstreamness_data = econ_model.upstreamness()
+    print(
+        f"  ✓ IO upstreamness (U_M) range: [{float(upstreamness_data['U_M'].min()):.2f}, {float(upstreamness_data['U_M'].max()):.2f}]",
+        flush=True,
+    )
+    print(
+        f"  ✓ Investment upstreamness (U_I) range: [{float(upstreamness_data['U_I'].min()):.2f}, {float(upstreamness_data['U_I'].max()):.2f}]",
+        flush=True,
+    )
+
+    # ============================================================================
+    # STOCHASTIC STEADY STATE ANALYSIS: Sectoral Distribution Plots
     # ============================================================================
     print("\nGenerating stochastic steady state plots...", flush=True)
 
-    # Plot stochastic SS sectoral capital distribution (comparison across experiments)
-    if stochastic_ss_states:
-        try:
-            plot_sectoral_capital_stochss(
-                stochastic_ss_states=stochastic_ss_states,
-                save_dir=simulation_dir,
-                analysis_name=config["analysis_name"],
-                econ_model=econ_model,
-            )
-            print("  ✓ Stochastic SS sectoral capital plot generated", flush=True)
-        except Exception as e:
-            print(f"  ✗ Failed to create stochastic SS capital plot: {e}", flush=True)
-
-    # Plot stochastic SS sectoral distributions for L, Y, M, Q
+    # Plot stochastic SS sectoral distributions for K, L, Y, M, Q
     if stochastic_ss_policies:
-        for var_name in ["L", "Y", "M", "Q"]:
+        for var_name in ["K", "L", "Y", "M", "Q"]:
             try:
                 plot_sectoral_variable_stochss(
                     stochastic_ss_states=stochastic_ss_states,
@@ -693,6 +692,7 @@ def main():
                     save_dir=simulation_dir,
                     analysis_name=config["analysis_name"],
                     econ_model=econ_model,
+                    upstreamness_data=upstreamness_data,
                 )
                 print(f"  ✓ Stochastic SS sectoral {var_name} plot generated", flush=True)
             except Exception as e:
@@ -713,26 +713,11 @@ def main():
                     save_dir=simulation_dir,
                     analysis_name=config["analysis_name"],
                     econ_model=econ_model,
+                    upstreamness_data=upstreamness_data,
                 )
                 print(f"  ✓ Ergodic sectoral {var_name} plot generated", flush=True)
             except Exception as e:
                 print(f"  ✗ Failed to create ergodic {var_name} plot: {e}", flush=True)
-
-    # Plot comparison of ergodic mean vs stochastic SS for each experiment
-    for experiment_label, sim_data in raw_simulation_data.items():
-        if experiment_label in stochastic_ss_states:
-            try:
-                plot_sectoral_capital_comparison(
-                    simul_obs=sim_data["simul_obs"],
-                    stochastic_ss_state=stochastic_ss_states[experiment_label],
-                    save_dir=simulation_dir,
-                    analysis_name=config["analysis_name"],
-                    econ_model=econ_model,
-                    experiment_label=experiment_label,
-                )
-                print(f"  ✓ Capital comparison plot for {experiment_label}", flush=True)
-            except Exception as e:
-                print(f"  ✗ Failed to create capital comparison for {experiment_label}: {e}", flush=True)
 
     print("Analysis completed successfully.", flush=True)
 
@@ -746,6 +731,7 @@ def main():
         "stochastic_ss_loss": stochastic_ss_loss,
         "gir_data": gir_data,
         "matlab_ir_data": matlab_ir_data,
+        "upstreamness_data": upstreamness_data,
     }
 
 

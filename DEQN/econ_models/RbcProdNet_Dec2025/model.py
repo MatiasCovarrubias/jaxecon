@@ -541,24 +541,11 @@ class Model:
         P_term_M = jnp.outer(P ** (-self.sigma_m), Pm**self.sigma_m)
         M_Q_term = jnp.outer(1 / Q, M)
         Delta_M = self.Gamma_M * P_term_M * M_Q_term
-        # Print row sums
-        row_sums = jnp.sum(Delta_M, axis=1)
-        print("Row sums of Delta_M:", row_sums)
-        # Print column sums
-        col_sums = jnp.sum(Delta_M, axis=0)
-        print("Column sums of Delta_M:", col_sums)
 
         # Calculate Delta^I matrix (investment flow upstreamness)
-        # Delta^I = Gamma_I * [(P^(-sigma_I)) * (Pk^sigma_I)] * [1_N * (I * Q^(-1))']
         P_term_I = jnp.outer(P ** (-self.sigma_I), Pk**self.sigma_I)
         I_Q_term = jnp.outer(1 / Q, Inv)
         Delta_I = self.Gamma_I * P_term_I * I_Q_term
-        # Print row sums
-        row_sums = jnp.sum(Delta_I, axis=1)
-        print("Row sums of Delta_I:", row_sums)
-        # Print column sums
-        col_sums = jnp.sum(Delta_I, axis=0)
-        print("Column sums of Delta_I:", col_sums)
 
         # Calculate upstreamness measures
         # U^M = [I - Delta^M]^(-1) * 1

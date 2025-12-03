@@ -1194,6 +1194,7 @@ def plot_sectoral_variable_stochss(
     save_dir: str,
     analysis_name: str,
     econ_model: Any,
+    upstreamness_data: Optional[Dict[str, Any]] = None,
     figsize: Tuple[float, float] = (12, 8),
     display_dpi: int = 100,
 ):
@@ -1220,6 +1221,9 @@ def plot_sectoral_variable_stochss(
         Name of the analysis to include in the filename
     econ_model : Any
         Economic model instance (used to get n_sectors, labels, and policies_ss)
+    upstreamness_data : dict, optional
+        Dictionary containing upstreamness measures with keys "U_M" (IO upstreamness)
+        and "U_I" (investment upstreamness). If provided, correlations are displayed.
     figsize : tuple, optional
         Figure size (width, height) in inches
     display_dpi : int, optional
@@ -1229,6 +1233,8 @@ def plot_sectoral_variable_stochss(
     --------
     fig, ax : matplotlib figure and axis objects
     """
+    from scipy import stats
+
     n_sectors = econ_model.n_sectors
     sector_labels = econ_model.labels
     experiment_names = list(stochastic_ss_policies.keys())
@@ -1293,6 +1299,34 @@ def plot_sectoral_variable_stochss(
     ax.set_ylabel(f"Stochastic SS {var_info['title']} (% Dev. from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
     ax.set_title(f"Sectoral {var_info['title']} at Stochastic Steady State", fontweight="bold", fontsize=LARGE_SIZE)
 
+    # Calculate and display upstreamness correlations if data provided
+    if upstreamness_data is not None:
+        U_M = np.array(upstreamness_data["U_M"])
+        U_I = np.array(upstreamness_data["U_I"])
+
+        # Build correlation text for each experiment
+        corr_lines = []
+        for exp_name in experiment_names:
+            values = np.array(experiment_values[exp_name])
+            corr_M, p_M = stats.pearsonr(values, U_M)
+            corr_I, p_I = stats.pearsonr(values, U_I)
+            sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
+            sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
+            if n_experiments > 1:
+                corr_lines.append(f"{exp_name}: ρ(IO)={corr_M:.2f}{sig_M}, ρ(Inv)={corr_I:.2f}{sig_I}")
+            else:
+                corr_lines.append(f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}")
+
+        corr_text = "\n".join(corr_lines)
+        ax.text(
+            0.02, 0.02, corr_text,
+            transform=ax.transAxes,
+            fontsize=SMALL_SIZE - 1,
+            verticalalignment="bottom",
+            horizontalalignment="left",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor="gray"),
+        )
+
     ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
 
     ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
@@ -1317,6 +1351,7 @@ def plot_sectoral_variable_ergodic(
     save_dir: str,
     analysis_name: str,
     econ_model: Any,
+    upstreamness_data: Optional[Dict[str, Any]] = None,
     figsize: Tuple[float, float] = (12, 8),
     display_dpi: int = 100,
 ):
@@ -1340,6 +1375,9 @@ def plot_sectoral_variable_ergodic(
         Name of the analysis to include in the filename
     econ_model : Any
         Economic model instance (used to get n_sectors, labels, and policies_ss)
+    upstreamness_data : dict, optional
+        Dictionary containing upstreamness measures with keys "U_M" (IO upstreamness)
+        and "U_I" (investment upstreamness). If provided, correlations are displayed.
     figsize : tuple, optional
         Figure size (width, height) in inches
     display_dpi : int, optional
@@ -1349,6 +1387,8 @@ def plot_sectoral_variable_ergodic(
     --------
     fig, ax : matplotlib figure and axis objects
     """
+    from scipy import stats
+
     n_sectors = econ_model.n_sectors
     sector_labels = econ_model.labels
     experiment_names = list(raw_simulation_data.keys())
@@ -1413,6 +1453,34 @@ def plot_sectoral_variable_ergodic(
     ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
     ax.set_ylabel(f"Ergodic Mean {var_info['title']} (% Dev. from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
     ax.set_title(f"Sectoral {var_info['title']} - Ergodic Distribution", fontweight="bold", fontsize=LARGE_SIZE)
+
+    # Calculate and display upstreamness correlations if data provided
+    if upstreamness_data is not None:
+        U_M = np.array(upstreamness_data["U_M"])
+        U_I = np.array(upstreamness_data["U_I"])
+
+        # Build correlation text for each experiment
+        corr_lines = []
+        for exp_name in experiment_names:
+            values = np.array(experiment_values[exp_name])
+            corr_M, p_M = stats.pearsonr(values, U_M)
+            corr_I, p_I = stats.pearsonr(values, U_I)
+            sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
+            sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
+            if n_experiments > 1:
+                corr_lines.append(f"{exp_name}: ρ(IO)={corr_M:.2f}{sig_M}, ρ(Inv)={corr_I:.2f}{sig_I}")
+            else:
+                corr_lines.append(f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}")
+
+        corr_text = "\n".join(corr_lines)
+        ax.text(
+            0.02, 0.02, corr_text,
+            transform=ax.transAxes,
+            fontsize=SMALL_SIZE - 1,
+            verticalalignment="bottom",
+            horizontalalignment="left",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor="gray"),
+        )
 
     ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
 

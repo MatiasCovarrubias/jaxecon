@@ -1212,7 +1212,8 @@ def plot_sectoral_variable_stochss(
     stochastic_ss_policies : dict
         Dictionary mapping experiment labels to stochastic SS policies (in logdev form).
     variable_name : str
-        Name of the variable to plot. Options: "K" (capital), "L" (labor), "Y" (value added), "M" (intermediates)
+        Name of the variable to plot. Options: "K" (capital), "L" (labor), "Y" (value added),
+        "M" (intermediates), "Q" (gross output)
     save_dir : str
         Directory where the figure should be saved
     analysis_name : str
@@ -1239,6 +1240,7 @@ def plot_sectoral_variable_stochss(
         "L": {"title": "Labor", "index_start": n_sectors, "source": "policy"},
         "Y": {"title": "Value Added", "index_start": 10 * n_sectors, "source": "policy"},
         "M": {"title": "Intermediates", "index_start": 4 * n_sectors, "source": "policy"},
+        "Q": {"title": "Gross Output", "index_start": 9 * n_sectors, "source": "policy"},
     }
 
     if variable_name not in variable_info:
@@ -1301,6 +1303,127 @@ def plot_sectoral_variable_stochss(
 
     safe_var_name = variable_name.lower()
     filename = f"sectoral_{safe_var_name}_stochss_{analysis_name}.png" if analysis_name else f"sectoral_{safe_var_name}_stochss.png"
+    save_path = os.path.join(save_dir, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    print(f"    Saved: {filename}")
+    plt.show()
+
+    return fig, ax
+
+
+def plot_sectoral_variable_ergodic(
+    raw_simulation_data: Dict[str, Any],
+    variable_name: str,
+    save_dir: str,
+    analysis_name: str,
+    econ_model: Any,
+    figsize: Tuple[float, float] = (12, 8),
+    display_dpi: int = 100,
+):
+    """
+    Create publication-quality bar graph of a sectoral variable from the ergodic distribution.
+
+    This plot shows the sectoral distribution of the ergodic mean (time-average from simulation)
+    of a variable. Multiple experiments are shown with different bar colors on the same plot.
+
+    Parameters:
+    -----------
+    raw_simulation_data : dict
+        Dictionary mapping experiment labels to simulation data dictionaries.
+        Each contains "simul_obs" and "simul_policies" arrays.
+    variable_name : str
+        Name of the variable to plot. Options: "K" (capital), "L" (labor), "Y" (value added),
+        "M" (intermediates), "Q" (gross output)
+    save_dir : str
+        Directory where the figure should be saved
+    analysis_name : str
+        Name of the analysis to include in the filename
+    econ_model : Any
+        Economic model instance (used to get n_sectors, labels, and policies_ss)
+    figsize : tuple, optional
+        Figure size (width, height) in inches
+    display_dpi : int, optional
+        DPI for display (default 100). Saved figures always use 300 DPI.
+
+    Returns:
+    --------
+    fig, ax : matplotlib figure and axis objects
+    """
+    n_sectors = econ_model.n_sectors
+    sector_labels = econ_model.labels
+    experiment_names = list(raw_simulation_data.keys())
+    n_experiments = len(experiment_names)
+
+    # Variable name mapping
+    variable_info = {
+        "K": {"title": "Capital", "index_start": 0, "source": "state"},
+        "L": {"title": "Labor", "index_start": n_sectors, "source": "policy"},
+        "Y": {"title": "Value Added", "index_start": 10 * n_sectors, "source": "policy"},
+        "M": {"title": "Intermediates", "index_start": 4 * n_sectors, "source": "policy"},
+        "Q": {"title": "Gross Output", "index_start": 9 * n_sectors, "source": "policy"},
+    }
+
+    if variable_name not in variable_info:
+        raise ValueError(f"Unknown variable: {variable_name}. Options: {list(variable_info.keys())}")
+
+    var_info = variable_info[variable_name]
+    idx_start = var_info["index_start"]
+    idx_end = idx_start + n_sectors
+
+    # Get ergodic mean of sectoral variable for each experiment
+    experiment_values = {}
+    for exp_name in experiment_names:
+        if var_info["source"] == "state":
+            data = raw_simulation_data[exp_name]["simul_obs"]
+        else:
+            data = raw_simulation_data[exp_name]["simul_policies"]
+        # Compute time-average (ergodic mean)
+        experiment_values[exp_name] = np.mean(data[:, idx_start:idx_end], axis=0)
+
+    # Sort by first experiment's values
+    first_exp = experiment_names[0]
+    sorted_indices = np.argsort(experiment_values[first_exp])[::-1]
+    sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
+
+    x = np.arange(n_sectors)
+    bar_width = 0.8 / n_experiments
+
+    for i, exp_name in enumerate(experiment_names):
+        sorted_values = experiment_values[exp_name][sorted_indices]
+        offset = (i - n_experiments / 2 + 0.5) * bar_width
+
+        ax.bar(
+            x + offset,
+            sorted_values * 100,
+            bar_width,
+            label=exp_name,
+            color=colors[i % len(colors)],
+            alpha=0.9,
+            edgecolor="black",
+            linewidth=0.5,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
+
+    ax.tick_params(axis="both", which="major")
+
+    ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel(f"Ergodic Mean {var_info['title']} (% Dev. from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_title(f"Sectoral {var_info['title']} - Ergodic Distribution", fontweight="bold", fontsize=LARGE_SIZE)
+
+    ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+
+    ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    safe_var_name = variable_name.lower()
+    filename = f"sectoral_{safe_var_name}_ergodic_{analysis_name}.png" if analysis_name else f"sectoral_{safe_var_name}_ergodic.png"
     save_path = os.path.join(save_dir, filename)
     plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
     print(f"    Saved: {filename}")

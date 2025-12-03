@@ -84,6 +84,7 @@ from DEQN.analysis.plots import (  # noqa: E402
     plot_sector_ir_by_shock_size,
     plot_sectoral_capital_comparison,
     plot_sectoral_capital_stochss,
+    plot_sectoral_variable_ergodic,
     plot_sectoral_variable_stochss,
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
@@ -681,9 +682,9 @@ def main():
         except Exception as e:
             print(f"  ✗ Failed to create stochastic SS capital plot: {e}", flush=True)
 
-    # Plot stochastic SS sectoral distributions for L, Y, M
+    # Plot stochastic SS sectoral distributions for L, Y, M, Q
     if stochastic_ss_policies:
-        for var_name in ["L", "Y", "M"]:
+        for var_name in ["L", "Y", "M", "Q"]:
             try:
                 plot_sectoral_variable_stochss(
                     stochastic_ss_states=stochastic_ss_states,
@@ -696,6 +697,26 @@ def main():
                 print(f"  ✓ Stochastic SS sectoral {var_name} plot generated", flush=True)
             except Exception as e:
                 print(f"  ✗ Failed to create stochastic SS {var_name} plot: {e}", flush=True)
+
+    # ============================================================================
+    # ERGODIC DISTRIBUTION ANALYSIS: Sectoral Variable Plots
+    # ============================================================================
+    print("\nGenerating ergodic distribution plots...", flush=True)
+
+    # Plot ergodic mean sectoral distributions for K, L, Y, M, Q
+    if raw_simulation_data:
+        for var_name in ["K", "L", "Y", "M", "Q"]:
+            try:
+                plot_sectoral_variable_ergodic(
+                    raw_simulation_data=raw_simulation_data,
+                    variable_name=var_name,
+                    save_dir=simulation_dir,
+                    analysis_name=config["analysis_name"],
+                    econ_model=econ_model,
+                )
+                print(f"  ✓ Ergodic sectoral {var_name} plot generated", flush=True)
+            except Exception as e:
+                print(f"  ✗ Failed to create ergodic {var_name} plot: {e}", flush=True)
 
     # Plot comparison of ergodic mean vs stochastic SS for each experiment
     for experiment_label, sim_data in raw_simulation_data.items():

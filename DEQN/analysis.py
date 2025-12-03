@@ -90,7 +90,10 @@ from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
     simulation_analysis,
 )
-from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
+from DEQN.analysis.stochastic_ss import (  # noqa: E402
+    create_stochss_fn,
+    create_stochss_loss_fn,
+)
 from DEQN.analysis.tables import (  # noqa: E402
     create_comparative_stats_table,
     create_descriptive_stats_table,
@@ -323,6 +326,7 @@ def main():
     simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config))
     welfare_fn = jax.jit(get_welfare_fn(econ_model, config))
     stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, config))
+    stoch_ss_loss_fn = create_stochss_loss_fn(econ_model, mc_draws=32)
     gir_fn = jax.jit(create_GIR_fn(econ_model, config))
     print("Analysis functions created successfully.", flush=True)
 
@@ -333,6 +337,7 @@ def main():
     stochastic_ss_data = {}
     stochastic_ss_states = {}  # Store stochastic SS states for GIR computation
     stochastic_ss_policies = {}  # Store stochastic SS policies for sectoral plots
+    stochastic_ss_loss = {}  # Store loss evaluation at stochastic SS
     gir_data = {}
 
     # Data collection loop
@@ -398,6 +403,16 @@ def main():
 
         # Store stochastic steady state data as dictionary
         stochastic_ss_data[experiment_label] = stoch_ss_analysis_variables
+
+        # Evaluate equilibrium condition loss at stochastic steady state
+        loss_results = stoch_ss_loss_fn(stoch_ss_obs, stoch_ss_policy, train_state, random.PRNGKey(config["seed"]))
+        stochastic_ss_loss[experiment_label] = loss_results
+
+        # Print loss diagnostics
+        print("    Stochastic SS Loss Diagnostics:", flush=True)
+        print(f"      Mean Loss (MSE): {loss_results['mean_loss']:.6e}", flush=True)
+        print(f"      Mean Accuracy: {loss_results['mean_accuracy']:.6f}", flush=True)
+        print(f"      Min Accuracy: {loss_results['min_accuracy']:.6f}", flush=True)
 
         # Calculate and store GIR (including IRs from stochastic steady state)
         gir_results = gir_fn(simul_obs, train_state, simul_policies, stoch_ss_obs)
@@ -699,6 +714,7 @@ def main():
         "stochastic_ss_data": stochastic_ss_data,
         "stochastic_ss_states": stochastic_ss_states,
         "stochastic_ss_policies": stochastic_ss_policies,
+        "stochastic_ss_loss": stochastic_ss_loss,
         "gir_data": gir_data,
         "matlab_ir_data": matlab_ir_data,
     }

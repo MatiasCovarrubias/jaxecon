@@ -84,6 +84,7 @@ from DEQN.analysis.plots import (  # noqa: E402
     plot_sector_ir_by_shock_size,
     plot_sectoral_capital_comparison,
     plot_sectoral_capital_stochss,
+    plot_sectoral_variable_stochss,
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
@@ -149,7 +150,7 @@ config = {
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0, 2, 23],
-    "ir_variable_to_plot": "Agg. Consumption",
+    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Labor"],
     "ir_shock_sizes": [5, 10, 20],
     "ir_max_periods": 80,
     # JAX configuration
@@ -331,6 +332,7 @@ def main():
     welfare_costs = {}
     stochastic_ss_data = {}
     stochastic_ss_states = {}  # Store stochastic SS states for GIR computation
+    stochastic_ss_policies = {}  # Store stochastic SS policies for sectoral plots
     gir_data = {}
 
     # Data collection loop
@@ -379,6 +381,9 @@ def main():
 
         # Store stochastic SS state for GIR computation (in logdev form)
         stochastic_ss_states[experiment_label] = stoch_ss_obs
+
+        # Store stochastic SS policies for sectoral plots (in logdev form)
+        stochastic_ss_policies[experiment_label] = stoch_ss_policy
 
         # Get average prices from simulation policies
         simul_policies_mean = jnp.mean(simul_policies, axis=0)
@@ -524,8 +529,10 @@ def main():
     )
 
     # Analysis variable histograms (in simulation folder)
+    # Filter out deterministic solution for histograms
+    histogram_data = {k: v for k, v in analysis_variables_data.items() if "Deterministic" not in k}
     plot_ergodic_histograms(
-        analysis_variables_data=analysis_variables_data, save_dir=simulation_dir, analysis_name=config["analysis_name"]
+        analysis_variables_data=histogram_data, save_dir=simulation_dir, analysis_name=config["analysis_name"]
     )
 
     # Note: plot_gir_responses uses old GIR data structure.
@@ -566,32 +573,41 @@ def main():
     print("\nGenerating IR comparison plots...", flush=True)
 
     sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
-    ir_variable = config.get("ir_variable_to_plot", "Agg. Consumption")
+    ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
     shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
     max_periods = config.get("ir_max_periods", 80)
 
-    print(f"  Variable: {ir_variable}", flush=True)
+    print(f"  Variables: {ir_variables}", flush=True)
     print(f"  Shock sizes: {shock_sizes}", flush=True)
     print(f"  Sectors to plot: {sectors_to_plot}", flush=True)
 
-    for i, sector_idx in enumerate(sectors_to_plot):
+    total_plots = len(sectors_to_plot) * len(ir_variables)
+    plot_idx = 0
+
+    for sector_idx in sectors_to_plot:
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
         )
-        print(f"\n  [{i + 1}/{len(sectors_to_plot)}] Processing sector {sector_idx}: {sector_label}...", flush=True)
 
-        plot_sector_ir_by_shock_size(
-            gir_data=gir_data,
-            matlab_ir_data=matlab_ir_data,
-            sector_idx=sector_idx,
-            sector_label=sector_label,
-            variable_to_plot=ir_variable,
-            shock_sizes=shock_sizes,
-            save_dir=irs_dir,
-            analysis_name=config["analysis_name"],
-            max_periods=max_periods,
-            n_sectors=n_sectors,
-        )
+        for ir_variable in ir_variables:
+            plot_idx += 1
+            print(
+                f"\n  [{plot_idx}/{total_plots}] Sector {sector_idx} ({sector_label}), Variable: {ir_variable}...",
+                flush=True,
+            )
+
+            plot_sector_ir_by_shock_size(
+                gir_data=gir_data,
+                matlab_ir_data=matlab_ir_data,
+                sector_idx=sector_idx,
+                sector_label=sector_label,
+                variable_to_plot=ir_variable,
+                shock_sizes=shock_sizes,
+                save_dir=irs_dir,
+                analysis_name=config["analysis_name"],
+                max_periods=max_periods,
+                n_sectors=n_sectors,
+            )
 
     print("\n  ✓ Combined IR analysis completed.", flush=True)
 
@@ -642,6 +658,22 @@ def main():
         except Exception as e:
             print(f"  ✗ Failed to create stochastic SS capital plot: {e}", flush=True)
 
+    # Plot stochastic SS sectoral distributions for L, Y, M
+    if stochastic_ss_policies:
+        for var_name in ["L", "Y", "M"]:
+            try:
+                plot_sectoral_variable_stochss(
+                    stochastic_ss_states=stochastic_ss_states,
+                    stochastic_ss_policies=stochastic_ss_policies,
+                    variable_name=var_name,
+                    save_dir=simulation_dir,
+                    analysis_name=config["analysis_name"],
+                    econ_model=econ_model,
+                )
+                print(f"  ✓ Stochastic SS sectoral {var_name} plot generated", flush=True)
+            except Exception as e:
+                print(f"  ✗ Failed to create stochastic SS {var_name} plot: {e}", flush=True)
+
     # Plot comparison of ergodic mean vs stochastic SS for each experiment
     for experiment_label, sim_data in raw_simulation_data.items():
         if experiment_label in stochastic_ss_states:
@@ -666,6 +698,7 @@ def main():
         "welfare_costs": welfare_costs,
         "stochastic_ss_data": stochastic_ss_data,
         "stochastic_ss_states": stochastic_ss_states,
+        "stochastic_ss_policies": stochastic_ss_policies,
         "gir_data": gir_data,
         "matlab_ir_data": matlab_ir_data,
     }

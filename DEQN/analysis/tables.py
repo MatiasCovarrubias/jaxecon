@@ -339,8 +339,11 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
     experiment_names = list(stochastic_ss_data.keys())
     n_experiments = len(experiment_names)
 
+    # Exclude Utility from the table
+    excluded_vars = ["Utility"]
+
     first_exp = experiment_names[0]
-    var_labels = list(stochastic_ss_data[first_exp].keys())
+    var_labels = [v for v in stochastic_ss_data[first_exp].keys() if v not in excluded_vars]
 
     latex_code = (
         f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_experiments}}}{{X}}}}\n"

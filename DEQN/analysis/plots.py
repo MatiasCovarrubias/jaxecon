@@ -748,7 +748,7 @@ def plot_sector_ir_by_shock_size(
     sector_label: str,
     variable_to_plot: str = "Agg. Consumption",
     shock_sizes: list = [5, 10, 20],
-    figsize: Tuple[float, float] = (16, 5),
+    figsize: Tuple[float, float] = (7, 10),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
@@ -796,7 +796,7 @@ def plot_sector_ir_by_shock_size(
     from DEQN.analysis.matlab_irs import get_matlab_ir_for_analysis_variable
 
     n_sizes = len(shock_sizes)
-    fig, axes = plt.subplots(1, n_sizes, figsize=figsize, dpi=display_dpi, sharey=True)
+    fig, axes = plt.subplots(n_sizes, 1, figsize=figsize, dpi=display_dpi, sharex=True)
 
     if n_sizes == 1:
         axes = [axes]
@@ -937,18 +937,16 @@ def plot_sector_ir_by_shock_size(
 
         ax.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax.grid(True, alpha=0.3)
-        ax.set_title(f"±{shock_size}% shock", fontweight="bold", fontsize=MEDIUM_SIZE)
-        ax.set_xlabel("Periods", fontsize=SMALL_SIZE)
+        ax.set_ylabel(f"±{shock_size}% shock", fontweight="bold", fontsize=MEDIUM_SIZE)
         ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
         ax.set_xlim(0, max_periods - 1)
 
-    axes[0].set_ylabel(f"{variable_to_plot} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
+    axes[-1].set_xlabel("Periods", fontsize=SMALL_SIZE)
 
     fig.suptitle(
-        f"{sector_label}: {variable_to_plot} Impulse Responses",
+        f"{sector_label}: {variable_to_plot} (% change)",
         fontweight="bold",
         fontsize=LARGE_SIZE,
-        y=1.02,
     )
 
     handles, labels = axes[0].get_legend_handles_labels()
@@ -956,13 +954,12 @@ def plot_sector_ir_by_shock_size(
         fig.legend(
             handles,
             labels,
-            loc="lower center",
-            ncol=min(len(handles), 4),
-            fontsize=SMALL_SIZE,
-            bbox_to_anchor=(0.5, -0.08),
+            loc="upper right",
+            fontsize=SMALL_SIZE - 1,
+            bbox_to_anchor=(0.98, 0.98),
         )
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
 
     if save_dir:
 

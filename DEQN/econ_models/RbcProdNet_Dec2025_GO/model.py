@@ -495,6 +495,32 @@ class Model:
         ) ** (1 - self.eps_c ** (-1))
         return U
 
+    def consumption_equivalent(self, welfare):
+        """
+        Calculate consumption-equivalent welfare measure (Vc).
+
+        This inverts the welfare to find what steady-state consumption level would
+        deliver the same welfare, expressed as a deviation from actual steady state.
+
+        Args:
+            welfare: Discounted welfare V = E[sum_{t=0}^inf beta^t U_t]
+
+        Returns:
+            Vc: Consumption equivalent measure.
+                Vc = 0 at steady state.
+                Vc < 0 means welfare loss (would need to increase C_ss to compensate).
+                Vc > 0 means welfare gain.
+        """
+        labor_disutility_ss = self.theta * (1 / (1 + self.eps_l ** (-1))) * self.Lagg_ss ** (1 + self.eps_l ** (-1))
+
+        sigma = self.eps_c ** (-1)
+        exponent = 1 / (1 - sigma)
+        X_from_welfare = (welfare * (1 - self.beta) * (1 - sigma)) ** exponent
+
+        Vc = (1 / self.Cagg_ss) * (X_from_welfare + labor_disutility_ss) - 1
+
+        return Vc
+
     def upstreamness(self):
         """Calculate the upstreamness of each sector based on intermediate inputs and investment flows"""
         # Process policy

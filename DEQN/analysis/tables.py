@@ -275,14 +275,20 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
     latex_code = (
         r"\begin{tabularx}{\textwidth}{l X}" + "\n"
         r"\toprule" + "\n"
-        r"\textbf{Experiment} & \textbf{Welfare Loss (\%)} \\" + "\n"
+        r"\textbf{Experiment} & \textbf{Welfare Cost ($V_c$, \%)} \\" + "\n"
         r"\midrule" + "\n"
     )
 
-    for exp_name, welfare_loss in welfare_data.items():
-        latex_code += f"\\textbf{{{exp_name}}} & {welfare_loss:.4f} \\\\\n"
+    for exp_name, welfare_cost in welfare_data.items():
+        latex_code += f"\\textbf{{{exp_name}}} & {welfare_cost:.4f} \\\\\n"
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    latex_code += r"\\" + "\n"
+    latex_code += (
+        r"\textit{Note: $V_c$ is the consumption-equivalent welfare cost of business cycles. "
+        + r"A value of 1.0 means agents would need 1\% higher steady-state consumption to be compensated.}"
+        + "\n"
+    )
 
     return latex_code
 

@@ -373,11 +373,19 @@ def main():
         # Calculate utilities separately using the new utility method
         simul_utilities = jax.vmap(econ_model.utility_from_policies)(simul_policies)
 
-        # Calculate and store welfare cost
+        # Calculate welfare from simulation
         welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
         welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config["welfare_seed"]))
-        welfare_loss = (1 - welfare / welfare_ss) * 100
-        welfare_costs[experiment_label] = welfare_loss
+
+        # Compute consumption-equivalent welfare cost (Vc < 0 means loss)
+        Vc = econ_model.consumption_equivalent(welfare)
+        welfare_cost_ce = -Vc * 100  # Convert to positive percentage
+        welfare_costs[experiment_label] = welfare_cost_ce
+
+        # Verification: Vc at steady state should be ~0
+        Vc_ss = econ_model.consumption_equivalent(welfare_ss)
+        print(f"    Welfare: Vc = {Vc:.6f}, Vc_ss = {Vc_ss:.6f} (should be ~0)", flush=True)
+        print(f"    Consumption-equivalent welfare cost: {welfare_cost_ce:.4f}%", flush=True)
 
         # Calculate and store stochastic steady state
         stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)

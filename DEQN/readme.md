@@ -4,110 +4,128 @@ A JAX implementation of the [Deep Equilibrium Network](https://onlinelibrary.wil
 
 ## Quick Start
 
-### Training a Model
+### Training
 
-**Google Colab:**
-1. Create a new Colab notebook
-2. Copy the contents of `train.py` into a cell
-3. Edit the `config` dictionary at the top to select your model and experiment settings
-4. Run — results are saved to Google Drive
-
-**Local:**
 ```bash
-source .venv/bin/activate
+# Local
 python DEQN/train.py
+
+# Colab: copy train.py contents into a cell and run
 ```
 
-### Analyzing Results
-
-**Google Colab / Local:** Same workflow as training, using `analysis.py`
+### Analysis
 
 ```bash
+# Local
 python DEQN/analysis.py
+
+# Colab: copy analysis.py contents into a cell and run
+```
+
+### Testing
+
+```bash
+python DEQN/test.py
 ```
 
 ## Main Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `train.py` | Train neural network policies for economic models |
-| `analysis.py` | Analyze trained models: simulations, welfare, impulse responses |
+| `train.py` | Train neural network policies |
+| `analysis.py` | Analyze trained models: simulations, welfare, IRs |
+| `test.py` | Run diagnostic tests on trained models |
 
-Both scripts auto-detect their environment (Colab vs local) and configure paths, dependencies, and storage accordingly.
+All scripts auto-detect their environment (Colab vs local).
 
-### Configuration
+## Structure
+
+```
+DEQN/
+├── train.py               # Training script
+├── analysis.py            # Analysis script
+├── test.py                # Testing script
+├── utils.py               # Shared utilities
+│
+├── algorithm/             # Core algorithm
+│   ├── simulation.py      # Episode simulation
+│   ├── loss.py            # Euler equation loss
+│   ├── epoch_train.py     # Training loop
+│   └── eval.py            # Evaluation
+│
+├── analysis/              # Analysis tools
+│   ├── GIR.py             # Generalized Impulse Responses
+│   ├── plots.py           # Visualization
+│   ├── tables.py          # Results tables
+│   ├── welfare.py         # Welfare calculations
+│   └── stochastic_ss.py   # Stochastic steady state
+│
+├── econ_models/           # Economic models
+│   ├── rbc_ces.py         # RBC with CES production
+│   ├── rbc.py             # Basic RBC
+│   └── RbcProdNet*/       # Production network models
+│
+├── neural_nets/           # Neural networks
+│   ├── neural_nets.py     # Standard feedforward
+│   └── with_loglinear_baseline.py
+│
+├── training/              # Training utilities
+│   └── run_experiment.py
+│
+└── tests/                 # Test suite
+    └── grid_simulation_analysis.py
+```
+
+## Configuration
 
 Edit the `config` dictionary at the top of each script:
 
 ```python
 config = {
     # Model selection
-    "model_dir": "RbcProdNet_Oct2025",    # Which model to use
-    "exper_name": "baseline",              # Experiment name for saving
+    "model_dir": "RbcProdNet_Oct2025",
+    "exper_name": "baseline",
     
-    # Training parameters
-    "layers": [32, 32],                    # Neural network architecture
+    # Training
+    "layers": [32, 32],
     "learning_rate": 0.0005,
     "n_epochs": 100,
     # ...
 }
 ```
 
-## Structure
-
-```
-DEQN/
-├── train.py               # Training script (local + Colab)
-├── analysis.py            # Analysis script (local + Colab)
-├── algorithm/             # Core algorithm components
-│   ├── simulation.py      # Episode simulation
-│   ├── loss.py            # Euler equation loss functions
-│   ├── epoch_train.py     # Training loop
-│   └── eval.py            # Evaluation
-├── econ_models/           # Economic model implementations
-│   ├── rbc_ces.py         # RBC with CES production
-│   ├── rbc.py             # Basic RBC model
-│   └── RbcProdNet*/       # Production network models
-├── neural_nets/           # Neural network architectures
-│   ├── neural_nets.py     # Standard feedforward
-│   └── with_loglinear_baseline.py  # With loglinear residual
-├── analysis/              # Post-training analysis tools
-│   ├── GIR.py             # Generalized Impulse Responses
-│   ├── plots.py           # Visualization
-│   └── tables.py          # Results tables
-└── training/              # Training utilities
-    └── run_experiment.py  # Experiment orchestration
-```
-
 ## Algorithm Components
 
 | Function | Description |
 |----------|-------------|
-| `create_episode_simul_fn()` | Simulates episodes given a policy network |
-| `create_batch_loss_fn()` | Computes batch loss from Euler equation residuals |
-| `create_epoch_train_fn()` | Orchestrates one epoch of training |
+| `create_episode_simul_fn()` | Simulates episodes given a policy |
+| `create_batch_loss_fn()` | Computes Euler equation residuals |
+| `create_epoch_train_fn()` | One epoch of training |
 | `create_eval_fn()` | Evaluates policy accuracy |
 
 ## Economic Models
 
 Models are Python classes implementing:
-- State and control variable dimensions
-- Transition dynamics
+- State/control dimensions
+- Transition dynamics  
 - Euler equation residuals (FOCs)
 - Steady state values
 
-Available models:
-- `rbc_ces.py` — RBC with CES production function
-- `rbc.py` — Basic RBC model
-- `rbc_twosectors.py` — Two-sector RBC
-- `rbc_multi_sec.py` — Multi-sector RBC
+See `econ_models/readme.md` for details on implementing new models.
 
-## Notebooks (for Learning)
+## Adding Model-Specific Analysis
 
-| Notebook | Description |
-|----------|-------------|
-| `Rbc_CES.ipynb` | Introductory example |
-| `jaxDEQN.ipynb` | Detailed algorithm walkthrough |
-| `analysis.ipynb` | Interactive analysis examples |
+Model-specific plots are auto-discovered. In your model's `plots.py`:
 
-For serious experimentation, use `train.py` and `analysis.py`.
+```python
+def my_plot(simul_obs, simul_policies, simul_analysis_variables,
+            save_path, analysis_name, econ_model, experiment_label, **kwargs):
+    # Your plotting code
+    plt.savefig(save_path)
+
+MODEL_SPECIFIC_PLOTS = [
+    {"name": "my_plot", "function": my_plot, "description": "..."},
+]
+```
+
+The analysis script automatically discovers and runs registered plots.

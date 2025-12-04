@@ -1,11 +1,24 @@
+"""
+Epoch training functions for APG.
+"""
+
 import jax
+import jax.numpy as jnp
 from jax import lax, random
-from jax import numpy as jnp
 
 from .loss import create_episode_loss_fn
 
 
-def get_apg_train_fn(env, config):
+def create_epoch_train_fn(env, config):
+    """Create the epoch training function for APG.
+
+    Args:
+        env: Environment instance
+        config: Configuration dictionary
+
+    Returns:
+        Function that trains for one epoch and returns (train_state, rng, metrics)
+    """
     episode_loss_fn = create_episode_loss_fn(env, config)
 
     def episode_train_fn(train_state, epis_rng):
@@ -29,7 +42,7 @@ def get_apg_train_fn(env, config):
         return train_state, batch_metrics
 
     def epoch_train_fn(train_state, epoch_rng):
-        """Vectorise and repeat the update to complete an epoch, made aout of steps_per_epoch episodes."""
+        """Vectorise and repeat the update to complete an epoch."""
         epoch_rng, *step_rngs = random.split(epoch_rng, config["steps_per_epoch"] + 1)
         train_state, epoch_metrics = lax.scan(step_train_fn, train_state, jnp.stack(step_rngs))
         return train_state, epoch_rng, epoch_metrics

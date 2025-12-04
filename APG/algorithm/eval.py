@@ -1,13 +1,29 @@
-from jax import numpy as jnp, random
+"""
+Evaluation functions for APG.
+"""
+
 import jax
-from .simulation import create_simul_episode_fn
+import jax.numpy as jnp
+from jax import random
+
+from .simulation import create_episode_simul_fn
 
 
-def create_episode_loss_fn_eval(env, config, eval_periods_per_epis):
-    simul_episode = create_simul_episode_fn(env, eval_periods_per_epis)
+def create_eval_fn(env, config):
+    """Create evaluation function for APG.
 
-    # Define function that gives targets for value updates
+    Args:
+        env: Environment instance
+        config: Configuration dictionary with eval parameters
+
+    Returns:
+        Function that evaluates the current policy and returns metrics
+    """
+    eval_periods = config.get("eval_periods_per_epis", config["periods_per_epis"])
+    simul_episode = create_episode_simul_fn(env, eval_periods)
+
     def get_targets(trajectory, last_val):
+        """Compute GAE targets for value function updates."""
 
         def get_advantages(gae_and_next_value, transition):
             gae, next_value = gae_and_next_value
@@ -39,26 +55,23 @@ def create_episode_loss_fn_eval(env, config, eval_periods_per_epis):
         value_loss_perc = jnp.mean((values - targets) / targets)
         return actor_loss + value_loss, (actor_loss, value_loss, value_loss_perc)
 
-    return episode_loss_fn
-
-
-def get_eval_fn(env, config):
-    episode_loss_fn = create_episode_loss_fn_eval(env, config, config["eval_periods_per_epis"])
-
     def episode_grads_and_metrics(train_state, epis_rng):
         grad_fn = jax.value_and_grad(episode_loss_fn, has_aux=True)
         loss_metrics, grads = grad_fn(train_state.params, train_state, epis_rng)
         grads = jax.lax.pmean(grads, axis_name="episodes")
-        grad_mean = jnp.mean(jnp.array(jax.tree_util.tree_leaves(jax.tree_map(jnp.mean, grads))))
-        grad_max = jnp.max(jnp.array(jax.tree_util.tree_leaves(jax.tree_map(lambda x: jnp.max(jnp.abs(x)), grads))))
+        grad_mean = jnp.mean(jnp.array(jax.tree_util.tree_leaves(jax.tree_util.tree_map(jnp.mean, grads))))
+        grad_max = jnp.max(
+            jnp.array(jax.tree_util.tree_leaves(jax.tree_util.tree_map(lambda x: jnp.max(jnp.abs(x)), grads)))
+        )
         grad_metrics = (grad_mean, grad_max)
         episode_metrics = (loss_metrics, grad_metrics)
         return episode_metrics
 
     def eval_fn(train_state, eval_rng):
-        epis_rng = random.split(eval_rng, config["eval_n_epis"])
+        eval_n_epis = config.get("eval_n_epis", 1024)
+        epis_rng = random.split(eval_rng, eval_n_epis)
         loss_metrics, grad_metrics = jax.vmap(
-            episode_grads_and_metrics, in_axes=(None, 0), out_axes=(0), axis_name="episodes"
+            episode_grads_and_metrics, in_axes=(None, 0), out_axes=0, axis_name="episodes"
         )(train_state, jnp.stack(epis_rng))
         eval_metrics = (
             jnp.mean(loss_metrics[0]),

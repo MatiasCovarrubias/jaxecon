@@ -1,14 +1,27 @@
-from jax import numpy as jnp
+"""
+Loss functions for APG.
+"""
+
 import jax
-from .simulation import create_simul_episode_fn
+import jax.numpy as jnp
+
+from .simulation import create_episode_simul_fn
 
 
 def create_episode_loss_fn(env, config):
+    """Create a loss function for a single episode.
 
-    simul_episode = create_simul_episode_fn(env, config["periods_per_epis"])
+    Args:
+        env: Environment instance
+        config: Configuration dictionary with 'periods_per_epis' and 'gae_lambda'
 
-    # Define function that gives targets for value updates
+    Returns:
+        Function that computes episode loss and auxiliary metrics
+    """
+    simul_episode = create_episode_simul_fn(env, config["periods_per_epis"])
+
     def get_targets(trajectory, last_val):
+        """Compute GAE targets for value function updates."""
 
         def get_advantages(gae_and_next_value, transition):
             gae, next_value = gae_and_next_value

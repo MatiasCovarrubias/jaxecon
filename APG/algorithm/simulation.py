@@ -1,6 +1,12 @@
+"""
+Episode simulation for APG.
+"""
+
 from typing import NamedTuple
-from jax import numpy as jnp, random
+
 import jax
+import jax.numpy as jnp
+from jax import random
 
 
 class Transition(NamedTuple):
@@ -18,12 +24,21 @@ class Metrics(NamedTuple):
     mean_value_loss: jax.Array
 
 
-def create_simul_episode_fn(env, periods_per_epis):
+def create_episode_simul_fn(env, periods_per_epis):
+    """Create a function that simulates a single episode.
+
+    Args:
+        env: Environment instance
+        periods_per_epis: Number of periods per episode
+
+    Returns:
+        Function that takes (params, train_state, epis_rng) and returns
+        (returns, trajectory, last_val)
+    """
 
     def simul_episode(params, train_state, epis_rng):
         obs, env_state = env.reset(epis_rng)
         period_rngs = random.split(epis_rng, periods_per_epis)
-        # epis_rng, *period_rngs = random.split(epis_rng, periods_per_epis + 1)
         runner_state = params, env_state, obs, 0, 1
 
         def period_step(runner_state, period_rng):

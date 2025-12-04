@@ -19,3 +19,6 @@ seaborn>=0.11.0
 # Additional dependencies for model analysis
 jupyter>=1.0.0
 
+# VFI dependencies
+quantecon>=0.7.0
+

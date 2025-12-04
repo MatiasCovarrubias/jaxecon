@@ -82,7 +82,7 @@ from DEQN.tests.plots import (  # noqa: E402
     plot_grid_test_diagnostics,
     plot_grid_test_scaling,
 )
-from DEQN.utils import load_experiment_data, load_trained_model_GPU  # noqa: E402
+from DEQN.training.checkpoints import load_experiment_data, load_trained_model_GPU  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
 

@@ -30,11 +30,11 @@ python DEQN/test.py
 
 ## Main Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `train.py` | Train neural network policies |
+| Script        | Purpose                                           |
+| ------------- | ------------------------------------------------- |
+| `train.py`    | Train neural network policies                     |
 | `analysis.py` | Analyze trained models: simulations, welfare, IRs |
-| `test.py` | Run diagnostic tests on trained models |
+| `test.py`     | Run diagnostic tests on trained models            |
 
 All scripts auto-detect their environment (Colab vs local).
 
@@ -45,7 +45,6 @@ DEQN/
 ├── train.py               # Training script
 ├── analysis.py            # Analysis script
 ├── test.py                # Testing script
-├── utils.py               # Shared utilities
 │
 ├── algorithm/             # Core algorithm
 │   ├── simulation.py      # Episode simulation
@@ -70,7 +69,8 @@ DEQN/
 │   └── with_loglinear_baseline.py
 │
 ├── training/              # Training utilities
-│   └── run_experiment.py
+│   ├── run_experiment.py  # Experiment orchestration
+│   └── checkpoints.py     # Checkpoint loading
 │
 └── tests/                 # Test suite
     └── grid_simulation_analysis.py
@@ -85,7 +85,7 @@ config = {
     # Model selection
     "model_dir": "RbcProdNet_Oct2025",
     "exper_name": "baseline",
-    
+
     # Training
     "layers": [32, 32],
     "learning_rate": 0.0005,
@@ -96,20 +96,21 @@ config = {
 
 ## Algorithm Components
 
-| Function | Description |
-|----------|-------------|
+| Function                    | Description                       |
+| --------------------------- | --------------------------------- |
 | `create_episode_simul_fn()` | Simulates episodes given a policy |
-| `create_batch_loss_fn()` | Computes Euler equation residuals |
-| `create_epoch_train_fn()` | One epoch of training |
-| `create_eval_fn()` | Evaluates policy accuracy |
+| `create_batch_loss_fn()`    | Computes Euler equation residuals |
+| `create_epoch_train_fn()`   | One epoch of training             |
+| `create_eval_fn()`          | Evaluates policy accuracy         |
 
 ## Economic Models
 
 Models are Python classes implementing:
-- State/control dimensions
-- Transition dynamics  
-- Euler equation residuals (FOCs)
-- Steady state values
+
+-   State/control dimensions
+-   Transition dynamics
+-   Euler equation residuals (FOCs)
+-   Steady state values
 
 See `econ_models/readme.md` for details on implementing new models.
 

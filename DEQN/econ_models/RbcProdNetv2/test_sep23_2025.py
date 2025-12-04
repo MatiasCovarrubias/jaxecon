@@ -108,7 +108,7 @@ from DEQN.tests.grid_simulation_analysis import (  # noqa: E402
     _print_grid_summary,
     run_seed_length_grid,
 )
-from DEQN.utils import load_experiment_data, load_trained_model_GPU  # noqa: E402
+from DEQN.training.checkpoints import load_experiment_data, load_trained_model_GPU  # noqa: E402
 
 # Configure JAX debugging
 jax_config.update("jax_debug_nans", True)

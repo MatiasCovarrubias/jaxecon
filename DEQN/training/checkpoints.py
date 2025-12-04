@@ -1,7 +1,7 @@
 """
-Utility functions for DEQN package.
+Checkpoint loading utilities for DEQN.
 
-This module contains common utility functions used across different DEQN components.
+Functions for loading trained models and experiment data from checkpoints.
 """
 
 import json
@@ -14,7 +14,7 @@ import orbax.checkpoint as ocp
 from flax.training import checkpoints
 from flax.training.train_state import TrainState
 
-from .neural_nets.with_loglinear_baseline import NeuralNet
+from DEQN.neural_nets.with_loglinear_baseline import NeuralNet
 
 
 def load_trained_model_GPU(experiment_name: str, save_dir: str, nn_config: Dict[str, Any]) -> TrainState:
@@ -147,3 +147,4 @@ def load_trained_model_orbax(
     train_state = train_state.replace(opt_state=opt_state, step=restored_step)
 
     return train_state
+

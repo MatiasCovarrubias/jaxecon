@@ -93,7 +93,7 @@ from DEQN.econ_models.RbcProdNetv2.tables import (  # noqa: E402
     create_stochastic_ss_table,
     create_welfare_table,
 )
-from DEQN.utils import load_experiment_data, load_trained_model_GPU  # noqa: E402
+from DEQN.training.checkpoints import load_experiment_data, load_trained_model_GPU  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
 

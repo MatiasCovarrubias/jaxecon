@@ -40,7 +40,7 @@ from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
 from DEQN.econ_models.RbcProdNetv2.plots import plot_sectoral_capital_mean  # noqa: E402
 from DEQN.econ_models.RbcProdNetv2.RbcProdNet_Sept23_2025 import Model  # noqa: E402
-from DEQN.utils import load_experiment_data, load_trained_model_GPU  # noqa: E402
+from DEQN.training.checkpoints import load_experiment_data, load_trained_model_GPU  # noqa: E402
 
 # Configure JAX debugging
 jax_config.update("jax_debug_nans", True)

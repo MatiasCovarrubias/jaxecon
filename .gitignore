@@ -137,3 +137,53 @@ DEQN/econ_models/experiments/
 DEQN/econ_models/*/analysis/
 DEQN/econ_models/*/plots/
 DEQN/econ_models/*/tables/
+
+# =============================================================================
+# MATLAB / Dynare / Stata (external tools - not part of this Python project)
+# =============================================================================
+*.m
+*.mat
+*.mod
+*.do
+**/MATLAB/
+
+# =============================================================================
+# LaTeX auxiliary files (can be regenerated from .tex sources)
+# =============================================================================
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.out
+*.toc
+*.bbl
+*.blg
+*.nav
+*.snm
+*.vrb
+
+# =============================================================================
+# Personal workflow / development planning
+# =============================================================================
+sprints/
+**/OLD/
+**/_OLD/
+
+# =============================================================================
+# Archives and temporary files
+# =============================================================================
+*.zip
+
+# =============================================================================
+# Generated PDFs (keep .tex source, regenerate PDFs as needed)
+# =============================================================================
+# Note: Uncomment below if you want to exclude all PDFs
+# *.pdf
+
+# =============================================================================
+# IDE / Editor specific (in addition to .vscode already handled)
+# =============================================================================
+.idea/
+*.swp
+*.swo
+*~

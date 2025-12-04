@@ -2,22 +2,24 @@
 # This script trains a neural net to output the optimal policy of a nonlinear RBC model using the Analytical Policy Gradient (APG) algorithm. The code has been organized into modular components.
 
 # Standard imports
-import jax
-import flax
-import optax
-import os
 import json
-from jax import numpy as jnp, random
-from flax import linen as nn
-from flax.training.train_state import TrainState
-from flax.training import checkpoints
+import os
 from time import time
+
+import flax
+import jax
+import optax
+from algorithm.epoch_train import get_apg_train_fn
+from algorithm.eval import get_eval_fn
+from environments.RbcMultiSector import RbcMultiSector
+from flax import linen as nn
+from flax.training import checkpoints
+from flax.training.train_state import TrainState
+from jax import numpy as jnp
+from jax import random
 
 # Import our modular components
 from neural_nets.neural_nets import ActorCritic
-from environemnts.RbcMultiSector import RbcMultiSector
-from algorithm.epoch_train import get_apg_train_fn
-from algorithm.eval import get_eval_fn
 from utilities.plot_results import plot_results
 
 print("JAX devices:", jax.devices())

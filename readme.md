@@ -129,7 +129,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed setup instructions.
 
 ## Requirements
 
--   Python 3.9+
+-   Python 3.10–3.13 (3.14+ not yet supported by JAX)
 -   JAX 0.7+
 -   Flax 0.8+
 -   Optax 0.2+

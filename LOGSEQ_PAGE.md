@@ -1,0 +1,4 @@
+-   # jaxecon
+-   repo:: jaxecon
+-   JAX-based library for computational economics.
+-   All activity appears in backlinks below via journal entries tagged [[jaxecon]].

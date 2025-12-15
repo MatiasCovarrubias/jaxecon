@@ -11,9 +11,16 @@ The repository uses JAX for numerical computations. While end users can run the 
 1. **Create and activate virtual environment:**
 
     ```bash
-    python3 -m venv .venv
+    # If using Python 3.13 from Homebrew:
+    /usr/local/opt/python@3.13/bin/python3.13 -m venv .venv
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+    
+    # Or if Python 3.13 is your default python3:
+    python3 -m venv .venv
+    source .venv/bin/activate
     ```
+
+    **Note:** JAX requires Python 3.10-3.13. Python 3.14+ is not yet supported.
 
 2. **Install dependencies:**
 

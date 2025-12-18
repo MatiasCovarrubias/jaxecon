@@ -1,0 +1,386 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+% Colors
+\definecolor{nkblue}{RGB}{46,134,171}
+\definecolor{codegray}{RGB}{240,240,240}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=nkblue,
+    filecolor=nkblue,
+    urlcolor=nkblue,
+    citecolor=nkblue
+}
+
+% Section formatting
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{nkblue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{nkblue}}{\thesubsection}{1em}{}
+
+% Code listing style
+\lstset{
+    backgroundcolor=\color{codegray},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    xleftmargin=0.5cm,
+    xrightmargin=0.5cm
+}
+
+% Title information
+\title{\textbf{\huge Three-Equation New Keynesian Model}\\[0.5em]
+       \Large Implementation in JAXecon/DEQN\\[0.3em]
+       \large Based on Galí (2015), Chapter 3}
+\author{}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent This document provides a comprehensive explanation of the three-equation New Keynesian (NK) model as presented in Chapter 3 of Galí's \textit{Monetary Policy, Inflation, and the Business Cycle} (2015), along with its implementation in the JAXecon/DEQN framework. The NK model is the canonical framework for monetary policy analysis, combining optimizing behavior with nominal rigidities to generate a meaningful role for monetary policy in stabilizing the economy.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+The three-equation New Keynesian model is the workhorse framework for monetary policy analysis in modern macroeconomics. It represents a significant departure from classical and Real Business Cycle models by incorporating nominal price rigidities, which create a role for monetary policy to affect real economic variables in the short run.
+
+\subsection{Key Features}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Micro-founded:} Derived from optimizing behavior of households and firms
+    \item \textbf{Forward-looking:} All agents form rational expectations about the future
+    \item \textbf{Nominal rigidities:} Prices are sticky (Calvo pricing)
+    \item \textbf{No endogenous state variables:} Unlike RBC models, no capital accumulation
+    \item \textbf{Divine coincidence:} In the baseline model, stabilizing inflation also stabilizes the output gap
+\end{itemize}
+
+\subsection{Structure}
+
+The model consists of three equations:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{New Keynesian Phillips Curve (NKPC):} Links inflation to expected future inflation and the output gap
+    \item \textbf{Dynamic IS Equation:} Relates the output gap to expected future output gap and the real interest rate
+    \item \textbf{Monetary Policy Rule:} Specifies how the central bank sets the nominal interest rate (Taylor rule)
+\end{enumerate}
+
+The model is closed by specifying the exogenous shock processes: productivity shocks (affecting the natural rate of interest) and monetary policy shocks.
+
+\newpage
+
+\section{The Model Equations}
+
+\subsection{New Keynesian Phillips Curve (NKPC)}
+
+The NKPC is derived from Calvo pricing and links current inflation to expected future inflation and the output gap:
+
+\begin{equation}
+\boxed{\pi_t = \beta \, \mathbb{E}_t\{\pi_{t+1}\} + \kappa \, \tilde{y}_t}
+\tag{Galí 21}
+\end{equation}
+
+\noindent where:
+\begin{itemize}[leftmargin=2cm]
+    \item[$\pi_t$:] Inflation rate (log deviation from steady state)
+    \item[$\tilde{y}_t$:] Output gap (log deviation of output from its natural level)
+    \item[$\beta$:] Household discount factor ($\beta = 0.99$ quarterly)
+    \item[$\kappa$:] Slope of the Phillips curve
+\end{itemize}
+
+\vspace{0.3cm}
+\noindent\textbf{Interpretation:} The NKPC embodies the supply side of the economy. Current inflation depends on expected future inflation (forward-looking pricing) and the output gap (marginal cost pressure). The parameter $\kappa$ determines the sensitivity of inflation to the output gap and is given by:
+$$\kappa = \lambda\left(\sigma + \frac{\varphi + \alpha}{1-\alpha}\right)$$
+where $\lambda$ depends on the degree of price stickiness (Calvo parameter).
+
+\subsection{Dynamic IS Equation}
+
+The Dynamic IS equation is the log-linearized household Euler equation:
+
+\begin{equation}
+\boxed{\tilde{y}_t = \mathbb{E}_t\{\tilde{y}_{t+1}\} - \frac{1}{\sigma}\left(i_t - \mathbb{E}_t\{\pi_{t+1}\} - r_t^n\right)}
+\tag{Galí 22}
+\end{equation}
+
+\noindent where:
+\begin{itemize}[leftmargin=2cm]
+    \item[$i_t$:] Nominal interest rate (policy instrument)
+    \item[$r_t^n$:] Natural rate of interest (efficient real rate under flexible prices)
+    \item[$\sigma$:] Inverse elasticity of intertemporal substitution (CRRA coefficient)
+\end{itemize}
+
+\vspace{0.3cm}
+\noindent\textbf{Interpretation:} The DIS represents the demand side. Current output gap depends on expected future output gap (consumption smoothing) and the deviation of the real interest rate ($i_t - \mathbb{E}_t\{\pi_{t+1}\}$) from the natural rate. When the real rate exceeds the natural rate, current demand falls relative to potential.
+
+\subsection{Taylor Rule (Monetary Policy)}
+
+The central bank sets the nominal interest rate according to a Taylor rule:
+
+\begin{equation}
+\boxed{i_t = \rho + \phi_\pi \, \pi_t + \phi_y \, \tilde{y}_t + v_t}
+\tag{Galí 25}
+\end{equation}
+
+\noindent where:
+\begin{itemize}[leftmargin=2cm]
+    \item[$\rho$:] Steady-state real interest rate ($\rho = -\log(\beta)$)
+    \item[$\phi_\pi$:] Response coefficient to inflation (typically $\phi_\pi > 1$ for determinacy)
+    \item[$\phi_y$:] Response coefficient to output gap
+    \item[$v_t$:] Monetary policy shock (exogenous deviation from rule)
+\end{itemize}
+
+\vspace{0.3cm}
+\noindent\textbf{Taylor Principle:} For the equilibrium to be determinate (unique), the central bank must respond more than one-for-one to inflation: $\phi_\pi > 1$. This ensures that when inflation rises, the central bank raises the nominal rate by enough to increase the real interest rate, which dampens demand and brings inflation back down.
+
+\newpage
+
+\section{Natural Rate and Shock Processes}
+
+\subsection{Natural Rate of Interest}
+
+The natural rate of interest $r_t^n$ is the real interest rate that would prevail under flexible prices. It is determined by fundamentals (productivity):
+
+\begin{equation}
+\boxed{r_t^n = \rho + \sigma \, \psi_{ya}^n \, \mathbb{E}_t\{\Delta a_{t+1}\}}
+\tag{Galí 23}
+\end{equation}
+
+\noindent where $a_t$ is the productivity shock and $\psi_{ya}^n$ is the elasticity of natural output to productivity.
+
+For an AR(1) productivity process:
+$$a_t = \rho_a \, a_{t-1} + \sigma_a \, \varepsilon_t^a, \quad \varepsilon_t^a \sim \mathcal{N}(0,1)$$
+
+we have:
+$$\mathbb{E}_t\{\Delta a_{t+1}\} = \mathbb{E}_t\{a_{t+1} - a_t\} = (\rho_a - 1) \, a_t$$
+
+Therefore, in deviations from steady state:
+\begin{equation}
+r_t^n - \rho = \sigma \, \psi_{ya}^n \, (\rho_a - 1) \, a_t
+\end{equation}
+
+Since $\rho_a < 1$, a positive productivity shock \textit{lowers} the natural rate of interest.
+
+\subsection{Exogenous Shock Processes}
+
+The model features two exogenous AR(1) shock processes:
+
+\paragraph{Productivity Shock} (affects natural rate):
+$$a_t = \rho_a \, a_{t-1} + \sigma_a \, \varepsilon_t^a, \quad \varepsilon_t^a \sim \mathcal{N}(0,1)$$
+
+\paragraph{Monetary Policy Shock} (deviation from Taylor rule):
+$$v_t = \rho_v \, v_{t-1} + \sigma_v \, \varepsilon_t^v, \quad \varepsilon_t^v \sim \mathcal{N}(0,1)$$
+
+\subsection{State Space Representation}
+
+The model can be represented in state-space form:
+
+\begin{align*}
+\text{State variables (exogenous):} \quad & s_t = [a_t, \, v_t]^\top \\
+\text{Policy variables (endogenous):} \quad & p_t = [\tilde{y}_t, \, \pi_t]^\top
+\end{align*}
+
+The equilibrium is characterized by a policy function $p_t = g(s_t)$ that satisfies the two equilibrium conditions (DIS and NKPC) at all points in the state space.
+
+\newpage
+
+\section{Calibration}
+
+Table~\ref{tab:calibration} presents the default calibration for quarterly frequency, following Galí (2015).
+
+\begin{table}[h]
+\centering
+\caption{Default Parameter Calibration (Quarterly)}
+\label{tab:calibration}
+\begin{tabular}{@{}llcl@{}}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Description} \\
+\midrule
+Discount factor & $\beta$ & 0.99 & Implies 4\% annual real rate \\
+CRRA coefficient & $\sigma$ & 1.0 & Log utility \\
+NKPC slope & $\kappa$ & 0.1275 & Depends on price stickiness \\
+Taylor: inflation & $\phi_\pi$ & 1.5 & Satisfies Taylor principle \\
+Taylor: output gap & $\phi_y$ & 0.125 & = 0.5/4 (quarterly) \\
+\midrule
+Productivity persist. & $\rho_a$ & 0.9 & Persistent shock \\
+Monetary persist. & $\rho_v$ & 0.5 & Less persistent \\
+Productivity std. & $\sigma_a$ & 0.01 & 1\% std deviation \\
+Monetary std. & $\sigma_v$ & 0.0025 & 25 basis points \\
+\midrule
+Natural output elast. & $\psi_{ya}^n$ & 1.0 & Productivity elasticity \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Implementation in JAXecon/DEQN}
+
+\subsection{File Structure}
+
+The NK model is implemented in the following directory structure:
+
+\begin{lstlisting}[language=bash]
+DEQN/econ_models/NK/
+├── __init__.py           # Module exports
+├── model.py              # Model class (equilibrium conditions)
+├── train.py              # Training script
+├── analysis.py           # Impulse response analysis
+├── create_documentation.py  # Documentation generator
+└── notes/
+    └── NK_Model_Documentation.pdf
+\end{lstlisting}
+
+\subsection{Model Class (\texttt{model.py})}
+
+The core model is implemented in the \texttt{Model} class with the following key methods:
+
+\subsubsection{\texttt{\_\_init\_\_(...)}}
+Initializes model parameters and computes steady state values. Stores all parameters ($\beta$, $\sigma$, $\kappa$, $\phi_\pi$, $\phi_y$, etc.) and computes derived quantities like the natural rate coefficient.
+
+\subsubsection{\texttt{step(state, policy, shock)}}
+Implements the state transition function:
+$$s_{t+1} = f(s_t, \varepsilon_{t+1}) = \begin{bmatrix} \rho_a \, a_t + \sigma_a \, \varepsilon_t^a \\ \rho_v \, v_t + \sigma_v \, \varepsilon_t^v \end{bmatrix}$$
+
+Note that policies don't affect state transitions in the NK model (unlike RBC models with capital accumulation).
+
+\subsubsection{\texttt{expect\_realization(state\_next, policy\_next)}}
+Returns the realization of expectational terms: $[\tilde{y}_{t+1}, \pi_{t+1}]$ for computing expectations via Monte Carlo integration.
+
+\subsubsection{\texttt{loss(state, expect, policy)}}
+Computes the Euler equation residuals that must be minimized. This is the core of the DEQN algorithm:
+
+\begin{align*}
+\text{DIS residual:} \quad & \tilde{y}_t - \mathbb{E}_t\{\tilde{y}_{t+1}\} + \frac{1}{\sigma}(i_t - \mathbb{E}_t\{\pi_{t+1}\} - r_t^n) \\
+\text{NKPC residual:} \quad & \pi_t - \beta \, \mathbb{E}_t\{\pi_{t+1}\} - \kappa \, \tilde{y}_t
+\end{align*}
+
+where $i_t = \phi_\pi \, \pi_t + \phi_y \, \tilde{y}_t + v_t$ from the Taylor rule.
+
+Returns the mean squared residual and accuracy metrics.
+
+\subsubsection{\texttt{get\_aggregates(simul\_policies, simul\_states)}}
+Computes all economic variables from a simulation:
+\begin{itemize}
+    \item Output gap: $\tilde{y}_t$
+    \item Inflation: $\pi_t$
+    \item Nominal interest rate: $i_t = \phi_\pi \pi_t + \phi_y \tilde{y}_t + v_t$
+    \item Natural rate: $r_t^n = \sigma \psi_{ya}^n (\rho_a - 1) a_t$
+    \item Real interest rate: $r_t \approx i_t - \pi_t$
+    \item Shocks: $a_t$, $v_t$
+\end{itemize}
+
+\subsection{DEQN Algorithm}
+
+The Deep Equilibrium Network (DEQN) algorithm solves the model by training a neural network $\pi_\theta(s)$ to approximate the equilibrium policy function:
+
+\begin{enumerate}
+    \item \textbf{Neural Network:} Define $\pi_\theta: \mathbb{R}^2 \to \mathbb{R}^2$ mapping states $[a_t, v_t]$ to policies $[\tilde{y}_t, \pi_t]$
+    
+    \item \textbf{Simulate Episodes:} Generate trajectories $\{s_t, p_t\}_{t=0}^T$ using the current policy network
+    
+    \item \textbf{Compute Expectations:} For each state-policy pair, use Monte Carlo integration over shocks to compute $\mathbb{E}_t\{\cdot\}$ terms
+    
+    \item \textbf{Euler Residuals:} Evaluate how well the DIS and NKPC equations are satisfied
+    
+    \item \textbf{Gradient Descent:} Update network parameters $\theta$ to minimize squared Euler residuals using Adam optimizer
+    
+    \item \textbf{Iterate:} Repeat until convergence (accuracy $> 99\%$)
+\end{enumerate}
+
+The trained network provides a global, non-linear approximation to the model solution.
+
+\subsection{Usage Examples}
+
+\subsubsection{Training the Model}
+
+\begin{lstlisting}[language=bash]
+# Train the NK model (100 epochs, ~30 seconds)
+python -m DEQN.econ_models.NK.train
+\end{lstlisting}
+
+\subsubsection{Running Impulse Response Analysis}
+
+\begin{lstlisting}[language=bash]
+# Compute IRFs to productivity and monetary shocks
+python -m DEQN.econ_models.NK.analysis
+\end{lstlisting}
+
+This generates impulse responses over 40 quarters and saves plots showing the dynamic responses of output gap, inflation, interest rates to both productivity and monetary policy shocks.
+
+\subsubsection{Using the Model in Python}
+
+\begin{lstlisting}[language=Python]
+from DEQN.econ_models.NK.model import Model
+
+# Create model with default parameters
+model = Model()
+
+# Or with custom calibration
+model = Model(
+    beta=0.99,
+    sigma=1.0,
+    kappa=0.15,
+    phi_pi=2.0,
+    phi_y=0.5/4
+)
+
+# Access model properties
+print(f"Discount factor: {model.beta}")
+print(f"NKPC slope: {model.kappa}")
+print(f"State dimension: {model.dim_states}")
+print(f"Policy dimension: {model.dim_policies}")
+\end{lstlisting}
+
+\section{Comparison with RBC Model}
+
+Table~\ref{tab:comparison} highlights key differences between the NK model and typical Real Business Cycle models.
+
+\begin{table}[h]
+\centering
+\caption{NK Model vs. RBC Model}
+\label{tab:comparison}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Feature} & \textbf{NK Model} & \textbf{RBC Model} \\
+\midrule
+Prices & Sticky (Calvo) & Flexible \\
+Monetary policy & Matters for real variables & Neutral \\
+State variables & Exogenous shocks only & Capital + shocks \\
+Endogenous states & None & Capital stock \\
+Steady state policies & Zero (gap variables) & Non-zero (levels) \\
+Number of FOCs & 2 (DIS + NKPC) & 1 (Euler for capital) \\
+Policy instrument & Interest rate & N/A \\
+Main friction & Nominal rigidities & None (RBC) or real frictions \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{References}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Galí, J.} (2015). \textit{Monetary Policy, Inflation, and the Business Cycle: An Introduction to the New Keynesian Framework} (2nd ed.). Princeton University Press. Chapter 3: The Basic New Keynesian Model.
+    
+    \item \textbf{Azinovic, M., Gaegauf, L., \& Scheidegger, S.} (2022). Deep Equilibrium Nets. \textit{International Economic Review}, 63(4), 1471--1525.
+    
+    \item \textbf{Woodford, M.} (2003). \textit{Interest and Prices: Foundations of a Theory of Monetary Policy}. Princeton University Press.
+    
+    \item \textbf{Clarida, R., Galí, J., \& Gertler, M.} (1999). The Science of Monetary Policy: A New Keynesian Perspective. \textit{Journal of Economic Literature}, 37(4), 1661--1707.
+\end{itemize}
+
+\end{document}
+

@@ -80,6 +80,7 @@ Stats.peak_periods_determ = zeros(n_analyzed, 1);
 Stats.half_lives_loglin = zeros(n_analyzed, 1);
 Stats.half_lives_determ = zeros(n_analyzed, 1);
 Stats.amplifications = zeros(n_analyzed, 1);
+Stats.amplifications_rel = zeros(n_analyzed, 1);  % Relative amplification (%)
 
 %% Process each sector
 for idx = 1:n_analyzed
@@ -136,6 +137,11 @@ for idx = 1:n_analyzed
     Stats.half_lives_loglin(idx) = hl_loglin;
     Stats.half_lives_determ(idx) = hl_determ;
     Stats.amplifications(idx) = abs(pv_determ) - abs(pv_loglin);
+    if abs(pv_loglin) > 1e-10
+        Stats.amplifications_rel(idx) = (abs(pv_determ) / abs(pv_loglin) - 1) * 100;  % Relative %
+    else
+        Stats.amplifications_rel(idx) = 0;
+    end
     
     % Print with sign indication
     sign_str = '';
@@ -144,8 +150,8 @@ for idx = 1:n_analyzed
     else
         sign_str = ' (-)';
     end
-    fprintf('  peak=%.4f (loglin), %.4f (determ)%s, amplification=%.4f, half-life=%d/%d\n', ...
-        abs(pv_loglin), abs(pv_determ), sign_str, Stats.amplifications(idx), hl_loglin, hl_determ);
+    fprintf('  peak=%.4f (loglin), %.4f (determ)%s, amplification=%.2f%%, half-life=%d/%d\n', ...
+        abs(pv_loglin), abs(pv_determ), sign_str, Stats.amplifications_rel(idx), hl_loglin, hl_determ);
     
     % Save intermediate results if requested
     if opts.save_intermediate && mod(idx, opts.save_interval) == 0

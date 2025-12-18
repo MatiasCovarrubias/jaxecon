@@ -65,15 +65,16 @@ config.run_loglin_simul = true;    % Run log-linear stochastic simulation
 config.run_determ_simul = true;    % Run deterministic simulation (slower)
 config.run_loglin_irs = true;      % Compute log-linear IRFs
 config.run_determ_irs = true;      % Compute deterministic IRFs (slowest)
-config.modorder = 1;               % Approximation order for stoch_simul
+config.modorder = 2;               % Approximation order for simulation (1=log-linear, 2=second order)
 
 % --- IR settings ---
 config.ir_horizon = 200;           % Horizon for IR calculation (needs to be long for convergence)
 config.ir_plot_length = 60;        % Periods to plot in IR figures
+config.plot_irs = true;            % Plot IRF figures (set false for batch runs)
 
 % --- Simulation settings ---
-config.simul_T_loglin = 10000;     % Log-linear simulation length (fast)
-config.simul_T_determ = 1000;      % Deterministic simulation length (slower)
+config.simul_T_loglin = 2500;      % Log-linear simulation length (fast)
+config.simul_T_determ = 500;       % Deterministic simulation length (slower)
 
 % --- Shock values configuration ---
 % Shock convention: IRshock is defined such that the TFP deviation is -IRshock.
@@ -339,7 +340,7 @@ if run_any_irs
         
         % Process IRFs for this shock
         ir_opts = struct();
-        ir_opts.plot_graphs = ~config.compute_all_sectors;  % Plot for each shock (not just first)
+        ir_opts.plot_graphs = config.plot_irs && ~config.compute_all_sectors;  % Plot for each shock (not just first)
         ir_opts.save_graphs = config.save_results;
         ir_opts.save_intermediate = config.save_results && config.compute_all_sectors;
         ir_opts.save_interval = 5;
@@ -564,6 +565,22 @@ if isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm)
             ModelData_simulation.Determ.Lagg_volatility);
         fprintf('  └────────────────────────────────────────────────────────────────┘\n');
     end
+    
+    %% Capital Preallocation Analysis (Perfect Foresight)
+    fprintf('\n');
+    fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+    fprintf('║                   CAPITAL PREALLOCATION ANALYSIS                    ║\n');
+    fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
+    
+    prealloc_opts = struct();
+    prealloc_opts.plot_figure = true;
+    prealloc_opts.save_figure = config.save_results;
+    prealloc_opts.figures_folder = exp_paths.figures;
+    prealloc_opts.save_label = save_label;
+    prealloc_opts.highlighted_sector = sector_indices(1);  % Mining/Oil/Gas (sector 1)
+    
+    CapitalStats = analyze_capital_preallocation(BaseResults.SimulDeterm, params, prealloc_opts, ModData);
+    ModelData_simulation.Determ.CapitalStats = CapitalStats;
 end
 
 %% Build ModelData_IRs structure (IRF data)
@@ -639,32 +656,11 @@ else
     fprintf('\n  ⊘ Saving disabled (config.save_results = false)\n');
 end
 
-%% Summary
-fprintf('\n');
-fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
-fprintf('║                       ANALYSIS COMPLETE                             ║\n');
-fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
-fprintf('\n');
-fprintf('  Experiment: %s\n', save_label);
-fprintf('  Folder:     %s\n', exp_paths.experiment);
-fprintf('\n');
+%% Nonlinearity and Preallocation Diagnostics
+if has_loglin_simul || has_determ_simul || has_irfs
+    Diagnostics = print_nonlinearity_diagnostics(ModelData_simulation, AllShockResults, params, config, ModData);
+    ModelData.Diagnostics = Diagnostics;
+end
 
-has_solution = isfield(ModelData, 'Solution');
-has_statistics = isfield(ModelData, 'Statistics');
-has_theo_stats = has_statistics && isfield(ModelData.Statistics, 'TheoStats');
-
-fprintf('  ModelData (core):\n');
-fprintf('    • metadata, calibration, params    [always]\n');
-fprintf('    • SteadyState                      [always]\n');
-if has_solution,   fprintf('    ✓ Solution (state-space matrices)\n'); else, fprintf('    ✗ Solution\n'); end
-if has_theo_stats, fprintf('    ✓ TheoStats (theoretical moments from solution)\n'); else, fprintf('    ✗ TheoStats\n'); end
-if has_statistics, fprintf('    ✓ Statistics (policies_sd, volatilities)\n'); else, fprintf('    ✗ Statistics\n'); end
-
-fprintf('\n  ModelData_simulation:\n');
-if has_loglin_simul, fprintf('    ✓ Loglin (full simulation + aggregates)\n'); else, fprintf('    ✗ Loglin\n'); end
-if has_determ_simul, fprintf('    ✓ Determ (full simulation + aggregates)\n'); else, fprintf('    ✗ Determ\n'); end
-
-fprintf('\n  ModelData_IRs:\n');
-if has_irfs, fprintf('    ✓ IRFs for %d shock configurations\n', n_shocks); else, fprintf('    ✗ IRFs (not computed)\n'); end
-
-fprintf('\n');
+%% Summary Table (concise, copy-pasteable)
+print_summary_table(config, params, calib_data, BaseResults, AllShockResults, ModelData, has_loglin_simul, has_determ_simul, has_irfs, n_shocks, save_label);

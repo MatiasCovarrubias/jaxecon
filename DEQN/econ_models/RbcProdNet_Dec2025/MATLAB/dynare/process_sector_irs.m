@@ -19,6 +19,8 @@ function Results = process_sector_irs(DynareResults, params, ModData, labels, op
 %                    - save_label: Label for files (default: '')
 %                    - range_padding: Y-axis padding for plots (default: 0.1)
 %                    - ir_plot_length: Number of periods for plots (default: 60)
+%                    - shock_description: Description of shock for plot titles (default: '')
+%                    - shock_sign: +1 for positive shock, -1 for negative (default: auto-detect)
 %
 % OUTPUTS:
 %   Results - Structure containing:
@@ -50,6 +52,8 @@ opts = set_default(opts, 'exp_paths', struct('temp', 'output', 'figures', 'outpu
 opts = set_default(opts, 'save_label', '');
 opts = set_default(opts, 'range_padding', 0.1);
 opts = set_default(opts, 'ir_plot_length', 60);
+opts = set_default(opts, 'shock_description', '');
+opts = set_default(opts, 'shock_sign', []);  % Empty = auto-detect
 
 %% Extract steady state data
 policies_ss = ModData.policies_ss;
@@ -60,6 +64,9 @@ steady_state = DynareResults.steady_state;
 
 %% Initialize storage
 fprintf('=== PROCESSING IRFs FOR %d SECTORS ===\n', n_analyzed);
+if ~isempty(opts.shock_description)
+    fprintf('    Shock: %s\n', opts.shock_description);
+end
 
 IRFs = cell(n_analyzed, 1);
 
@@ -73,6 +80,7 @@ Stats.peak_periods_determ = zeros(n_analyzed, 1);
 Stats.half_lives_loglin = zeros(n_analyzed, 1);
 Stats.half_lives_determ = zeros(n_analyzed, 1);
 Stats.amplifications = zeros(n_analyzed, 1);
+Stats.amplifications_rel = zeros(n_analyzed, 1);  % Relative amplification (%)
 
 %% Process each sector
 for idx = 1:n_analyzed
@@ -102,19 +110,48 @@ for idx = 1:n_analyzed
     C_loglin = IRSLoglin(2, 1:T_stats);
     C_determ = IRSDeterm(2, 1:T_stats);
     
-    [pv_loglin, pp_loglin, hl_loglin] = calculatePeaksAndHalfLives(-C_loglin);
-    [pv_determ, pp_determ, hl_determ] = calculatePeaksAndHalfLives(-C_determ);
+    % Determine shock sign: auto-detect from TFP response if not provided
+    % Row 1 is A_ir (TFP level), A > 1 means positive shock, A < 1 means negative
+    if isempty(opts.shock_sign)
+        A_initial = IRSLoglin(1, 1);
+        if A_initial > 1
+            shock_sign = 1;   % Positive shock
+        else
+            shock_sign = -1;  % Negative shock
+        end
+    else
+        shock_sign = opts.shock_sign;
+    end
     
-    Stats.peak_values_loglin(idx) = pv_loglin;
-    Stats.peak_values_determ(idx) = pv_determ;
+    % Calculate peak statistics
+    % For negative shock: consumption drops, so we look at max drop (peak of -C)
+    % For positive shock: consumption rises, so we look at max rise (peak of C)
+    [pv_loglin, pp_loglin, hl_loglin] = calculatePeaksAndHalfLives(shock_sign * C_loglin);
+    [pv_determ, pp_determ, hl_determ] = calculatePeaksAndHalfLives(shock_sign * C_determ);
+    
+    % Store absolute peak values (positive number = magnitude of response)
+    Stats.peak_values_loglin(idx) = abs(pv_loglin);
+    Stats.peak_values_determ(idx) = abs(pv_determ);
     Stats.peak_periods_loglin(idx) = pp_loglin;
     Stats.peak_periods_determ(idx) = pp_determ;
     Stats.half_lives_loglin(idx) = hl_loglin;
     Stats.half_lives_determ(idx) = hl_determ;
-    Stats.amplifications(idx) = pv_determ - pv_loglin;
+    Stats.amplifications(idx) = abs(pv_determ) - abs(pv_loglin);
+    if abs(pv_loglin) > 1e-10
+        Stats.amplifications_rel(idx) = (abs(pv_determ) / abs(pv_loglin) - 1) * 100;  % Relative %
+    else
+        Stats.amplifications_rel(idx) = 0;
+    end
     
-    fprintf('  peak=%.4f (loglin), %.4f (determ), amplification=%.4f, half-life=%d/%d\n', ...
-        pv_loglin, pv_determ, Stats.amplifications(idx), hl_loglin, hl_determ);
+    % Print with sign indication
+    sign_str = '';
+    if shock_sign > 0
+        sign_str = ' (+)';
+    else
+        sign_str = ' (-)';
+    end
+    fprintf('  peak=%.4f (loglin), %.4f (determ)%s, amplification=%.2f%%, half-life=%d/%d\n', ...
+        abs(pv_loglin), abs(pv_determ), sign_str, Stats.amplifications_rel(idx), hl_loglin, hl_determ);
     
     % Save intermediate results if requested
     if opts.save_intermediate && mod(idx, opts.save_interval) == 0
@@ -129,26 +166,71 @@ end
 if opts.plot_graphs
     fprintf('Generating plots...\n');
     
-    % Build cell arrays for GraphIRs (expects cell format)
-    IRSLoglin_cells = cell(n_analyzed, 1);
-    IRSDeterm_cells = cell(n_analyzed, 1);
-    for idx = 1:n_analyzed
-        IRSLoglin_cells{idx} = IRFs{idx}.IRSLoglin;
-        IRSDeterm_cells{idx} = IRFs{idx}.IRSDeterm;
-    end
-    
     ax = 0:(opts.ir_plot_length - 1);
-    graph_opts = struct();
-    graph_opts.figures_folder = opts.exp_paths.figures;
-    graph_opts.save_label = opts.save_label;
-    graph_opts.save_figures = opts.save_graphs;
-    GraphIRs(IRSDeterm_cells, IRSLoglin_cells, [], ax, opts.ir_plot_length, ...
-        labels, opts.range_padding, graph_opts);
+    
+    % Plot each sector separately to avoid overwriting
+    for idx = 1:n_analyzed
+        % Create single-sector data cells
+        IRSLoglin_single = {IRFs{idx}.IRSLoglin};
+        IRSDeterm_single = {IRFs{idx}.IRSDeterm};
+        
+        % Create single-sector labels structure
+        labels_single = struct();
+        labels_single.sector_indices = sector_indices(idx);
+        labels_single.client_indices = labels.client_indices(idx);
+        
+        % Handle cell vs array label formats
+        if iscell(labels.sector_labels)
+            labels_single.sector_labels = labels.sector_labels(idx);
+            labels_single.client_labels = labels.client_labels(idx);
+        else
+            labels_single.sector_labels = labels.sector_labels(idx);
+            labels_single.client_labels = labels.client_labels(idx);
+        end
+        
+        if isfield(labels, 'sector_labels_latex')
+            if iscell(labels.sector_labels_latex)
+                labels_single.sector_labels_latex = labels.sector_labels_latex(idx);
+                labels_single.client_labels_latex = labels.client_labels_latex(idx);
+            else
+                labels_single.sector_labels_latex = labels.sector_labels_latex(idx);
+                labels_single.client_labels_latex = labels.client_labels_latex(idx);
+            end
+        end
+        
+        if isfield(labels, 'sector_labels_filename')
+            if iscell(labels.sector_labels_filename)
+                labels_single.sector_labels_filename = labels.sector_labels_filename(idx);
+            else
+                labels_single.sector_labels_filename = labels.sector_labels_filename(idx);
+            end
+        end
+        
+        % Build graph options for this sector
+        graph_opts = struct();
+        graph_opts.figures_folder = opts.exp_paths.figures;
+        graph_opts.save_figures = opts.save_graphs;
+        graph_opts.shock_description = opts.shock_description;
+        
+        % Include sector index in save_label to distinguish files
+        if ~isempty(opts.save_label)
+            graph_opts.save_label = sprintf('%s_sec%d', opts.save_label, sector_indices(idx));
+        else
+            graph_opts.save_label = sprintf('sec%d', sector_indices(idx));
+        end
+        
+        fprintf('  Plotting sector %d (%d/%d)...\n', sector_indices(idx), idx, n_analyzed);
+        GraphIRs(IRSDeterm_single, IRSLoglin_single, [], ax, opts.ir_plot_length, ...
+            labels_single, opts.range_padding, graph_opts);
+    end
 end
 
 %% Print summary
 fprintf('\n=== IRF STATISTICS SUMMARY ===\n');
 fprintf('Sectors analyzed: %d\n', n_analyzed);
+if ~isempty(opts.shock_description)
+    fprintf('Shock: %s\n', opts.shock_description);
+end
 fprintf('                    Log-Linear    Deterministic\n');
 fprintf('Avg peak value:     %.4f        %.4f\n', ...
     mean(Stats.peak_values_loglin), mean(Stats.peak_values_determ));
@@ -163,6 +245,6 @@ Results = struct();
 Results.IRFs = IRFs;
 Results.Statistics = Stats;
 Results.labels = labels;
+Results.shock_description = opts.shock_description;
 
 end
-

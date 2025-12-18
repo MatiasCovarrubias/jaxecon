@@ -23,6 +23,18 @@ validate_sector_indices(sector_indices, 37, 'load_calibration_data');
 load('calibration_data.mat');
 load('TFP_process.mat');
 
+%% Load BEA sectoral data for empirical moments (same as calibration_moments.m)
+% This file contains both real (VA_raw, InvRaw) and nominal (VAn, Invn) sectoral data
+% Nominal data is needed for Törnqvist share computation
+if exist('beadat_37sec.mat', 'file')
+    load('beadat_37sec.mat');
+else
+    error('load_calibration_data:MissingBEAData', ...
+        ['beadat_37sec.mat not found.\n' ...
+         'This file is required for Törnqvist aggregation (contains VAn, Invn for shares).\n' ...
+         'Place it in the root MATLAB folder.']);
+end
+
 n_sectors = 37;
 
 %% Process consumption expenditure shares
@@ -58,11 +70,10 @@ params.vash_data = vash_data;
 params.ionet_data = ionet_data;
 params.invnet_data = invnet_data;
 
-%% Compute empirical business cycle targets (HP-filtered log levels)
-% Note: raw data is 71 years, BEA data is 72 years - align by truncating
-n_years_raw = size(VA_raw, 1);
-GO_raw = GO47bea(1:n_years_raw, :);  % Truncate to match raw data
-empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, GO_raw);
+%% Compute empirical business cycle targets (HP-filtered, Törnqvist aggregation)
+% Uses Törnqvist index for VA and Investment (proper aggregation)
+% Uses simple sum for Employment (real units)
+empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn);
 
 %% Compute client indices and rankings
 [client_indices, ranking] = compute_client_rankings(ionet_data, sector_indices, n_sectors);
@@ -94,18 +105,25 @@ calib_data.empirical_targets = empirical_targets;
 
 end
 
-function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, GO_raw)
+function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn)
 % COMPUTE_EMPIRICAL_TARGETS Compute business cycle moments from data
 %
-% Computes HP-filtered (lambda=100) volatilities of:
-%   - Aggregate GDP (value added)
-%   - Average sectoral labor (VA-weighted)
-%   - Average sectoral investment (VA-weighted)
-%   - Aggregate labor (VA-weighted)
-%   - Aggregate investment (VA-weighted)
-%   - Aggregate intermediates (GO-weighted)
+% Uses Törnqvist index aggregation for VA and Investment (proper economic aggregation)
+% Uses simple summation for Employment (already in real units)
 %
-% All moments computed on HP-filtered log levels (standard BC methodology)
+% Computes HP-filtered (lambda=100) volatilities of:
+%   - Aggregate GDP (value added) - Törnqvist
+%   - Aggregate labor - simple sum (headcount)
+%   - Aggregate investment - Törnqvist
+%   - Average sectoral labor volatility (VA-weighted)
+%   - Average sectoral investment volatility (VA-weighted)
+%
+% INPUTS:
+%   VA_raw  - Real value added by sector (T x n_sectors)
+%   EMP_raw - Employment by sector (T x n_sectors)
+%   InvRaw  - Real investment by sector (T x n_sectors)
+%   VAn     - Nominal value added by sector (T x n_sectors) - for shares
+%   Invn    - Nominal investment by sector (T x n_sectors) - for shares
 
     hp_lambda = 100;  % Standard for annual data
     epsilon = 1e-10;  % Floor for log computation
@@ -114,45 +132,65 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
     VA_clean = max(VA_raw, epsilon);
     EMP_clean = max(EMP_raw, epsilon);
     Inv_clean = max(InvRaw, epsilon);
-    GO_clean = max(GO_raw, epsilon);
+    VAn_clean = max(VAn, epsilon);
+    Invn_clean = max(Invn, epsilon);
     
-    % Compute intermediate inputs as GO - VA
-    M_clean = max(GO_clean - VA_clean, epsilon);
+    [yrnum, n_sectors] = size(VA_clean);
     
-    n_sectors = size(VA_clean, 2);
+    % Compute time-varying shares from nominal data (for Törnqvist)
+    VAsh = VAn_clean ./ repmat(sum(VAn_clean, 2), 1, n_sectors);
+    Invsh = Invn_clean ./ repmat(sum(Invn_clean, 2), 1, n_sectors);
     
-    % Compute weights for aggregation
-    va_weights = mean(VA_clean, 1);
+    % Compute time-average weights (for sectoral averages)
+    va_weights = mean(VAsh, 1);
     va_weights = va_weights / sum(va_weights);
     
-    go_weights = mean(GO_clean, 1);
-    go_weights = go_weights / sum(go_weights);
+    %% ===== AGGREGATE VARIABLES VIA TÖRNQVIST INDEX =====
+    % Törnqvist: log growth = sum_j [ 0.5*(s_{j,t} + s_{j,t-1}) * (log y_{j,t} - log y_{j,t-1}) ]
     
-    %% ===== AGGREGATE VOLATILITIES (volatility of the aggregate) =====
+    % Aggregate VA (Törnqvist)
+    aggVA = ones(yrnum, 1);
+    for t = 1:yrnum-1
+        aggVAgr = 0;
+        for j = 1:n_sectors
+            growth_j = log(VA_clean(t+1, j)) - log(VA_clean(t, j));
+            weight_j = 0.5 * (VAsh(t, j) + VAsh(t+1, j));
+            aggVAgr = aggVAgr + growth_j * weight_j;
+        end
+        aggVA(t+1) = aggVA(t) * exp(aggVAgr);
+    end
     
-    % Aggregate GDP (simple sum of VA)
-    VA_agg = sum(VA_clean, 2);
-    log_VA_agg = log(VA_agg);
-    [~, VA_agg_cycle] = hpfilter(log_VA_agg, hp_lambda);
+    % Aggregate Investment (Törnqvist)
+    aggInv = ones(yrnum, 1);
+    for t = 1:yrnum-1
+        aggInvgr = 0;
+        for j = 1:n_sectors
+            growth_j = log(Inv_clean(t+1, j)) - log(Inv_clean(t, j));
+            weight_j = 0.5 * (Invsh(t, j) + Invsh(t+1, j));
+            aggInvgr = aggInvgr + growth_j * weight_j;
+        end
+        aggInv(t+1) = aggInv(t) * exp(aggInvgr);
+    end
+    
+    % Aggregate Employment (simple sum - already in real units)
+    aggEMP = sum(EMP_clean, 2);
+    
+    %% ===== HP FILTER AND COMPUTE VOLATILITIES =====
+    
+    % Aggregate VA volatility
+    log_aggVA = log(aggVA);
+    [~, VA_agg_cycle] = hpfilter(log_aggVA, hp_lambda);
     sigma_VA_agg = std(VA_agg_cycle);
     
-    % Aggregate labor (simple sum of headcount, analogous to model's Lagg_hc)
-    L_agg = sum(EMP_clean, 2);
-    log_L_agg = log(L_agg);
-    [~, L_agg_cycle] = hpfilter(log_L_agg, hp_lambda);
-    sigma_L_agg = std(L_agg_cycle);
-    
-    % Aggregate investment (simple sum in dollars, analogous to model's iagg)
-    I_agg = sum(Inv_clean, 2);
-    log_I_agg = log(I_agg);
-    [~, I_agg_cycle] = hpfilter(log_I_agg, hp_lambda);
+    % Aggregate Investment volatility
+    log_aggInv = log(aggInv);
+    [~, I_agg_cycle] = hpfilter(log_aggInv, hp_lambda);
     sigma_I_agg = std(I_agg_cycle);
     
-    % Aggregate intermediates (simple sum in dollars, analogous to model's magg)
-    M_agg = sum(M_clean, 2);
-    log_M_agg = log(M_agg);
-    [~, M_agg_cycle] = hpfilter(log_M_agg, hp_lambda);
-    sigma_M_agg = std(M_agg_cycle);
+    % Aggregate Employment volatility
+    log_aggEMP = log(aggEMP);
+    [~, L_agg_cycle] = hpfilter(log_aggEMP, hp_lambda);
+    sigma_L_agg = std(L_agg_cycle);
     
     %% ===== SECTORAL VOLATILITIES (average of sectoral volatilities) =====
     
@@ -178,13 +216,12 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
     empirical_targets = struct();
     empirical_targets.hp_lambda = hp_lambda;
     empirical_targets.va_weights = va_weights;
-    empirical_targets.go_weights = go_weights;
+    empirical_targets.aggregation_method = 'tornqvist';
     
-    % Aggregate volatilities (volatility of the aggregate series)
+    % Aggregate volatilities (Törnqvist for VA/I, simple sum for L)
     empirical_targets.sigma_VA_agg = sigma_VA_agg;
     empirical_targets.sigma_L_agg = sigma_L_agg;
     empirical_targets.sigma_I_agg = sigma_I_agg;
-    empirical_targets.sigma_M_agg = sigma_M_agg;
     
     % Sectoral volatilities (VA-weighted average of sectoral volatilities)
     empirical_targets.sigma_L_avg = sigma_L_avg;

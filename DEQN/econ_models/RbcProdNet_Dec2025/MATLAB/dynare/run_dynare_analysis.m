@@ -15,7 +15,12 @@ function [Results] = run_dynare_analysis(ModData, params, opts)
 %              - endostates_ss: steady state capital (log)
 %
 %   params   - Structure with model parameters:
-%              - n_sectors, IRshock, Sigma_A, etc.
+%              - n_sectors: Number of sectors
+%              - IRshock: Impulse response shock value. Convention:
+%                  TFP deviation = -IRshock, so A_0 = exp(-IRshock)
+%                  For A to drop to A_neg: IRshock = -log(A_neg)
+%                  For symmetric positive (A rises to 1/A_neg): IRshock = log(A_neg)
+%              - Sigma_A: Covariance matrix of TFP shocks
 %
 %   opts     - Structure with analysis options:
 %              - run_loglin_simul: Run log-linear simulation with random shocks (default: true)
@@ -268,7 +273,11 @@ if opts.run_loglin_irs
     for ii = 1:numel(opts.sector_indices)
         sector_idx = opts.sector_indices(ii);
         
-        % Set shock in initial TFP
+        % Set shock in initial TFP (log deviation from steady state)
+        % Convention: TFP deviation = -params.IRshock
+        %   - Negative shock (A drops to A_neg): IRshock = -log(A_neg)
+        %   - Positive shock (A rises to A_pos): IRshock = -log(A_pos) = log(1/A_pos)
+        %   - Symmetric pair: IRshock_pos = -IRshock_neg (same |shock| in log space)
         steady_state_shocked = oo_.steady_state;
         steady_state_shocked(n_sectors + sector_idx) = -params.IRshock;
         
@@ -306,7 +315,8 @@ if opts.run_determ_irs
     for ii = 1:numel(opts.sector_indices)
         sector_idx = opts.sector_indices(ii);
         
-        % Set initial shock
+        % Set initial shock (same convention as log-linear IRFs)
+        % TFP deviation = -params.IRshock
         shocksim_0 = zeros([n_sectors, 1]);
         shocksim_0(sector_idx, 1) = -params.IRshock;
         

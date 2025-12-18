@@ -65,24 +65,38 @@ config.run_loglin_simul = true;    % Run log-linear stochastic simulation
 config.run_determ_simul = true;    % Run deterministic simulation (slower)
 config.run_loglin_irs = true;      % Compute log-linear IRFs
 config.run_determ_irs = true;      % Compute deterministic IRFs (slowest)
-config.modorder = 1;               % Approximation order for stoch_simul
+config.modorder = 2;               % Approximation order for simulation (1=log-linear, 2=second order)
 
 % --- IR settings ---
 config.ir_horizon = 200;           % Horizon for IR calculation (needs to be long for convergence)
 config.ir_plot_length = 60;        % Periods to plot in IR figures
+config.plot_irs = true;            % Plot IRF figures (set false for batch runs)
 
 % --- Simulation settings ---
-config.simul_T_loglin = 10000;     % Log-linear simulation length (fast)
-config.simul_T_determ = 1000;      % Deterministic simulation length (slower)
+config.simul_T_loglin = 2500;      % Log-linear simulation length (fast)
+config.simul_T_determ = 500;       % Deterministic simulation length (slower)
 
 % --- Shock values configuration ---
-% Each shock is defined as: {log_value, label, description}
-% log_value: the shock to log(A), so log(0.8) = -0.2231 means A drops to 0.8
+% Shock convention: IRshock is defined such that the TFP deviation is -IRshock.
+%   - For A to drop to A_neg:  IRshock = -log(A_neg)
+%   - For symmetric positive:  IRshock = log(A_neg) = -log(1/A_neg)
+%
+% SYMMETRIC SHOCKS: For a negative shock A = A_neg, the symmetric positive shock
+% gives A = 1/A_neg (same magnitude in log space, opposite sign).
+%   Example: A_neg = 0.8 → A_pos = 1/0.8 = 1.25 (NOT 1.2!)
+%
+% TFP process: a_{t+1} = rho * a_t + e_t, where a = log(A) - log(A_ss)
+% At steady state: a = 0 (A = A_ss = 1 normalized)
+% Initial condition: a_0 = shock (when starting from SS)
+
+A_neg_20pct = 0.80;   % A drops to 0.80 (-20%)
+A_neg_5pct  = 0.95;   % A drops to 0.95 (-5%)
+
 config.shock_values = [
-    struct('value', -log(0.8), 'label', 'neg20pct', 'description', '-20% TFP (A=0.8)');
-    struct('value', log(1.2),  'label', 'pos20pct', 'description', '+20% TFP (A=1.2)');
-    struct('value', -log(0.95), 'label', 'neg5pct',  'description', '-5% TFP (A=0.95)');
-    struct('value', log(1.05), 'label', 'pos5pct',  'description', '+5% TFP (A=1.05)')
+    struct('value', -log(A_neg_20pct),    'label', 'neg20pct', 'description', sprintf('-%.0f%% TFP (A=%.2f)', (1-A_neg_20pct)*100, A_neg_20pct));
+    struct('value',  log(A_neg_20pct),    'label', 'pos20pct', 'description', sprintf('+%.0f%% TFP (A=%.2f, symmetric)', (1/A_neg_20pct-1)*100, 1/A_neg_20pct));
+    struct('value', -log(A_neg_5pct),     'label', 'neg5pct',  'description', sprintf('-%.0f%% TFP (A=%.2f)', (1-A_neg_5pct)*100, A_neg_5pct));
+    struct('value',  log(A_neg_5pct),     'label', 'pos5pct',  'description', sprintf('+%.1f%% TFP (A=%.4f, symmetric)', (1/A_neg_5pct-1)*100, 1/A_neg_5pct))
 ];
 
 % --- Target elasticities of substitution ---
@@ -109,6 +123,15 @@ validate_sector_indices(sector_indices, N_SECTORS, 'main_IRs');
 
 save_label = strcat(config.date, config.exp_label);
 
+% Verify shock values (print what A levels will be achieved)
+fprintf('\n  Shock configuration verification:\n');
+for i = 1:numel(config.shock_values)
+    shock = config.shock_values(i);
+    A_level = exp(-shock.value);  % TFP deviation = -IRshock, so A = exp(-IRshock)
+    fprintf('    %s: IRshock=%.4f → A=%.4f (%s)\n', ...
+        shock.label, shock.value, A_level, shock.description);
+end
+
 %% Set up experiment folder structure
 exp_paths = setup_experiment_folder(save_label);
 fprintf('\n');
@@ -134,12 +157,12 @@ fprintf('\n  ✓ Calibration data loaded\n');
 
 % Display empirical targets
 emp_tgt = calib_data.empirical_targets;
-fprintf('\n  Empirical Targets (HP-filtered, λ=%d):\n', emp_tgt.hp_lambda);
+fprintf('\n  Empirical Targets (HP-filtered, λ=%d, %s aggregation):\n', ...
+    emp_tgt.hp_lambda, emp_tgt.aggregation_method);
 fprintf('    ── Aggregate volatilities ──\n');
-fprintf('    σ(Y_agg):         %.4f   (aggregate GDP)\n', emp_tgt.sigma_VA_agg);
-fprintf('    σ(L_agg):         %.4f   (aggregate labor, VA-weighted)\n', emp_tgt.sigma_L_agg);
-fprintf('    σ(I_agg):         %.4f   (aggregate investment, VA-weighted)\n', emp_tgt.sigma_I_agg);
-fprintf('    σ(M_agg):         %.4f   (aggregate intermediates, GO-weighted)\n', emp_tgt.sigma_M_agg);
+fprintf('    σ(Y_agg):         %.4f   (aggregate GDP, Törnqvist)\n', emp_tgt.sigma_VA_agg);
+fprintf('    σ(L_agg):         %.4f   (aggregate labor, simple sum)\n', emp_tgt.sigma_L_agg);
+fprintf('    σ(I_agg):         %.4f   (aggregate investment, Törnqvist)\n', emp_tgt.sigma_I_agg);
 fprintf('    ── Average sectoral volatilities ──\n');
 fprintf('    σ(L) avg:         %.4f   (VA-weighted avg of sectoral labor vol)\n', emp_tgt.sigma_L_avg);
 fprintf('    σ(I) avg:         %.4f   (VA-weighted avg of sectoral investment vol)\n', emp_tgt.sigma_I_avg);
@@ -317,13 +340,14 @@ if run_any_irs
         
         % Process IRFs for this shock
         ir_opts = struct();
-        ir_opts.plot_graphs = ~config.compute_all_sectors;  % Plot for each shock (not just first)
+        ir_opts.plot_graphs = config.plot_irs && ~config.compute_all_sectors;  % Plot for each shock (not just first)
         ir_opts.save_graphs = config.save_results;
         ir_opts.save_intermediate = config.save_results && config.compute_all_sectors;
         ir_opts.save_interval = 5;
         ir_opts.exp_paths = exp_paths;
         ir_opts.save_label = shock_config.label;
         ir_opts.ir_plot_length = config.ir_plot_length;
+        ir_opts.shock_description = shock_config.description;
         
         IRFResults = process_sector_irs(DynareResults, params, ModData, labels, ir_opts);
         IRFResults.shock_config = shock_config;
@@ -475,9 +499,6 @@ if isfield(BaseResults, 'TheoStats') && ~isempty(fieldnames(BaseResults.TheoStat
     fprintf('  │  σ(I_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
         theo_stats.sigma_I_agg, emp_tgt.sigma_I_agg, ...
         theo_stats.sigma_I_agg / emp_tgt.sigma_I_agg);
-    fprintf('  │  σ(M_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
-        theo_stats.sigma_M_agg, emp_tgt.sigma_M_agg, ...
-        theo_stats.sigma_M_agg / emp_tgt.sigma_M_agg);
     
     % Labor uses simulation-based headcount (model's lagg is CES, not comparable to data)
     if isfield(BaseResults, 'ModelStats')
@@ -544,6 +565,22 @@ if isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm)
             ModelData_simulation.Determ.Lagg_volatility);
         fprintf('  └────────────────────────────────────────────────────────────────┘\n');
     end
+    
+    %% Capital Preallocation Analysis (Perfect Foresight)
+    fprintf('\n');
+    fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
+    fprintf('║                   CAPITAL PREALLOCATION ANALYSIS                    ║\n');
+    fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
+    
+    prealloc_opts = struct();
+    prealloc_opts.plot_figure = true;
+    prealloc_opts.save_figure = config.save_results;
+    prealloc_opts.figures_folder = exp_paths.figures;
+    prealloc_opts.save_label = save_label;
+    prealloc_opts.highlighted_sector = sector_indices(1);  % Mining/Oil/Gas (sector 1)
+    
+    CapitalStats = analyze_capital_preallocation(BaseResults.SimulDeterm, params, prealloc_opts, ModData);
+    ModelData_simulation.Determ.CapitalStats = CapitalStats;
 end
 
 %% Build ModelData_IRs structure (IRF data)
@@ -574,18 +611,20 @@ if run_any_irs && ~isempty(AllShockResults.IRFResults{1})
     fprintf('║                         IRF SUMMARY                                 ║\n');
     fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
     fprintf('\n');
-    fprintf('  %-18s %12s %12s %12s\n', 'Shock', 'Peak(LL)', 'Peak(Det)', 'Amplif');
-    fprintf('  %s\n', repmat('─', 1, 56));
+    fprintf('  %-12s %6s %10s %10s %10s\n', 'Shock', 'A₀', 'Peak(LL)', 'Peak(NL)', 'Amplif');
+    fprintf('  %s\n', repmat('─', 1, 52));
     for i = 1:n_shocks
         irf_res = AllShockResults.IRFResults{i};
         shock_cfg = config.shock_values(i);
+        A_level = exp(-shock_cfg.value);  % Initial TFP level
         avg_peak_ll = mean(irf_res.Statistics.peak_values_loglin);
         avg_peak_det = mean(irf_res.Statistics.peak_values_determ);
         avg_amplif = mean(irf_res.Statistics.amplifications);
-        fprintf('  %-18s %12.4f %12.4f %12.4f\n', ...
-            shock_cfg.label, avg_peak_ll, avg_peak_det, avg_amplif);
+        fprintf('  %-12s %6.2f %10.4f %10.4f %10.4f\n', ...
+            shock_cfg.label, A_level, avg_peak_ll, avg_peak_det, avg_amplif);
     end
-    fprintf('  %s\n', repmat('─', 1, 56));
+    fprintf('  %s\n', repmat('─', 1, 52));
+    fprintf('  Note: Peak = |max consumption deviation|, Amplif = Peak(NL) - Peak(LL)\n');
 end
 
 %% Save results
@@ -617,32 +656,11 @@ else
     fprintf('\n  ⊘ Saving disabled (config.save_results = false)\n');
 end
 
-%% Summary
-fprintf('\n');
-fprintf('╔════════════════════════════════════════════════════════════════════╗\n');
-fprintf('║                       ANALYSIS COMPLETE                             ║\n');
-fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
-fprintf('\n');
-fprintf('  Experiment: %s\n', save_label);
-fprintf('  Folder:     %s\n', exp_paths.experiment);
-fprintf('\n');
+%% Nonlinearity and Preallocation Diagnostics
+if has_loglin_simul || has_determ_simul || has_irfs
+    Diagnostics = print_nonlinearity_diagnostics(ModelData_simulation, AllShockResults, params, config, ModData);
+    ModelData.Diagnostics = Diagnostics;
+end
 
-has_solution = isfield(ModelData, 'Solution');
-has_statistics = isfield(ModelData, 'Statistics');
-has_theo_stats = has_statistics && isfield(ModelData.Statistics, 'TheoStats');
-
-fprintf('  ModelData (core):\n');
-fprintf('    • metadata, calibration, params    [always]\n');
-fprintf('    • SteadyState                      [always]\n');
-if has_solution,   fprintf('    ✓ Solution (state-space matrices)\n'); else, fprintf('    ✗ Solution\n'); end
-if has_theo_stats, fprintf('    ✓ TheoStats (theoretical moments from solution)\n'); else, fprintf('    ✗ TheoStats\n'); end
-if has_statistics, fprintf('    ✓ Statistics (policies_sd, volatilities)\n'); else, fprintf('    ✗ Statistics\n'); end
-
-fprintf('\n  ModelData_simulation:\n');
-if has_loglin_simul, fprintf('    ✓ Loglin (full simulation + aggregates)\n'); else, fprintf('    ✗ Loglin\n'); end
-if has_determ_simul, fprintf('    ✓ Determ (full simulation + aggregates)\n'); else, fprintf('    ✗ Determ\n'); end
-
-fprintf('\n  ModelData_IRs:\n');
-if has_irfs, fprintf('    ✓ IRFs for %d shock configurations\n', n_shocks); else, fprintf('    ✗ IRFs (not computed)\n'); end
-
-fprintf('\n');
+%% Summary Table (concise, copy-pasteable)
+print_summary_table(config, params, calib_data, BaseResults, AllShockResults, ModelData, has_loglin_simul, has_determ_simul, has_irfs, n_shocks, save_label);

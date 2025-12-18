@@ -97,7 +97,9 @@ function GraphIRs(irs_1, irs_2, irs_3, ax, N, labels, range_padding, opts, legen
     
     %% Build shock info for title
     if ~isempty(shock_description)
-        shock_str = sprintf(' [%s]', shock_description);
+        % Escape special LaTeX characters in shock description
+        shock_desc_safe = escape_latex(shock_description);
+        shock_str = sprintf(' [%s]', shock_desc_safe);
     else
         shock_str = '';
     end
@@ -272,6 +274,21 @@ function val = get_field_or_default(s, field, default)
     else
         val = default;
     end
+end
+
+function str_out = escape_latex(str_in)
+    % Escape special LaTeX characters for safe use in titles
+    str_out = str_in;
+    str_out = strrep(str_out, '\', '\\');
+    str_out = strrep(str_out, '_', '\_');
+    str_out = strrep(str_out, '%', '\%');
+    str_out = strrep(str_out, '&', '\&');
+    str_out = strrep(str_out, '#', '\#');
+    str_out = strrep(str_out, '$', '\$');
+    str_out = strrep(str_out, '{', '\{');
+    str_out = strrep(str_out, '}', '\}');
+    str_out = strrep(str_out, '^', '\^{}');
+    str_out = strrep(str_out, '~', '\~{}');
 end
 
 %% ==================== Core Plotting Function ====================

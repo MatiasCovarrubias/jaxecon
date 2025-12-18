@@ -55,10 +55,10 @@ magg = policies_ss(11*parn_sectors+5);
         
 end;
 
-// shockssim_determ must be (simul_periods+2 x n_sectors) 
-// Row 1: initial period, Rows 2:simul_periods+1: simulation, Row simul_periods+2: terminal
-// simul_periods is set by run_dynare_analysis.m (default: 998 = simul_T_determ - 2)
-perfect_foresight_setup(periods=simul_periods);
+// shockssim_determ must be (500 x n_sectors) 
+// Row 1: initial period, Rows 2:499: simulation, Row 500: terminal
+// periods = simul_T_determ - 2 = 500 - 2 = 498
+perfect_foresight_setup(periods=498);
 oo_.exo_simul = shockssim_determ;
 perfect_foresight_solver(tolf=1e-3);
 

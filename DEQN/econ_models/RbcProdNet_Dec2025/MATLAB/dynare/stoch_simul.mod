@@ -1,7 +1,8 @@
 // Stochastic, First ORder Approximation Solution.
+@#include "model_config.mod"
 @#include "ProdNetRbc_base.mod"
 
-initval;ku
+initval;
 @#for j in 1:n_sectors
     e_@{j}=0;
     a_@{j}=0;

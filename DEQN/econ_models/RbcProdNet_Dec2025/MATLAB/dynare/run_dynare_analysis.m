@@ -54,17 +54,20 @@ if nargin < 3
     opts = struct();
 end
 
-opts = set_default(opts, 'run_loglin_simul', true);  % Run log-linear simulation with random shocks
+opts = set_default(opts, 'run_loglin_simul', true);  % Run log-linear (1st order) simulation with random shocks
+opts = set_default(opts, 'run_2ndorder_simul', false);  % Run 2nd order simulation with random shocks
 opts = set_default(opts, 'run_loglin_irs', true);
 opts = set_default(opts, 'run_determ_irs', true);
 opts = set_default(opts, 'run_determ_simul', true);
 opts = set_default(opts, 'sector_indices', [1]);
-opts = set_default(opts, 'modorder', 1);
+opts = set_default(opts, 'modorder', 1);  % Order for log-linear simulation (kept for backward compatibility)
 opts = set_default(opts, 'verbose', true);
 opts = set_default(opts, 'ir_horizon', 200);  % IR calculation horizon
 opts = set_default(opts, 'rng_seed', []);  % Empty = use current RNG state; integer = set specific seed
 opts = set_default(opts, 'simul_T_loglin', 10000);  % Log-linear simulation length
+opts = set_default(opts, 'simul_T_2ndorder', 10000);  % Second-order simulation length
 opts = set_default(opts, 'simul_T_determ', 1000);   % Deterministic simulation length
+opts = set_default(opts, 'model_type', 'VA');  % Model type: 'VA', 'GO', or 'GO_noVA'
 
 % Validate sector indices
 validate_sector_indices(opts.sector_indices, params.n_sectors, 'run_dynare_analysis');
@@ -99,6 +102,27 @@ ax = 0:N-1;
 [dynare_folder, ~, ~] = fileparts(mfilename('fullpath'));
 modstruct_path = fullfile(dynare_folder, 'ModStruct_temp.mat');
 save(modstruct_path, 'par*', 'policies_ss', 'k_ss', 'N', 'ax', '-regexp', '^par');
+
+% Generate model_config.mod file for Dynare preprocessor
+% This sets the model type (VA vs GO) as a Dynare macro variable
+model_config_path = fullfile(dynare_folder, 'model_config.mod');
+fid = fopen(model_config_path, 'w');
+switch opts.model_type
+    case 'VA'
+        fprintf(fid, '// Model configuration: Value Added (TFP multiplies Y)\n');
+        fprintf(fid, '@#define MODEL_TYPE = 1\n');
+        fprintf(fid, '// MODEL_TYPE = 1: VA (TFP in Y equation)\n');
+        fprintf(fid, '// MODEL_TYPE = 2: GO (TFP in Q equation)\n');
+    case {'GO', 'GO_noVA'}
+        fprintf(fid, '// Model configuration: Gross Output (TFP multiplies Q)\n');
+        fprintf(fid, '@#define MODEL_TYPE = 2\n');
+        fprintf(fid, '// MODEL_TYPE = 1: VA (TFP in Y equation)\n');
+        fprintf(fid, '// MODEL_TYPE = 2: GO (TFP in Q equation)\n');
+end
+fclose(fid);
+if opts.verbose
+    fprintf('     Model type: %s\n', opts.model_type);
+end
 
 % Also save params struct to base workspace for later use
 assignin('base', 'params', params);
@@ -258,6 +282,56 @@ if opts.run_loglin_simul
         fprintf('       σ(Y_agg):  %.4f\n', ModelStats.sigma_VA_agg);
         fprintf('       σ(L) avg:  %.4f\n', ModelStats.sigma_L_avg);
         fprintf('       σ(I) avg:  %.4f\n', ModelStats.sigma_I_avg);
+    end
+end
+
+%% 2b. Second-Order Simulation (with random shocks)
+if opts.run_2ndorder_simul
+    simul_T_2ndorder = opts.simul_T_2ndorder;
+    if opts.verbose
+        fprintf('\n  ── Second-Order Simulation (T = %d) ─────────────────────────\n', simul_T_2ndorder);
+    end
+    
+    tic;
+    
+    % Use same RNG state as log-linear for comparability (if available)
+    if isfield(Results, 'rng_state')
+        rng(Results.rng_state);
+        if opts.verbose
+            fprintf('     RNG: Using same seed as log-linear simulation\n');
+        end
+    elseif ~isempty(opts.rng_seed)
+        if isstruct(opts.rng_seed)
+            rng(opts.rng_seed);
+        else
+            rng(opts.rng_seed);
+        end
+    end
+    
+    % Generate random shocks (same as log-linear if same RNG state)
+    shockssim_2nd = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, simul_T_2ndorder);
+    
+    % Simulate using Dynare's simult_ with order=2 and pruning
+    % Note: The solution already has second-order terms (ghxx, ghxu, ghuu) from stoch_simul with order=2
+    dynare_simul_2ndorder = simult_(M_, options_, oo_.steady_state, oo_.dr, shockssim_2nd, 2);
+    
+    elapsed = toc;
+    if opts.verbose
+        fprintf('     ✓ Completed (%.2f s)\n', elapsed);
+    end
+    
+    Results.Simul2ndOrder = dynare_simul_2ndorder;
+    Results.shockssim_2nd = shockssim_2nd;
+    
+    % Compute model statistics for 2nd order
+    ModelStats2nd = compute_model_statistics(dynare_simul_2ndorder, idx, policies_ss, n_sectors);
+    Results.ModelStats2nd = ModelStats2nd;
+    
+    if opts.verbose
+        fprintf('\n     Model Statistics (2nd-order simulation):\n');
+        fprintf('       σ(Y_agg):  %.4f\n', ModelStats2nd.sigma_VA_agg);
+        fprintf('       σ(L) avg:  %.4f\n', ModelStats2nd.sigma_L_avg);
+        fprintf('       σ(I) avg:  %.4f\n', ModelStats2nd.sigma_I_avg);
     end
 end
 

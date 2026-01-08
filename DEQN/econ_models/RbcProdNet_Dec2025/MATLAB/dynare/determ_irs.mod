@@ -1,5 +1,6 @@
 // Perfect foresight impulse response computation for the Production Network RBC model
 // Used to compute nonlinear impulse responses to sectoral TFP shocks
+@#include "model_config.mod"
 @#include "ProdNetRbc_base.mod"
 
 initval;

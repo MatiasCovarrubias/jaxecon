@@ -1,5 +1,6 @@
 // Deterministic simulation of matrix shocksim shocks.
 // Requires: shockssim_determ (simul_periods x n_sectors), simul_periods
+@#include "model_config.mod"
 @#include "ProdNetRbc_base.mod"
 
 initval;

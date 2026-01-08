@@ -50,6 +50,12 @@ end
 %% Configuration
 config = struct();
 
+% --- Model specification ---
+% 'VA'      - Value Added model (TFP multiplies Y, uses modrho/modvcv)
+% 'GO'      - Gross Output model (TFP multiplies Q, uses modrho_GO/modvcv_GO)
+% 'GO_noVA' - Gross Output without VA data (uses modrho_GO_noVA/modvcv_GO_noVA)
+config.model_type = 'VA';
+
 % --- General settings ---
 config.save_results = false;       % Save data and graphs
 config.recalibrate = true;         % Recalibrate steady state (false = load saved)
@@ -61,11 +67,12 @@ config.date = "_December_2025";
 config.exp_label = "_nonlinear_Min";
 
 % --- Dynare analysis settings ---
-config.run_loglin_simul = true;    % Run log-linear stochastic simulation
+config.run_loglin_simul = true;    % Run log-linear (1st order) stochastic simulation
+config.run_2ndorder_simul = true;  % Run 2nd order stochastic simulation
 config.run_determ_simul = true;    % Run deterministic simulation (slower)
 config.run_loglin_irs = true;      % Compute log-linear IRFs
 config.run_determ_irs = true;      % Compute deterministic IRFs (slowest)
-config.modorder = 2;               % Approximation order for simulation (1=log-linear, 2=second order)
+config.modorder = 1;               % Approximation order for log-linear simulation (keep at 1)
 
 % --- IR settings ---
 config.ir_horizon = 200;           % Horizon for IR calculation (needs to be long for convergence)
@@ -73,7 +80,8 @@ config.ir_plot_length = 60;        % Periods to plot in IR figures
 config.plot_irs = true;            % Plot IRF figures (set false for batch runs)
 
 % --- Simulation settings ---
-config.simul_T_loglin = 2500;      % Log-linear simulation length (fast)
+config.simul_T_loglin = 2500;      % Log-linear (1st order) simulation length (fast)
+config.simul_T_2ndorder = 2500;    % Second-order simulation length (fast)
 config.simul_T_determ = 500;       % Deterministic simulation length (slower)
 
 % --- Shock values configuration ---
@@ -151,9 +159,9 @@ params.theta = 1;
 params.phi = 4;
 
 %% Load calibration data
-[calib_data, params] = load_calibration_data(params, sector_indices);
+[calib_data, params] = load_calibration_data(params, sector_indices, config.model_type);
 labels = calib_data.labels;
-fprintf('\n  ✓ Calibration data loaded\n');
+fprintf('\n  ✓ Calibration data loaded (model_type: %s)\n', config.model_type);
 
 % Display empirical targets
 emp_tgt = calib_data.empirical_targets;
@@ -231,9 +239,10 @@ AllShockResults.IRFResults = cell(n_shocks, 1);
 BaseResults = struct();
 
 % Run base simulation (stoch_simul and optionally determ_simul)
-if config.run_loglin_simul || config.run_determ_simul
+if config.run_loglin_simul || config.run_2ndorder_simul || config.run_determ_simul
     dynare_opts_base = struct();
     dynare_opts_base.run_loglin_simul = config.run_loglin_simul;
+    dynare_opts_base.run_2ndorder_simul = config.run_2ndorder_simul;
     dynare_opts_base.run_loglin_irs = false;
     dynare_opts_base.run_determ_irs = false;
     dynare_opts_base.run_determ_simul = config.run_determ_simul;
@@ -242,21 +251,28 @@ if config.run_loglin_simul || config.run_determ_simul
     dynare_opts_base.verbose = true;
     dynare_opts_base.ir_horizon = config.ir_horizon;
     dynare_opts_base.simul_T_loglin = config.simul_T_loglin;
+    dynare_opts_base.simul_T_2ndorder = config.simul_T_2ndorder;
     dynare_opts_base.simul_T_determ = config.simul_T_determ;
+    dynare_opts_base.model_type = config.model_type;
     
     params.IRshock = config.shock_values(1).value;
     
     fprintf('\n  ┌─ Base Simulation ─────────────────────────────────────────────┐\n');
     fprintf('  │  Configuration:                                               │\n');
     if config.run_loglin_simul
-        fprintf('  │    • Log-linear stochastic: ON  (T = %d)                   │\n', config.simul_T_loglin);
+        fprintf('  │    • Log-linear (1st order):  ON  (T = %d)                 │\n', config.simul_T_loglin);
     else
-        fprintf('  │    • Log-linear stochastic: OFF                              │\n');
+        fprintf('  │    • Log-linear (1st order):  OFF                            │\n');
+    end
+    if config.run_2ndorder_simul
+        fprintf('  │    • Second-order:            ON  (T = %d)                 │\n', config.simul_T_2ndorder);
+    else
+        fprintf('  │    • Second-order:            OFF                            │\n');
     end
     if config.run_determ_simul
-        fprintf('  │    • Deterministic:         ON  (T = %d)                    │\n', config.simul_T_determ);
+        fprintf('  │    • Deterministic (PF):      ON  (T = %d)                  │\n', config.simul_T_determ);
     else
-        fprintf('  │    • Deterministic:         OFF                              │\n');
+        fprintf('  │    • Deterministic (PF):      OFF                            │\n');
     end
     fprintf('  └────────────────────────────────────────────────────────────────┘\n\n');
     
@@ -266,11 +282,13 @@ if config.run_loglin_simul || config.run_determ_simul
     
     % Check what actually ran
     has_loglin = isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin);
+    has_2ndorder = isfield(BaseResults, 'Simul2ndOrder') && ~isempty(BaseResults.Simul2ndOrder);
     has_determ = isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm);
     
     fprintf('\n  Base simulation results:\n');
-    if has_loglin, fprintf('    ✓ SimulLoglin computed\n'); else, fprintf('    ✗ SimulLoglin skipped\n'); end
-    if has_determ, fprintf('    ✓ SimulDeterm computed\n'); else, fprintf('    ✗ SimulDeterm skipped\n'); end
+    if has_loglin, fprintf('    ✓ SimulLoglin (1st order) computed\n'); else, fprintf('    ✗ SimulLoglin skipped\n'); end
+    if has_2ndorder, fprintf('    ✓ Simul2ndOrder computed\n'); else, fprintf('    ✗ Simul2ndOrder skipped\n'); end
+    if has_determ, fprintf('    ✓ SimulDeterm (PF) computed\n'); else, fprintf('    ✗ SimulDeterm skipped\n'); end
     if isfield(BaseResults, 'determ_simul_error')
         fprintf('    ⚠ Determ simulation failed: %s\n', BaseResults.determ_simul_error.message);
     end
@@ -303,6 +321,7 @@ if run_any_irs
         dynare_opts.ir_horizon = config.ir_horizon;
         dynare_opts.simul_T_loglin = config.simul_T_loglin;
         dynare_opts.simul_T_determ = config.simul_T_determ;
+        dynare_opts.model_type = config.model_type;
         
         tic;
         DynareResults = run_dynare_analysis(ModData, params, dynare_opts);
@@ -368,6 +387,7 @@ ModelData = struct();
 ModelData.metadata.date = config.date;
 ModelData.metadata.exp_label = config.exp_label;
 ModelData.metadata.save_label = save_label;
+ModelData.metadata.model_type = config.model_type;
 ModelData.metadata.sector_indices = sector_indices;
 ModelData.metadata.sector_labels = labels.sector_labels;
 ModelData.metadata.config = config;
@@ -438,6 +458,7 @@ fprintf('║                       SIMULATION RESULTS                           
 fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
 
 has_loglin_simul = false;
+has_2ndorder_simul = false;
 has_determ_simul = false;
 
 % Log-linear simulation (if available)
@@ -482,6 +503,68 @@ if isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin)
         model_stats = BaseResults.ModelStats;
         ModelData_simulation.Loglin.ModelStats = model_stats;
         ModelData.Statistics.Loglin.ModelStats = model_stats;
+    end
+end
+
+% Second-order simulation (if available)
+if isfield(BaseResults, 'Simul2ndOrder') && ~isempty(BaseResults.Simul2ndOrder)
+    has_2ndorder_simul = true;
+    n = params.n_sectors;
+    idx = get_variable_indices(n);
+    Cagg_ss = BaseResults.Cagg_ss;
+    Lagg_ss = BaseResults.Lagg_ss;
+    Yagg_ss = ModData.Yagg_ss;
+    Iagg_ss = ModData.Iagg_ss;
+    Magg_ss = ModData.Magg_ss;
+    
+    ModelData_simulation.SecondOrder.full_simul = BaseResults.Simul2ndOrder;
+    if isfield(BaseResults, 'shockssim_2nd')
+        ModelData_simulation.SecondOrder.shocks = BaseResults.shockssim_2nd;
+    end
+    ModelData_simulation.SecondOrder.variable_indices = idx;
+    
+    Cagg_2nd = exp(BaseResults.Simul2ndOrder(idx.cagg, :));
+    Lagg_2nd = exp(BaseResults.Simul2ndOrder(idx.lagg, :));
+    Yagg_2nd = exp(BaseResults.Simul2ndOrder(idx.yagg, :));
+    Iagg_2nd = exp(BaseResults.Simul2ndOrder(idx.iagg, :));
+    Magg_2nd = exp(BaseResults.Simul2ndOrder(idx.magg, :));
+    
+    ModelData_simulation.SecondOrder.Cagg = Cagg_2nd;
+    ModelData_simulation.SecondOrder.Lagg = Lagg_2nd;
+    ModelData_simulation.SecondOrder.Yagg = Yagg_2nd;
+    ModelData_simulation.SecondOrder.Iagg = Iagg_2nd;
+    ModelData_simulation.SecondOrder.Magg = Magg_2nd;
+    
+    ModelData_simulation.SecondOrder.Cagg_volatility = std(Cagg_2nd)/Cagg_ss;
+    ModelData_simulation.SecondOrder.Lagg_volatility = std(Lagg_2nd)/Lagg_ss;
+    
+    % Mean log deviations from SS (key for precautionary effects)
+    ModelData_simulation.SecondOrder.Cagg_mean_logdev = mean(log(Cagg_2nd)) - log(Cagg_ss);
+    ModelData_simulation.SecondOrder.Yagg_mean_logdev = mean(log(Yagg_2nd)) - log(Yagg_ss);
+    ModelData_simulation.SecondOrder.Lagg_mean_logdev = mean(log(Lagg_2nd)) - log(Lagg_ss);
+    ModelData_simulation.SecondOrder.Iagg_mean_logdev = mean(log(Iagg_2nd)) - log(Iagg_ss);
+    ModelData_simulation.SecondOrder.Magg_mean_logdev = mean(log(Magg_2nd)) - log(Magg_ss);
+    
+    % Also store volatilities in ModelData.Statistics for quick access
+    ModelData.Statistics.SecondOrder.Cagg_volatility = ModelData_simulation.SecondOrder.Cagg_volatility;
+    ModelData.Statistics.SecondOrder.Lagg_volatility = ModelData_simulation.SecondOrder.Lagg_volatility;
+    ModelData.Statistics.SecondOrder.Cagg_mean_logdev = ModelData_simulation.SecondOrder.Cagg_mean_logdev;
+    ModelData.Statistics.SecondOrder.Yagg_mean_logdev = ModelData_simulation.SecondOrder.Yagg_mean_logdev;
+    ModelData.Statistics.SecondOrder.Lagg_mean_logdev = ModelData_simulation.SecondOrder.Lagg_mean_logdev;
+    ModelData.Statistics.SecondOrder.Iagg_mean_logdev = ModelData_simulation.SecondOrder.Iagg_mean_logdev;
+    ModelData.Statistics.SecondOrder.Magg_mean_logdev = ModelData_simulation.SecondOrder.Magg_mean_logdev;
+    
+    fprintf('\n  Second-Order Simulation:\n');
+    fprintf('    Size: %d variables × %d periods\n', ...
+        size(BaseResults.Simul2ndOrder, 1), size(BaseResults.Simul2ndOrder, 2));
+    fprintf('    Cagg volatility: %.6f\n', ModelData_simulation.SecondOrder.Cagg_volatility);
+    fprintf('    Lagg volatility: %.6f\n', ModelData_simulation.SecondOrder.Lagg_volatility);
+    
+    % Store simulation-based model statistics (for sectoral averages)
+    if isfield(BaseResults, 'ModelStats2nd')
+        model_stats_2nd = BaseResults.ModelStats2nd;
+        ModelData_simulation.SecondOrder.ModelStats = model_stats_2nd;
+        ModelData.Statistics.SecondOrder.ModelStats = model_stats_2nd;
     end
 end
 
@@ -530,6 +613,9 @@ if isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm)
     idx = get_variable_indices(n);
     Cagg_ss = BaseResults.Cagg_ss;
     Lagg_ss = BaseResults.Lagg_ss;
+    Yagg_ss = ModData.Yagg_ss;
+    Iagg_ss = ModData.Iagg_ss;
+    Magg_ss = ModData.Magg_ss;
     
     ModelData_simulation.Determ.full_simul = BaseResults.SimulDeterm;
     if isfield(BaseResults, 'shockssim_determ')
@@ -538,17 +624,35 @@ if isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm)
     
     Cagg_determ = exp(BaseResults.SimulDeterm(idx.cagg, :));
     Lagg_determ = exp(BaseResults.SimulDeterm(idx.lagg, :));
+    Yagg_determ = exp(BaseResults.SimulDeterm(idx.yagg, :));
+    Iagg_determ = exp(BaseResults.SimulDeterm(idx.iagg, :));
+    Magg_determ = exp(BaseResults.SimulDeterm(idx.magg, :));
     
     ModelData_simulation.Determ.Cagg = Cagg_determ;
     ModelData_simulation.Determ.Lagg = Lagg_determ;
+    ModelData_simulation.Determ.Yagg = Yagg_determ;
+    ModelData_simulation.Determ.Iagg = Iagg_determ;
+    ModelData_simulation.Determ.Magg = Magg_determ;
     ModelData_simulation.Determ.Cagg_volatility = std(Cagg_determ)/Cagg_ss;
     ModelData_simulation.Determ.Lagg_volatility = std(Lagg_determ)/Lagg_ss;
     
-    % Also store volatilities in ModelData.Statistics for quick access
+    % Mean log deviations from SS (key for precautionary effects)
+    ModelData_simulation.Determ.Cagg_mean_logdev = mean(log(Cagg_determ)) - log(Cagg_ss);
+    ModelData_simulation.Determ.Yagg_mean_logdev = mean(log(Yagg_determ)) - log(Yagg_ss);
+    ModelData_simulation.Determ.Lagg_mean_logdev = mean(log(Lagg_determ)) - log(Lagg_ss);
+    ModelData_simulation.Determ.Iagg_mean_logdev = mean(log(Iagg_determ)) - log(Iagg_ss);
+    ModelData_simulation.Determ.Magg_mean_logdev = mean(log(Magg_determ)) - log(Magg_ss);
+    
+    % Also store volatilities and mean log deviations in ModelData.Statistics for quick access
     ModelData.Statistics.Determ.Cagg_volatility = ModelData_simulation.Determ.Cagg_volatility;
     ModelData.Statistics.Determ.Lagg_volatility = ModelData_simulation.Determ.Lagg_volatility;
+    ModelData.Statistics.Determ.Cagg_mean_logdev = ModelData_simulation.Determ.Cagg_mean_logdev;
+    ModelData.Statistics.Determ.Yagg_mean_logdev = ModelData_simulation.Determ.Yagg_mean_logdev;
+    ModelData.Statistics.Determ.Lagg_mean_logdev = ModelData_simulation.Determ.Lagg_mean_logdev;
+    ModelData.Statistics.Determ.Iagg_mean_logdev = ModelData_simulation.Determ.Iagg_mean_logdev;
+    ModelData.Statistics.Determ.Magg_mean_logdev = ModelData_simulation.Determ.Magg_mean_logdev;
     
-    fprintf('\n  Deterministic Simulation:\n');
+    fprintf('\n  Deterministic (Perfect Foresight) Simulation:\n');
     fprintf('    Size: %d variables × %d periods\n', ...
         size(BaseResults.SimulDeterm, 1), size(BaseResults.SimulDeterm, 2));
     fprintf('    Cagg volatility: %.6f\n', ModelData_simulation.Determ.Cagg_volatility);
@@ -640,7 +744,7 @@ if config.save_results
     fprintf('\n  ✓ ModelData saved: %s\n', filename_model);
     
     % Save ModelData_simulation (full simulations - heavy)
-    if has_loglin_simul || has_determ_simul
+    if has_loglin_simul || has_2ndorder_simul || has_determ_simul
         filename_simul = fullfile(exp_paths.experiment, 'ModelData_simulation.mat');
         save(filename_simul, 'ModelData_simulation');
         fprintf('  ✓ ModelData_simulation saved: %s\n', filename_simul);
@@ -657,10 +761,10 @@ else
 end
 
 %% Nonlinearity and Preallocation Diagnostics
-if has_loglin_simul || has_determ_simul || has_irfs
+if has_loglin_simul || has_2ndorder_simul || has_determ_simul || has_irfs
     Diagnostics = print_nonlinearity_diagnostics(ModelData_simulation, AllShockResults, params, config, ModData);
     ModelData.Diagnostics = Diagnostics;
 end
 
 %% Summary Table (concise, copy-pasteable)
-print_summary_table(config, params, calib_data, BaseResults, AllShockResults, ModelData, has_loglin_simul, has_determ_simul, has_irfs, n_shocks, save_label);
+print_summary_table(config, params, calib_data, BaseResults, AllShockResults, ModelData, has_loglin_simul, has_2ndorder_simul, has_determ_simul, has_irfs, n_shocks, save_label);

@@ -116,19 +116,44 @@ model;
     a_@{j}(+1)=rho_@{j}*a_@{j}+e_@{j};
     
     exp(p_@{j}) = ( MU * (exp(cagg) * xi_@{j} / exp(c_@{j}))^(1/sigma_c) ) / DENOMC;
+
+    // FOC for labor: TFP exponent depends on model type
+    // VA: exp(a)^((sigma_y-1)/sigma_y), GO: exp(a)^((sigma_q-1)/sigma_q)
+    @#if MODEL_TYPE == 1
     (exp(cagg)-theta*(1/(1+eps_l^(-1)))*exp(lagg)^(1+eps_l^(-1)))^(-eps_c^(-1))* theta * exp(lagg)^(eps_l^(-1))*(exp(l_@{j})/exp(lagg))^(1/sigma_l)/DENOMC = (exp(p_@{j})) * (exp(a_@{j}))^((sigma_y-1)/sigma_y) * ( (mu_@{j}) * exp(q_@{j})/exp(y_@{j}) )^(1/sigma_q) * ( (1-alpha_@{j}) * exp(y_@{j})/exp(l_@{j}) )^(1/sigma_y);
+    @#else
+    (exp(cagg)-theta*(1/(1+eps_l^(-1)))*exp(lagg)^(1+eps_l^(-1)))^(-eps_c^(-1))* theta * exp(lagg)^(eps_l^(-1))*(exp(l_@{j})/exp(lagg))^(1/sigma_l)/DENOMC = (exp(p_@{j})) * (exp(a_@{j}))^((sigma_q-1)/sigma_q) * ( (mu_@{j}) * exp(q_@{j})/exp(y_@{j}) )^(1/sigma_q) * ( (1-alpha_@{j}) * exp(y_@{j})/exp(l_@{j}) )^(1/sigma_y);
+    @#endif
     
+    // FOC for capital: TFP exponent depends on model type
+    // VA: exp(a)^((sigma_y-1)/sigma_y), GO: exp(a)^((sigma_q-1)/sigma_q)
+    @#if MODEL_TYPE == 1
     exp(pk_@{j}) = beta * (
         exp(p_@{j}(+1)) * exp(a_@{j}(+1))^((sigma_y-1)/sigma_y) * 
         ( (mu_@{j}) * exp(q_@{j}(+1))/exp(y_@{j}(+1)) )^(1/sigma_q) * 
         ( alpha_@{j} * exp(y_@{j}(+1))/exp(k_@{j}(+1)) )^(1/sigma_y) + 
          exp(pk_@{j}(+1))*( (1-delta_@{j})+ phi/2 *( ( exp(i_@{j}(+1))/exp(k_@{j}(+1)) )^2 - delta_@{j}^2 ) ) );
+    @#else
+    exp(pk_@{j}) = beta * (
+        exp(p_@{j}(+1)) * exp(a_@{j}(+1))^((sigma_q-1)/sigma_q) * 
+        ( (mu_@{j}) * exp(q_@{j}(+1))/exp(y_@{j}(+1)) )^(1/sigma_q) * 
+        ( alpha_@{j} * exp(y_@{j}(+1))/exp(k_@{j}(+1)) )^(1/sigma_y) + 
+         exp(pk_@{j}(+1))*( (1-delta_@{j})+ phi/2 *( ( exp(i_@{j}(+1))/exp(k_@{j}(+1)) )^2 - delta_@{j}^2 ) ) );
+    @#endif
+
     exp(pm_@{j}) = (0
         @#for i in 1:n_sectors
             +Gamma_M_@{i}_@{j}*exp(p_@{i})^(1-sigma_m)
         @#endfor
         )^(1/(1-sigma_m));
+
+    // FOC for intermediates M: GO model includes TFP term in denominator
+    @#if MODEL_TYPE == 1
     exp(m_@{j}) = (1-mu_@{j}) * (exp(pm_@{j})/exp(p_@{j}))^(-sigma_q) * exp(q_@{j});
+    @#else
+    exp(m_@{j}) = (1-mu_@{j}) * (exp(pm_@{j})/((exp(a_@{j}))^((sigma_q-1)/sigma_q)*exp(p_@{j})))^(-sigma_q) * exp(q_@{j});
+    @#endif
+
     exp(mout_@{j}) = (0
             @#for i in 1:n_sectors
                 +Gamma_M_@{j}_@{i}*(exp(p_@{j})/exp(pm_@{i}))^(-sigma_m) * exp(m_@{i})
@@ -144,8 +169,17 @@ model;
             @#endfor
             ) ;  
     exp(q_@{j}) = exp(c_@{j}) + exp(mout_@{j}) + exp(iout_@{j});
+
+    // Production functions: TFP multiplies Y (VA model) or Q (GO model)
+    @#if MODEL_TYPE == 1
+    // Value Added model: TFP in Y equation
     exp(q_@{j}) = ((mu_@{j})^(1/sigma_q) * (exp(y_@{j}))^((sigma_q-1)/sigma_q) + (1-mu_@{j})^(1/sigma_q) * (exp(m_@{j}))^((sigma_q-1)/sigma_q) )^(sigma_q/(sigma_q-1));
     exp(y_@{j}) = exp(a_@{j}) * (alpha_@{j}^(1/sigma_y) * exp(k_@{j})^((sigma_y-1)/sigma_y) + (1-alpha_@{j})^(1/sigma_y) * exp(l_@{j})^((sigma_y-1)/sigma_y) )^(sigma_y/(sigma_y-1));
+    @#else
+    // Gross Output model: TFP in Q equation
+    exp(q_@{j}) = exp(a_@{j}) * ((mu_@{j})^(1/sigma_q) * (exp(y_@{j}))^((sigma_q-1)/sigma_q) + (1-mu_@{j})^(1/sigma_q) * (exp(m_@{j}))^((sigma_q-1)/sigma_q) )^(sigma_q/(sigma_q-1));
+    exp(y_@{j}) = (alpha_@{j}^(1/sigma_y) * exp(k_@{j})^((sigma_y-1)/sigma_y) + (1-alpha_@{j})^(1/sigma_y) * exp(l_@{j})^((sigma_y-1)/sigma_y) )^(sigma_y/(sigma_y-1));
+    @#endif
     
 @#endfor
 

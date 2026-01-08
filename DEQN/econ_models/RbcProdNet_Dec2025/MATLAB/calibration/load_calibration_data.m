@@ -1,9 +1,14 @@
-function [calib_data, params] = load_calibration_data(params, sector_indices)
+function [calib_data, params] = load_calibration_data(params, sector_indices, model_type)
 % LOAD_CALIBRATION_DATA Load and preprocess calibration data for the production network model
 %
 % INPUTS:
 %   params         - Structure with basic model parameters (beta, eps_l, eps_c, theta, etc.)
 %   sector_indices - Vector of sector indices to analyze
+%   model_type     - Model type: 'VA' (value added), 'GO' (gross output), or 'GO_noVA'
+%                    Determines which TFP process data to load:
+%                    - 'VA': modrho, modvcv (no suffix)
+%                    - 'GO': modrho_GO, modvcv_GO
+%                    - 'GO_noVA': modrho_GO_noVA, modvcv_GO_noVA
 %
 % OUTPUTS:
 %   calib_data - Structure containing:
@@ -14,10 +19,20 @@ function [calib_data, params] = load_calibration_data(params, sector_indices)
 %                - invnet_data: Investment network matrix
 %                - labels: Labels structure with sector and client info
 %                - empirical_targets: Business cycle moments from data
+%                - model_type: The model type used
 %   params     - Updated params structure with calibration data added
 
 %% Input validation
+if nargin < 3
+    model_type = 'VA';  % Default to value added model
+end
 validate_sector_indices(sector_indices, 37, 'load_calibration_data');
+
+valid_model_types = {'VA', 'GO', 'GO_noVA'};
+if ~ismember(model_type, valid_model_types)
+    error('load_calibration_data:InvalidModelType', ...
+        'model_type must be one of: %s', strjoin(valid_model_types, ', '));
+end
 
 %% Load raw data
 load('calibration_data.mat');
@@ -59,9 +74,21 @@ ionet_data = ionet_data ./ sum(ionet_data, 1);
 
 %% Update params with depreciation and TFP process
 params.delta = mean(depratbea, 2);
-params.rho = modrho;
-params.Sigma_A = modvcv;
 params.n_sectors = n_sectors;
+params.model_type = model_type;
+
+% Select TFP process based on model_type
+switch model_type
+    case 'VA'
+        params.rho = modrho;
+        params.Sigma_A = modvcv;
+    case 'GO'
+        params.rho = modrho_GO;
+        params.Sigma_A = modvcv_GO;
+    case 'GO_noVA'
+        params.rho = modrho_GO_noVA;
+        params.Sigma_A = modvcv_GO_noVA;
+end
 
 %% Add expenditure share data to params
 params.conssh_data = conssh_data;
@@ -102,6 +129,7 @@ calib_data.ionet_data = ionet_data;
 calib_data.invnet_data = invnet_data;
 calib_data.labels = labels;
 calib_data.empirical_targets = empirical_targets;
+calib_data.model_type = model_type;
 
 end
 

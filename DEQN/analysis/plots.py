@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from scipy.stats import norm
 
 # Plot styling configuration
 sns.set_style("whitegrid")
@@ -49,6 +50,7 @@ def plot_ergodic_histograms(
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
+    theo_dist_params: Optional[Dict[str, Dict[str, float]]] = None,
 ):
     """
     Create publication-quality histograms of ergodic distributions for analysis variables.
@@ -66,6 +68,11 @@ def plot_ergodic_histograms(
         Name of the analysis to include in the filename. If None, no analysis name is added.
     display_dpi : int, optional
         DPI for display (default 100). Saved figures always use 300 DPI.
+    theo_dist_params : dict, optional
+        Theoretical distribution parameters for experiments that should be plotted as
+        smooth PDF curves instead of histograms. Format:
+        {experiment_name: {var_label: {"mean": float, "std": float}}}
+        Experiments in this dict will show a smooth normal PDF curve.
 
     Returns:
     --------
@@ -102,6 +109,11 @@ def plot_ergodic_histograms(
 
     figures = []
 
+    # Track which experiments have theoretical params (for this function call)
+    theo_experiments = set()
+    if theo_dist_params is not None:
+        theo_experiments = set(theo_dist_params.keys())
+
     for var_label, var_filename in zip(var_labels, var_filenames):
         # Extract data for this analysis variable across all experiments and convert to percentages
         var_data = {}
@@ -114,18 +126,49 @@ def plot_ergodic_histograms(
         # Create bins using the fixed range
         bins = np.linspace(bin_range[0], bin_range[1], 31)
         bin_centers = (bins[:-1] + bins[1:]) / 2
+        bin_width = bins[1] - bins[0]
+
+        # For theoretical curves, use a smooth x range
+        x_smooth = np.linspace(bin_range[0], bin_range[1], 200)
 
         # Create figure
         fig, ax = plt.subplots(figsize=(8, 6), dpi=display_dpi)
 
         # Plot histogram for each experiment
         for i, exp_name in enumerate(experiment_names):
-            # Calculate histogram
-            counts, _ = np.histogram(var_data[exp_name], bins=bins)
-            freqs = counts / len(var_data[exp_name])
+            # Check if this experiment should use theoretical PDF
+            use_theo = (
+                exp_name in theo_experiments
+                and theo_dist_params is not None
+                and var_label in theo_dist_params.get(exp_name, {})
+            )
 
-            # Plot the frequency line
-            ax.plot(bin_centers, freqs, label=exp_name, color=plot_colors[i], linewidth=2, alpha=0.9)
+            if use_theo:
+                # Plot smooth theoretical normal PDF
+                params = theo_dist_params[exp_name][var_label]
+                mean_pct = params["mean"] * 100  # Convert to percentage
+                std_pct = params["std"] * 100  # Convert to percentage
+
+                # Compute PDF and scale to match histogram frequencies
+                # PDF integrated over bin_width gives probability per bin
+                pdf_values = norm.pdf(x_smooth, loc=mean_pct, scale=std_pct) * bin_width
+
+                ax.plot(
+                    x_smooth,
+                    pdf_values,
+                    label=f"{exp_name} (theoretical)",
+                    color=plot_colors[i],
+                    linewidth=2,
+                    alpha=0.9,
+                    linestyle="-",
+                )
+            else:
+                # Calculate histogram from samples
+                counts, _ = np.histogram(var_data[exp_name], bins=bins)
+                freqs = counts / len(var_data[exp_name])
+
+                # Plot the frequency line
+                ax.plot(bin_centers, freqs, label=exp_name, color=plot_colors[i], linewidth=2, alpha=0.9)
 
         # Add vertical line at deterministic steady state (x=0)
         ax.axvline(x=0, color="black", linestyle="--", linewidth=2, label="Deterministic SS", alpha=0.7)

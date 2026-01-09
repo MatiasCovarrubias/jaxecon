@@ -76,7 +76,6 @@ from DEQN.analysis.aggregation_correction import (  # noqa: E402
     compute_ergodic_steady_state,
     create_perfect_foresight_descriptive_stats,
     create_theoretical_descriptive_stats,
-    generate_loglinear_samples_from_theostats,
     get_loglinear_distribution_params,
     process_simulation_with_consistent_aggregation,
     recenter_analysis_variables,
@@ -422,6 +421,9 @@ def main():
     theoretical_stats = {}
 
     # Add log-linear theoretical stats (from TheoStats)
+    # Store theoretical distribution params for smooth PDF plotting (instead of janky histograms)
+    histogram_theo_params = {}
+
     if "TheoStats" in stats:
         theo_stats = stats["TheoStats"]
         print("  ✓ Using TheoStats for Log-Linear moments (mean=0, skew=0, kurt=0)", flush=True)
@@ -432,18 +434,19 @@ def main():
         )
         theoretical_stats.update(loglin_theo_stats)
 
-        # Also generate samples for histogram plotting
-        loglin_analysis_vars = generate_loglinear_samples_from_theostats(
-            theo_stats=theo_stats,
-            n_samples=config.get("periods_per_epis", 10000),
-            seed=config.get("simul_seed", 0),
-        )
-        analysis_variables_data["Log-Linear (Theoretical)"] = loglin_analysis_vars
+        # Get theoretical distribution params for smooth PDF curves in histograms
+        theo_dist_params = get_loglinear_distribution_params(theo_stats)
+        histogram_theo_params["Log-Linear (Theoretical)"] = theo_dist_params
+
+        # Still need placeholder data for the plotting function to include this experiment
+        # Create minimal placeholder (actual curve uses theo_dist_params)
+        analysis_variables_data["Log-Linear (Theoretical)"] = {
+            var_name: jnp.zeros(10) for var_name in theo_dist_params.keys()
+        }
 
         # Print theoretical statistics
-        theo_dist_params = get_loglinear_distribution_params(theo_stats)
         for var_name, params_dict in theo_dist_params.items():
-            print(f"    {var_name}: σ={params_dict['std']:.4f}%", flush=True)
+            print(f"    {var_name}: σ={params_dict['std']*100:.4f}%", flush=True)
 
     # Add perfect foresight stats (from Statistics.Determ if available)
     if "Determ" in stats:
@@ -512,7 +515,10 @@ def main():
     # Generate histograms (filter out deterministic solution)
     histogram_data = {k: v for k, v in analysis_variables_data.items() if "Deterministic" not in k}
     plot_ergodic_histograms(
-        analysis_variables_data=histogram_data, save_dir=simulation_dir, analysis_name=config["analysis_name"]
+        analysis_variables_data=histogram_data,
+        save_dir=simulation_dir,
+        analysis_name=config["analysis_name"],
+        theo_dist_params=histogram_theo_params if histogram_theo_params else None,
     )
 
     # ═══════════════════════════════════════════════════════════════════════════

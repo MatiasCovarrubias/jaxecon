@@ -74,6 +74,8 @@ from jax import random  # noqa: E402
 from DEQN.analysis.aggregation_correction import (  # noqa: E402
     compute_ergodic_prices_from_simulation,
     compute_ergodic_steady_state,
+    generate_loglinear_samples_from_theostats,
+    get_loglinear_distribution_params,
     process_simulation_with_consistent_aggregation,
     recenter_analysis_variables,
 )
@@ -411,6 +413,30 @@ def main():
 
         analysis_variables_data["Log-Linear (Dynare)"] = loglin_analysis_vars
 
+    # Initialize theoretical distribution params (may be populated below)
+    theo_dist_params = None
+
+    if "TheoStats" in stats and dynare_simul_loglin is None:
+        # No simulation data, but we have theoretical statistics
+        # Generate synthetic log-linear samples from theoretical lognormal distribution
+        # For log-linear: log(X/X_ss) ~ N(0, σ²), so we can sample directly
+        print("  ✓ Generating Log-Linear samples from TheoStats (no simulation data)", flush=True)
+
+        theo_stats = stats["TheoStats"]
+        loglin_analysis_vars = generate_loglinear_samples_from_theostats(
+            theo_stats=theo_stats,
+            n_samples=config.get("periods_per_epis", 10000),
+            seed=config.get("simul_seed", 0),
+        )
+
+        # Store theoretical distribution parameters for potential PDF plotting
+        theo_dist_params = get_loglinear_distribution_params(theo_stats)
+        analysis_variables_data["Log-Linear (Theoretical)"] = loglin_analysis_vars
+
+        # Print theoretical statistics
+        for var_name, params_dict in theo_dist_params.items():
+            print(f"    {var_name}: μ={params_dict['mean']:.4f}, σ={params_dict['std']:.4f}", flush=True)
+
     if dynare_simul_determ is not None:
         determ_analysis_vars = process_simulation_with_consistent_aggregation(
             simul_data=dynare_simul_determ,
@@ -568,6 +594,7 @@ def main():
         "gir_data": gir_data,
         "matlab_ir_data": matlab_ir_data,
         "upstreamness_data": upstreamness_data,
+        "theo_dist_params": theo_dist_params,  # Theoretical distribution params (for analytical PDF plotting)
     }
 
 

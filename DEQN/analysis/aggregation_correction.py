@@ -14,9 +14,15 @@ Correction formula:
 
 This applies to price-weighted aggregates: Yagg, Kagg, Iagg, Magg.
 CES aggregates (Cagg, Lagg) don't need correction as they're quantity-only.
+
+For log-linear solutions, all variables are lognormally distributed:
+    log(X/X_ss) ~ N(0, σ²)
+    X ~ LogNormal(log(X_ss), σ)
+This allows generating synthetic samples from theoretical statistics.
 """
 
 import jax.numpy as jnp
+from jax import random
 
 
 def compute_ergodic_steady_state(
@@ -288,3 +294,116 @@ def _get_variable_indices(n_sectors: int) -> dict:
         "iagg": 13 * n + 3,
         "magg": 13 * n + 4,
     }
+
+
+def generate_loglinear_samples_from_theostats(
+    theo_stats: dict,
+    n_samples: int = 10000,
+    seed: int = 0,
+) -> dict:
+    """
+    Generate synthetic log-linear samples from theoretical statistics.
+
+    For log-linear solutions, all aggregate variables in log-deviations are
+    normally distributed around 0 with variance from TheoStats:
+        log(X/X_ss) ~ N(0, σ²)
+
+    This function generates samples from these distributions for comparison
+    with nonlinear simulation results.
+
+    Args:
+        theo_stats: Dictionary with theoretical statistics from MATLAB/Dynare.
+                   Expected keys: sigma_C_agg, sigma_L_agg, sigma_VA_agg,
+                                  sigma_I_agg, sigma_M_agg
+                   Optional: rho_VA_agg (autocorrelation), var_cov_agg (correlations)
+        n_samples: Number of synthetic samples to generate
+        seed: Random seed for reproducibility
+
+    Returns:
+        Dictionary with analysis variables (log deviations from SS):
+            - "Agg. Consumption": samples of log(C/C_ss)
+            - "Agg. Labor": samples of log(L/L_ss)
+            - "Agg. Output": samples of log(Y/Y_ss)
+            - "Agg. Investment": samples of log(I/I_ss)
+            - "Agg. Intermediates": samples of log(M/M_ss)
+    """
+    key = random.PRNGKey(seed)
+
+    # Map theo_stats keys to analysis variable names
+    # Log-linear: log(X/X_ss) ~ N(0, sigma²)
+    var_mapping = {
+        "Agg. Consumption": "sigma_C_agg",
+        "Agg. Labor": "sigma_L_agg",
+        "Agg. Output": "sigma_VA_agg",
+        "Agg. Investment": "sigma_I_agg",
+        "Agg. Intermediates": "sigma_M_agg",
+    }
+
+    result = {}
+
+    # Check if we have correlation structure
+    if "var_cov_agg" in theo_stats and theo_stats["var_cov_agg"] is not None:
+        # Generate correlated samples using the full covariance matrix
+        # Order in var_cov: cagg, lagg, yagg, iagg, magg
+        var_cov = jnp.array(theo_stats["var_cov_agg"])
+
+        # Generate multivariate normal samples
+        # MVN samples: z = L @ epsilon, where L L^T = Sigma
+        L = jnp.linalg.cholesky(var_cov)
+        key, subkey = random.split(key)
+        epsilon = random.normal(subkey, shape=(n_samples, 5))
+        samples = epsilon @ L.T
+
+        # Assign to result dict
+        result["Agg. Consumption"] = samples[:, 0]
+        result["Agg. Labor"] = samples[:, 1]
+        result["Agg. Output"] = samples[:, 2]
+        result["Agg. Investment"] = samples[:, 3]
+        result["Agg. Intermediates"] = samples[:, 4]
+    else:
+        # Generate independent samples (no correlation structure)
+        for var_name, sigma_key in var_mapping.items():
+            if sigma_key in theo_stats:
+                sigma = theo_stats[sigma_key]
+                key, subkey = random.split(key)
+                # Log-linear: log(X/X_ss) ~ N(0, sigma²)
+                samples = random.normal(subkey, shape=(n_samples,)) * sigma
+                result[var_name] = samples
+            else:
+                print(f"  Warning: {sigma_key} not found in theo_stats, skipping {var_name}")
+
+    return result
+
+
+def get_loglinear_distribution_params(theo_stats: dict) -> dict:
+    """
+    Get distribution parameters for analytical log-linear density plots.
+
+    For log-linear solutions:
+        log(X/X_ss) ~ N(0, σ²)  [log deviation is normal with mean 0]
+
+    This returns (mean=0, std=sigma) for each aggregate variable,
+    which can be used to plot analytical PDFs.
+
+    Args:
+        theo_stats: Dictionary with theoretical statistics from MATLAB/Dynare
+
+    Returns:
+        Dictionary mapping variable names to (mean, std) tuples
+    """
+    var_mapping = {
+        "Agg. Consumption": "sigma_C_agg",
+        "Agg. Labor": "sigma_L_agg",
+        "Agg. Output": "sigma_VA_agg",
+        "Agg. Investment": "sigma_I_agg",
+        "Agg. Intermediates": "sigma_M_agg",
+    }
+
+    result = {}
+    for var_name, sigma_key in var_mapping.items():
+        if sigma_key in theo_stats:
+            sigma = theo_stats[sigma_key]
+            # Log-linear: mean of log deviation is 0, std is sigma
+            result[var_name] = {"mean": 0.0, "std": float(sigma)}
+
+    return result

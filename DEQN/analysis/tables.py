@@ -18,6 +18,7 @@ def create_descriptive_stats_table(
     analysis_variables_data: Dict[str, Any],
     save_path: Optional[str] = None,
     analysis_name: Optional[str] = None,
+    theoretical_stats: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
 ) -> str:
     """
     Create a LaTeX table with descriptive statistics organized by variable.
@@ -31,6 +32,10 @@ def create_descriptive_stats_table(
         If provided, save the LaTeX table to this path.
     analysis_name : str, optional
         Name of the analysis to include in the filename.
+    theoretical_stats : dict, optional
+        Pre-computed statistics for certain experiments (e.g., log-linear theoretical).
+        Format: {exp_name: {var_label: {"Mean": val, "Sd": val, "Skewness": val, "Excess Kurtosis": val}}}
+        For log-linear: mean=0, skewness=0, kurtosis=0 (normal distribution)
 
     Returns:
     --------
@@ -38,24 +43,44 @@ def create_descriptive_stats_table(
     """
     excluded_vars = ["Utility"]
 
+    # Combine experiment names from both sources
     experiment_names = list(analysis_variables_data.keys())
+    if theoretical_stats:
+        for exp_name in theoretical_stats.keys():
+            if exp_name not in experiment_names:
+                experiment_names.append(exp_name)
+
+    # Get variable labels from first available source
     first_exp = experiment_names[0]
-    var_labels = [v for v in analysis_variables_data[first_exp].keys() if v not in excluded_vars]
+    if first_exp in analysis_variables_data:
+        var_labels = [v for v in analysis_variables_data[first_exp].keys() if v not in excluded_vars]
+    elif theoretical_stats and first_exp in theoretical_stats:
+        var_labels = [v for v in theoretical_stats[first_exp].keys() if v not in excluded_vars]
+    else:
+        var_labels = []
 
     stats_data: Dict[str, Dict[str, Dict[str, float]]] = {}
 
     for var_label in var_labels:
         stats_data[var_label] = {}
         for exp_name in experiment_names:
-            analysis_vars_dict = analysis_variables_data[exp_name]
-            if var_label in analysis_vars_dict:
-                var_values = analysis_vars_dict[var_label]
-                stats_data[var_label][exp_name] = {
-                    "Mean": float(np.mean(var_values) * 100),
-                    "Sd": float(np.std(var_values) * 100),
-                    "Skewness": float(skew(var_values)),
-                    "Kurtosis": float(kurtosis(var_values)),
-                }
+            # First check if we have pre-computed theoretical stats
+            if theoretical_stats and exp_name in theoretical_stats:
+                if var_label in theoretical_stats[exp_name]:
+                    stats_data[var_label][exp_name] = theoretical_stats[exp_name][var_label]
+                    continue
+
+            # Otherwise compute from samples
+            if exp_name in analysis_variables_data:
+                analysis_vars_dict = analysis_variables_data[exp_name]
+                if var_label in analysis_vars_dict:
+                    var_values = analysis_vars_dict[var_label]
+                    stats_data[var_label][exp_name] = {
+                        "Mean": float(np.mean(var_values) * 100),
+                        "Sd": float(np.std(var_values) * 100),
+                        "Skewness": float(skew(var_values)),
+                        "Excess Kurtosis": float(kurtosis(var_values)),  # scipy returns excess kurtosis
+                    }
 
     latex_code = _generate_variable_organized_latex_table(stats_data, experiment_names)
     console_output = _generate_console_table(stats_data, experiment_names)
@@ -88,14 +113,14 @@ def _generate_console_table(stats_data: Dict[str, Dict[str, Dict[str, float]]], 
         output.append(f"\n  {var_label}")
         output.append("  " + "─" * 68)
 
-        header = f"    {'Method':<30} {'Mean':>10} {'Sd':>10} {'Skew':>10} {'Kurt':>10}"
+        header = f"    {'Method':<30} {'Mean':>10} {'Sd':>10} {'Skew':>10} {'Ex.Kurt':>10}"
         output.append(header)
         output.append("  " + "─" * 68)
 
         for exp_name in experiment_names:
             if exp_name in exp_stats:
                 stats = exp_stats[exp_name]
-                row = f"    {exp_name:<30} {stats['Mean']:>10.3f} {stats['Sd']:>10.3f} {stats['Skewness']:>10.3f} {stats['Kurtosis']:>10.3f}"
+                row = f"    {exp_name:<30} {stats['Mean']:>10.3f} {stats['Sd']:>10.3f} {stats['Skewness']:>10.3f} {stats['Excess Kurtosis']:>10.3f}"
                 output.append(row)
 
     output.append("\n" + "═" * 72)
@@ -109,7 +134,7 @@ def _generate_variable_organized_latex_table(stats_data: Dict[str, Dict[str, Dic
     latex_code = (
         r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
-        r"\textbf{Method} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Kurtosis} \\" + "\n"
+        r"\textbf{Method} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\" + "\n"
         r"\midrule" + "\n"
     )
 
@@ -120,7 +145,7 @@ def _generate_variable_organized_latex_table(stats_data: Dict[str, Dict[str, Dic
             if exp_name in exp_stats:
                 stats = exp_stats[exp_name]
                 exp_display = exp_name.replace("_", r"\_")
-                latex_code += f"\\quad {exp_display} & {stats['Mean']:.3f} & {stats['Sd']:.3f} & {stats['Skewness']:.3f} & {stats['Kurtosis']:.3f} \\\\\n"
+                latex_code += f"\\quad {exp_display} & {stats['Mean']:.3f} & {stats['Sd']:.3f} & {stats['Skewness']:.3f} & {stats['Excess Kurtosis']:.3f} \\\\\n"
 
         if var_idx < len(stats_data) - 1:
             latex_code += r"\addlinespace[0.5em]" + "\n"
@@ -165,7 +190,7 @@ def create_comparative_stats_table(
     excluded_vars = ["Utility"]
     var_labels = [v for v in analysis_variables_data[first_exp].keys() if v not in excluded_vars]
 
-    stats_labels = ["Mean", "Sd", "Skewness", "Kurtosis"]
+    stats_labels = ["Mean", "Sd", "Skewness", "Excess Kurtosis"]
 
     table_data = []
 
@@ -184,8 +209,8 @@ def create_comparative_stats_table(
                         value = float(np.std(var_values) * 100)
                     elif stat_label == "Skewness":
                         value = float(skew(var_values))
-                    elif stat_label == "Kurtosis":
-                        value = float(kurtosis(var_values))
+                    elif stat_label == "Excess Kurtosis":
+                        value = float(kurtosis(var_values))  # scipy.stats.kurtosis returns excess kurtosis
                     else:
                         value = float(np.nan)
 
@@ -236,7 +261,7 @@ def _generate_comparative_latex_table(df: pd.DataFrame, experiment_names: list) 
         formatted_row = [f"{float(value):.4f}" if not np.isnan(value) else "—" for value in row]
         latex_code += r"\textbf{" + str(index) + r"} & " + " & ".join(formatted_row) + r" \\" + "\n"
 
-        if any(keyword in str(index) for keyword in ["Kurtosis"]):
+        if any(keyword in str(index) for keyword in ["Excess Kurtosis"]):
             latex_code += r"\cmidrule(lr){1-" + str(n_experiments + 1) + "}\n"
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"

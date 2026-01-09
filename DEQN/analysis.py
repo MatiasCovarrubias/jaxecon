@@ -74,6 +74,8 @@ from jax import random  # noqa: E402
 from DEQN.analysis.aggregation_correction import (  # noqa: E402
     compute_ergodic_prices_from_simulation,
     compute_ergodic_steady_state,
+    create_perfect_foresight_descriptive_stats,
+    create_theoretical_descriptive_stats,
     generate_loglinear_samples_from_theostats,
     get_loglinear_distribution_params,
     process_simulation_with_consistent_aggregation,
@@ -102,7 +104,10 @@ from DEQN.analysis.tables import (  # noqa: E402
     create_welfare_table,
 )
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
-from DEQN.training.checkpoints import load_experiment_data, load_trained_model_orbax  # noqa: E402
+from DEQN.training.checkpoints import (  # noqa: E402
+    load_experiment_data,
+    load_trained_model_orbax,
+)
 
 jax_config.update("jax_debug_nans", True)
 
@@ -413,29 +418,46 @@ def main():
 
         analysis_variables_data["Log-Linear (Dynare)"] = loglin_analysis_vars
 
-    # Initialize theoretical distribution params (may be populated below)
-    theo_dist_params = None
+    # Initialize theoretical/precomputed stats for descriptive stats table
+    theoretical_stats = {}
 
-    if "TheoStats" in stats and dynare_simul_loglin is None:
-        # No simulation data, but we have theoretical statistics
-        # Generate synthetic log-linear samples from theoretical lognormal distribution
-        # For log-linear: log(X/X_ss) ~ N(0, σ²), so we can sample directly
-        print("  ✓ Generating Log-Linear samples from TheoStats (no simulation data)", flush=True)
-
+    # Add log-linear theoretical stats (from TheoStats)
+    if "TheoStats" in stats:
         theo_stats = stats["TheoStats"]
+        print("  ✓ Using TheoStats for Log-Linear moments (mean=0, skew=0, kurt=0)", flush=True)
+
+        # Create theoretical stats for descriptive table (no samples needed)
+        loglin_theo_stats = create_theoretical_descriptive_stats(
+            theo_stats=theo_stats, label="Log-Linear (Theoretical)"
+        )
+        theoretical_stats.update(loglin_theo_stats)
+
+        # Also generate samples for histogram plotting
         loglin_analysis_vars = generate_loglinear_samples_from_theostats(
             theo_stats=theo_stats,
             n_samples=config.get("periods_per_epis", 10000),
             seed=config.get("simul_seed", 0),
         )
-
-        # Store theoretical distribution parameters for potential PDF plotting
-        theo_dist_params = get_loglinear_distribution_params(theo_stats)
         analysis_variables_data["Log-Linear (Theoretical)"] = loglin_analysis_vars
 
         # Print theoretical statistics
+        theo_dist_params = get_loglinear_distribution_params(theo_stats)
         for var_name, params_dict in theo_dist_params.items():
-            print(f"    {var_name}: μ={params_dict['mean']:.4f}, σ={params_dict['std']:.4f}", flush=True)
+            print(f"    {var_name}: σ={params_dict['std']:.4f}%", flush=True)
+
+    # Add perfect foresight stats (from Statistics.Determ if available)
+    if "Determ" in stats:
+        determ_stats = stats["Determ"]
+        print("  ✓ Using Statistics.Determ for Perfect Foresight moments", flush=True)
+
+        pf_theo_stats = create_perfect_foresight_descriptive_stats(determ_stats=determ_stats, label="Perfect Foresight")
+        theoretical_stats.update(pf_theo_stats)
+
+        # Print available stats
+        if "Cagg_volatility" in determ_stats:
+            print(f"    Agg. Consumption: σ={float(determ_stats['Cagg_volatility'])*100:.4f}%", flush=True)
+        if "Lagg_volatility" in determ_stats:
+            print(f"    Agg. Labor: σ={float(determ_stats['Lagg_volatility'])*100:.4f}%", flush=True)
 
     if dynare_simul_determ is not None:
         determ_analysis_vars = process_simulation_with_consistent_aggregation(
@@ -459,6 +481,7 @@ def main():
         analysis_variables_data=analysis_variables_data,
         save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
         analysis_name=config["analysis_name"],
+        theoretical_stats=theoretical_stats if theoretical_stats else None,
     )
 
     if len(analysis_variables_data) > 1:
@@ -594,7 +617,7 @@ def main():
         "gir_data": gir_data,
         "matlab_ir_data": matlab_ir_data,
         "upstreamness_data": upstreamness_data,
-        "theo_dist_params": theo_dist_params,  # Theoretical distribution params (for analytical PDF plotting)
+        "theoretical_stats": theoretical_stats,  # Pre-computed stats for log-linear and perfect foresight
     }
 
 

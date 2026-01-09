@@ -407,3 +407,111 @@ def get_loglinear_distribution_params(theo_stats: dict) -> dict:
             result[var_name] = {"mean": 0.0, "std": float(sigma)}
 
     return result
+
+
+def create_theoretical_descriptive_stats(theo_stats: dict, label: str = "Log-Linear (Theoretical)") -> dict:
+    """
+    Create pre-computed descriptive statistics from theoretical moments.
+
+    For log-linear (first-order) approximation, all variables are lognormally distributed:
+        log(X/X_ss) ~ N(0, σ²)
+
+    This means:
+        - Mean of log deviation = 0 (by construction)
+        - Std = σ (from TheoStats)
+        - Skewness = 0 (normal distribution)
+        - Excess Kurtosis = 0 (normal distribution)
+
+    Args:
+        theo_stats: Dictionary with theoretical statistics from MATLAB/Dynare
+                   Expected keys: sigma_C_agg, sigma_L_agg, sigma_VA_agg, sigma_I_agg, sigma_M_agg
+        label: Label for this experiment in the output
+
+    Returns:
+        Dictionary in format {label: {var_label: {"Mean": val, "Sd": val, "Skewness": val, "Excess Kurtosis": val}}}
+        Ready to pass to create_descriptive_stats_table as theoretical_stats
+    """
+    var_mapping = {
+        "Agg. Consumption": "sigma_C_agg",
+        "Agg. Labor": "sigma_L_agg",
+        "Agg. Output": "sigma_VA_agg",
+        "Agg. Investment": "sigma_I_agg",
+        "Agg. Intermediates": "sigma_M_agg",
+    }
+
+    result = {}
+    for var_name, sigma_key in var_mapping.items():
+        if sigma_key in theo_stats:
+            sigma = float(theo_stats[sigma_key])
+            result[var_name] = {
+                "Mean": 0.0,  # Log-linear mean is 0 by construction
+                "Sd": sigma * 100,  # Convert to percentage
+                "Skewness": 0.0,  # Normal distribution
+                "Excess Kurtosis": 0.0,  # Normal distribution (excess kurtosis = 0)
+            }
+
+    return {label: result}
+
+
+def create_perfect_foresight_descriptive_stats(
+    determ_stats: dict,
+    label: str = "Perfect Foresight"
+) -> dict:
+    """
+    Create pre-computed descriptive statistics from perfect foresight (deterministic) statistics.
+
+    Perfect foresight statistics are stored in ModelData.Statistics.Determ with keys like:
+        - Cagg_volatility, Lagg_volatility (std)
+        - Cagg_mean_logdev, Yagg_mean_logdev, etc. (mean log deviations)
+
+    Note: Skewness and Kurtosis are not available for perfect foresight (would need simulation).
+
+    Args:
+        determ_stats: Dictionary with deterministic statistics from MATLAB
+                     Expected keys: Cagg_volatility, Lagg_volatility,
+                                   Cagg_mean_logdev, Yagg_mean_logdev, etc.
+        label: Label for this experiment in the output
+
+    Returns:
+        Dictionary in format {label: {var_label: {"Mean": val, "Sd": val, "Skewness": val, "Excess Kurtosis": val}}}
+        Ready to pass to create_descriptive_stats_table as theoretical_stats
+    """
+    # Mapping from variable names to (mean_key, volatility_key, skewness_key, kurtosis_key)
+    var_mapping = {
+        "Agg. Consumption": ("Cagg_mean_logdev", "Cagg_volatility", "Cagg_skewness", "Cagg_kurtosis"),
+        "Agg. Labor": ("Lagg_mean_logdev", "Lagg_volatility", "Lagg_skewness", "Lagg_kurtosis"),
+        "Agg. Output": ("Yagg_mean_logdev", "Yagg_volatility", "Yagg_skewness", "Yagg_kurtosis"),
+        "Agg. Investment": ("Iagg_mean_logdev", "Iagg_volatility", "Iagg_skewness", "Iagg_kurtosis"),
+        "Agg. Intermediates": ("Magg_mean_logdev", "Magg_volatility", "Magg_skewness", "Magg_kurtosis"),
+    }
+
+    result = {}
+    for var_name, (mean_key, vol_key, skew_key, kurt_key) in var_mapping.items():
+        stats_dict = {}
+
+        # Get mean (stored as fraction, convert to %)
+        if mean_key in determ_stats:
+            stats_dict["Mean"] = float(determ_stats[mean_key]) * 100
+
+        # Get volatility/std (stored as fraction, convert to %)
+        if vol_key and vol_key in determ_stats:
+            stats_dict["Sd"] = float(determ_stats[vol_key]) * 100
+        else:
+            stats_dict["Sd"] = float("nan")
+
+        # Get skewness (if available from MATLAB)
+        if skew_key and skew_key in determ_stats:
+            stats_dict["Skewness"] = float(determ_stats[skew_key])
+        else:
+            stats_dict["Skewness"] = float("nan")
+
+        # Get excess kurtosis (if available from MATLAB)
+        if kurt_key and kurt_key in determ_stats:
+            stats_dict["Excess Kurtosis"] = float(determ_stats[kurt_key])
+        else:
+            stats_dict["Excess Kurtosis"] = float("nan")
+
+        if stats_dict:
+            result[var_name] = stats_dict
+
+    return {label: result}

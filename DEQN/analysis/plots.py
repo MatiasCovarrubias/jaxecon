@@ -75,11 +75,21 @@ def plot_ergodic_histograms(
     experiment_names = list(analysis_variables_data.keys())
     n_experiments = len(experiment_names)
 
-    # Extract variable labels from first experiment
-    # TEMPORARY: Skip Utility - Dynare simulations don't have this variable
+    # Extract variable labels that exist in ALL experiments
+    # Skip Utility - Dynare simulations don't have this variable
     excluded_vars = ["Utility"]
     first_exp = experiment_names[0]
-    var_labels = [v for v in analysis_variables_data[first_exp].keys() if v not in excluded_vars]
+    candidate_vars = [v for v in analysis_variables_data[first_exp].keys() if v not in excluded_vars]
+
+    # Only include variables that exist in all experiments
+    var_labels = []
+    for var in candidate_vars:
+        exists_in_all = all(var in analysis_variables_data[exp] for exp in experiment_names)
+        if exists_in_all:
+            var_labels.append(var)
+        else:
+            missing_in = [exp for exp in experiment_names if var not in analysis_variables_data[exp]]
+            print(f"  Note: Skipping '{var}' - not available in: {missing_in}")
 
     # Use colors from the global palette
     plot_colors = colors[:n_experiments]

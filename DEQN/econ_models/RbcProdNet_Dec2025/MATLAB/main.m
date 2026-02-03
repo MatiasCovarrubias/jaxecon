@@ -115,6 +115,19 @@ config.sigma_y = 0.8;
 config.sigma_I = 0.5;
 config.sigma_l = 0.1;
 
+% --- Target Frisch elasticity (eps_l) ---
+% Calibration starts at eps_l = 0.5 and uses homotopy to reach this target
+config.eps_l = 1.0;
+
+% --- Shock scaling configuration ---
+% Scale TFP shock volatility for specific sectors
+% shock_scale_sectors: vector of sector indices to scale (e.g., [1] for Mining)
+% shock_scale_factor: multiplicative factor for shock std dev (e.g., 2.0 doubles shock size)
+%   - Factor applies to standard deviation, so VCV is scaled by factor^2 on diagonal
+%   - Covariances with other sectors are scaled by factor
+config.shock_scale_sectors = [1];   % Mining/Oil&Gas (sector 1)
+config.shock_scale_factor = 2.0;    % Double shock size (std dev × 2, variance × 4)
+
 %% Derived settings
 N_SECTORS = 37;  % Model constant
 
@@ -153,15 +166,26 @@ fprintf('  Sectors:     [%s]\n', num2str(sector_indices));
 %% Initialize params
 params = struct();
 params.beta = 0.96;
-params.eps_l = 0.5;
+params.eps_l = config.eps_l;  % Target Frisch elasticity (homotopy from 0.5)
 params.eps_c = 0.33;
 params.theta = 1;
 params.phi = 4;
 
 %% Load calibration data
-[calib_data, params] = load_calibration_data(params, sector_indices, config.model_type);
+shock_scaling = struct();
+shock_scaling.sectors = config.shock_scale_sectors;
+shock_scaling.factor = config.shock_scale_factor;
+
+[calib_data, params] = load_calibration_data(params, sector_indices, config.model_type, shock_scaling);
 labels = calib_data.labels;
 fprintf('\n  ✓ Calibration data loaded (model_type: %s)\n', config.model_type);
+
+% Display shock scaling if applied
+if ~isempty(shock_scaling.sectors) && shock_scaling.factor ~= 1.0
+    sector_labels = SectorLabel(shock_scaling.sectors);
+    fprintf('  ✓ Shock scaling applied: ×%.2f for sectors [%s]\n', ...
+        shock_scaling.factor, strjoin(sector_labels.display, ', '));
+end
 
 % Display empirical targets
 emp_tgt = calib_data.empirical_targets;
@@ -174,6 +198,7 @@ fprintf('    σ(I_agg):         %.4f   (aggregate investment, Törnqvist)\n', em
 fprintf('    ── Average sectoral volatilities ──\n');
 fprintf('    σ(L) avg:         %.4f   (VA-weighted avg of sectoral labor vol)\n', emp_tgt.sigma_L_avg);
 fprintf('    σ(I) avg:         %.4f   (VA-weighted avg of sectoral investment vol)\n', emp_tgt.sigma_I_avg);
+fprintf('    σ(Domar) avg:     %.4f   (GO-weighted avg of Domar weight vol)\n', emp_tgt.sigma_Domar_avg);
 
 %% Steady State Calibration
 fprintf('\n');
@@ -188,10 +213,13 @@ if config.recalibrate
     params.sigma_y = config.sigma_y;
     params.sigma_I = config.sigma_I;
     params.sigma_l = config.sigma_l;
+    params.eps_l = config.eps_l;
     
     fprintf('  Target elasticities:\n');
     fprintf('    σ_c = %.2f    σ_m = %.2f    σ_q = %.2f\n', params.sigma_c, params.sigma_m, params.sigma_q);
     fprintf('    σ_y = %.2f    σ_I = %.2f    σ_l = %.2f\n', params.sigma_y, params.sigma_I, params.sigma_l);
+    fprintf('  Frisch elasticity:\n');
+    fprintf('    ε_l = %.2f (homotopy from 0.5)\n', params.eps_l);
     fprintf('\n');
     
     calib_opts = struct();
@@ -597,6 +625,9 @@ if isfield(BaseResults, 'TheoStats') && ~isempty(fieldnames(BaseResults.TheoStat
         fprintf('  │  σ(I) avg:                        %6.4f      %6.4f    %5.2f │\n', ...
             model_stats.sigma_I_avg, emp_tgt.sigma_I_avg, ...
             model_stats.sigma_I_avg / emp_tgt.sigma_I_avg);
+        fprintf('  │  σ(Domar) avg:                    %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_Domar_avg, emp_tgt.sigma_Domar_avg, ...
+            model_stats.sigma_Domar_avg / emp_tgt.sigma_Domar_avg);
     end
     fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end

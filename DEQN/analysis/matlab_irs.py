@@ -20,17 +20,20 @@ def load_matlab_irs(
     matlab_ir_dir: str,
     shock_sizes: List[int] = [5, 10, 20],
     file_pattern: str = "AllSectors_IRS__Oct_25nonlinear_{sign}_{size}.mat",
+    irs_file_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Load MATLAB impulse response data.
 
-    First attempts to load from the new ModelData_IRs.mat format.
+    If irs_file_path is provided, loads directly from that file.
+    Otherwise, attempts to find ModelData_IRs.mat in standard locations.
     Falls back to legacy separate files if not found.
 
     Args:
         matlab_ir_dir: Directory containing the MATLAB IR files
         shock_sizes: List of shock sizes in percent (used for legacy format)
         file_pattern: File name pattern for legacy format
+        irs_file_path: Optional explicit path to ModelData_IRs.mat file
 
     Returns:
         Dictionary with structure:
@@ -40,6 +43,11 @@ def load_matlab_irs(
             ...
         }
     """
+    # If explicit path provided, use it directly
+    if irs_file_path is not None and os.path.exists(irs_file_path):
+        print(f"  Loading IRs from: {irs_file_path}")
+        return _load_new_format(irs_file_path)
+
     # First, try to find ModelData_IRs.mat in the model directory (parent of MATLAB/IRs)
     model_dir = os.path.dirname(os.path.dirname(matlab_ir_dir))
     modeldata_irs_path = os.path.join(model_dir, "ModelData_IRs.mat")

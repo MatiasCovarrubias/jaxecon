@@ -118,20 +118,16 @@ jax_config.update("jax_debug_nans", True)
 # Configuration dictionary
 config = {
     # Key configuration - Edit these first
-    "model_dir": "RbcProdNet_nonlinear",
-    "analysis_name": "npnlinearv2_lowvol",
+    "model_dir": "RbcProdNet_Dec2025",
+    "analysis_name": "Frisch_feb2026",
+    # MATLAB data files (relative to model_dir)
+    # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
+    "model_data_file": "ModelData_Frisch0dot75.mat",
+    "model_data_irs_file": "ModelData_IRs_Frisch0dot75.mat",
+    "model_data_simulation_file": None,  # Set to None to skip MATLAB simulation comparison
     # Experiments to analyze
     "experiments_to_analyze": {
-        # "higher volatility": "3vol",
-        # "x0.075 volatility": "nonlinearv2_volx0dot075",
-        # "x0.05 volatility": "nonlinearv2_vol0dot05",
-        # "x0.025 volatility": "nonlinearv2_volx0dot025",
-        "x1.5 volatility": "nonlinearv2_volx1.5",
-        "baseline": "nonlinearv2",
-        "x0.1 volatility": "nonlinearv2_volx0dot1",
-        # "x0.75 volatility": "x0dot75vol_newNN",
-        # "x0.5 volatility": "x0dot5_newNN",
-        # "x0.1 volatility": "newcalib_volx0dot1",
+        "Frisch0dot75": "Frisch0dot75",
     },
     # Simulation configuration
     "init_range": 6,
@@ -142,7 +138,7 @@ config = {
     "n_simul_seeds": 16,
     # Welfare configuration
     "welfare_n_trajects": 16000,
-    "welfare_traject_length": 100,
+    "welfare_traject_length": 200,
     "welfare_seed": 0,
     # Stochastic steady state configuration
     "n_draws": 2000,
@@ -157,9 +153,9 @@ config = {
     # Sectors to analyze: specify sector indices (0-based).
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
-    "ir_sectors_to_plot": [0, 2, 23],
+    "ir_sectors_to_plot": [0, 2, 19, 23],
     "ir_variables_to_plot": ["Agg. Consumption", "Agg. Labor"],
-    "ir_shock_sizes": [5, 10, 20],
+    "ir_shock_sizes": [20],
     "ir_max_periods": 80,
     # JAX configuration
     "double_precision": True,
@@ -209,10 +205,16 @@ def main():
     # ═══════════════════════════════════════════════════════════════════════════
     # LOAD MODEL DATA
     # ═══════════════════════════════════════════════════════════════════════════
-    model_path = os.path.join(model_dir, "ModelData.mat")
+    # Determine file names from config (with defaults)
+    model_data_file = config.get("model_data_file", "ModelData.mat")
+    model_data_irs_file = config.get("model_data_irs_file", "ModelData_IRs.mat")
+    model_data_simulation_file = config.get("model_data_simulation_file", "ModelData_simulation.mat")
+
+    model_path = os.path.join(model_dir, model_data_file)
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
 
+    print(f"  Loading ModelData from: {model_data_file}")
     model_data = sio.loadmat(model_path, simplify_cells=True)
 
     if "ModelData" not in model_data:
@@ -241,22 +243,28 @@ def main():
     # Load simulation data (optional - for Dynare comparison)
     dynare_simul_loglin = None
     dynare_simul_determ = None
-    simul_path = os.path.join(model_dir, "ModelData_simulation.mat")
 
-    if os.path.exists(simul_path):
-        simul_data = sio.loadmat(simul_path, simplify_cells=True)
-        simul = simul_data.get("ModelData_simulation", {})
+    if model_data_simulation_file is not None:
+        simul_path = os.path.join(model_dir, model_data_simulation_file)
+        if os.path.exists(simul_path):
+            print(f"  Loading simulation data from: {model_data_simulation_file}")
+            simul_data = sio.loadmat(simul_path, simplify_cells=True)
+            simul = simul_data.get("ModelData_simulation", {})
 
-        if "Loglin" in simul and "full_simul" in simul["Loglin"]:
-            dynare_simul_loglin = jnp.array(simul["Loglin"]["full_simul"], dtype=precision)
+            if "Loglin" in simul and "full_simul" in simul["Loglin"]:
+                dynare_simul_loglin = jnp.array(simul["Loglin"]["full_simul"], dtype=precision)
 
-        if "Determ" in simul and "full_simul" in simul["Determ"]:
-            dynare_simul_determ = jnp.array(simul["Determ"]["full_simul"], dtype=precision)
+            if "Determ" in simul and "full_simul" in simul["Determ"]:
+                dynare_simul_determ = jnp.array(simul["Determ"]["full_simul"], dtype=precision)
+        else:
+            print(f"  ⚠ Simulation file not found: {model_data_simulation_file} (skipping)")
 
-    # Load IRF data (optional - for MATLAB IR comparison)
-    irs_path = os.path.join(model_dir, "ModelData_IRs.mat")
-    if os.path.exists(irs_path):
-        sio.loadmat(irs_path, simplify_cells=True)
+    # Load IRF data path for MATLAB IR comparison (actual loading happens later via load_matlab_irs)
+    irs_path = os.path.join(model_dir, model_data_irs_file) if model_data_irs_file else None
+    if irs_path and os.path.exists(irs_path):
+        print(f"  Found IRs file: {model_data_irs_file}")
+    elif model_data_irs_file:
+        print(f"  ⚠ IRs file not found: {model_data_irs_file} (will try legacy format)")
 
     # Create economic model
     econ_model = Model(
@@ -528,6 +536,7 @@ def main():
     matlab_ir_data = load_matlab_irs(
         matlab_ir_dir=matlab_ir_dir,
         shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
+        irs_file_path=irs_path,  # Use the custom IRs file path from config
     )
 
     sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])

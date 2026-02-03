@@ -1,4 +1,4 @@
-function [calib_data, params] = load_calibration_data(params, sector_indices, model_type)
+function [calib_data, params] = load_calibration_data(params, sector_indices, model_type, shock_scaling)
 % LOAD_CALIBRATION_DATA Load and preprocess calibration data for the production network model
 %
 % INPUTS:
@@ -9,6 +9,10 @@ function [calib_data, params] = load_calibration_data(params, sector_indices, mo
 %                    - 'VA': modrho, modvcv (no suffix)
 %                    - 'GO': modrho_GO, modvcv_GO
 %                    - 'GO_noVA': modrho_GO_noVA, modvcv_GO_noVA
+%   shock_scaling  - (Optional) Structure for scaling shock volatility:
+%                    - sectors: Vector of sector indices to scale (e.g., [1] for Mining)
+%                    - factor: Multiplicative factor for shock std dev
+%                    If factor=2, shock std dev doubles (variance × 4, covariances × 2)
 %
 % OUTPUTS:
 %   calib_data - Structure containing:
@@ -20,11 +24,15 @@ function [calib_data, params] = load_calibration_data(params, sector_indices, mo
 %                - labels: Labels structure with sector and client info
 %                - empirical_targets: Business cycle moments from data
 %                - model_type: The model type used
+%                - shock_scaling: Applied shock scaling (if any)
 %   params     - Updated params structure with calibration data added
 
 %% Input validation
 if nargin < 3
     model_type = 'VA';  % Default to value added model
+end
+if nargin < 4
+    shock_scaling = struct('sectors', [], 'factor', 1.0);
 end
 validate_sector_indices(sector_indices, 37, 'load_calibration_data');
 
@@ -90,6 +98,30 @@ switch model_type
         params.Sigma_A = modvcv_GO_noVA;
 end
 
+%% Apply shock scaling if specified
+% Scales the VCV matrix to increase/decrease shock volatility for specific sectors
+% Math: To scale shock std dev by factor f for sector i:
+%   - Var(f*ε_i) = f² * Var(ε_i)  →  Σ(i,i) *= f²
+%   - Cov(f*ε_i, ε_j) = f * Cov(ε_i, ε_j)  →  Σ(i,j) *= f, Σ(j,i) *= f
+% This is equivalent to: Σ_new = D * Σ * D, where D = diag with D(i,i)=f for scaled sectors
+if ~isempty(shock_scaling.sectors) && shock_scaling.factor ~= 1.0
+    % Validate sector indices
+    validate_sector_indices(shock_scaling.sectors, n_sectors, 'shock_scaling');
+    
+    % Build diagonal scaling matrix D
+    D = eye(n_sectors);
+    for i = 1:numel(shock_scaling.sectors)
+        sec_idx = shock_scaling.sectors(i);
+        D(sec_idx, sec_idx) = shock_scaling.factor;
+    end
+    
+    % Apply scaling: Σ_new = D * Σ * D
+    params.Sigma_A = D * params.Sigma_A * D;
+    
+    % Store scaling info for reference
+    params.shock_scaling = shock_scaling;
+end
+
 %% Add expenditure share data to params
 params.conssh_data = conssh_data;
 params.capsh_data = capsh_data;
@@ -100,7 +132,8 @@ params.invnet_data = invnet_data;
 %% Compute empirical business cycle targets (HP-filtered, Törnqvist aggregation)
 % Uses Törnqvist index for VA and Investment (proper aggregation)
 % Uses simple sum for Employment (real units)
-empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn);
+% GO47bea is used for Domar weight volatility
+empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn, GO47bea, VA47bea);
 
 %% Compute client indices and rankings
 [client_indices, ranking] = compute_client_rankings(ionet_data, sector_indices, n_sectors);
@@ -130,10 +163,11 @@ calib_data.invnet_data = invnet_data;
 calib_data.labels = labels;
 calib_data.empirical_targets = empirical_targets;
 calib_data.model_type = model_type;
+calib_data.shock_scaling = shock_scaling;
 
 end
 
-function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn)
+function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn, GO_raw, VA_for_domar)
 % COMPUTE_EMPIRICAL_TARGETS Compute business cycle moments from data
 %
 % Uses Törnqvist index aggregation for VA and Investment (proper economic aggregation)
@@ -145,13 +179,16 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
 %   - Aggregate investment - Törnqvist
 %   - Average sectoral labor volatility (VA-weighted)
 %   - Average sectoral investment volatility (VA-weighted)
+%   - Average Domar weight volatility (GO-weighted)
 %
 % INPUTS:
-%   VA_raw  - Real value added by sector (T x n_sectors)
-%   EMP_raw - Employment by sector (T x n_sectors)
-%   InvRaw  - Real investment by sector (T x n_sectors)
-%   VAn     - Nominal value added by sector (T x n_sectors) - for shares
-%   Invn    - Nominal investment by sector (T x n_sectors) - for shares
+%   VA_raw       - Real value added by sector (T1 x n_sectors) - for business cycle moments
+%   EMP_raw      - Employment by sector (T1 x n_sectors)
+%   InvRaw       - Real investment by sector (T1 x n_sectors)
+%   VAn          - Nominal value added by sector (T1 x n_sectors) - for shares
+%   Invn         - Nominal investment by sector (T1 x n_sectors) - for shares
+%   GO_raw       - Real gross output by sector (T2 x n_sectors) - for Domar weights
+%   VA_for_domar - Real value added matching GO_raw dimensions (T2 x n_sectors) - for Domar denominator
 
     hp_lambda = 100;  % Standard for annual data
     epsilon = 1e-10;  % Floor for log computation
@@ -240,10 +277,39 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
     end
     sigma_I_avg = sum(va_weights .* sigma_I_sectoral);
     
+    %% ===== DOMAR WEIGHT VOLATILITY =====
+    % Domar weight: Domar_i(t) = GO_i(t) / VA_agg(t)
+    % Measures each sector's sales relative to aggregate GDP
+    % Note: GO_raw and VA_for_domar have matching dimensions (may differ from VA_raw)
+    GO_clean = max(GO_raw, epsilon);
+    VA_domar_clean = max(VA_for_domar, epsilon);
+    [T_domar, n_sectors_domar] = size(GO_clean);
+    
+    % Compute GO-based weights (time-average)
+    go_weights = mean(GO_clean, 1) / sum(mean(GO_clean, 1));
+    
+    % Aggregate VA (simple sum for Domar denominator)
+    aggVA_domar = sum(VA_domar_clean, 2);
+    
+    % Compute Domar weights for each sector and time period
+    Domar = GO_clean ./ repmat(aggVA_domar, 1, n_sectors_domar);  % (T_domar x n_sectors)
+    
+    % HP-filter log Domar weights and compute volatility for each sector
+    sigma_Domar_sectoral = zeros(1, n_sectors_domar);
+    for i = 1:n_sectors_domar
+        log_Domar = log(Domar(:, i));
+        [~, Domar_cycle] = hpfilter(log_Domar, hp_lambda);
+        sigma_Domar_sectoral(i) = std(Domar_cycle);
+    end
+    
+    % Average Domar weight volatility (GO-weighted)
+    sigma_Domar_avg = sum(go_weights .* sigma_Domar_sectoral);
+    
     %% Store results
     empirical_targets = struct();
     empirical_targets.hp_lambda = hp_lambda;
     empirical_targets.va_weights = va_weights;
+    empirical_targets.go_weights = go_weights;
     empirical_targets.aggregation_method = 'tornqvist';
     
     % Aggregate volatilities (Törnqvist for VA/I, simple sum for L)
@@ -255,9 +321,13 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
     empirical_targets.sigma_L_avg = sigma_L_avg;
     empirical_targets.sigma_I_avg = sigma_I_avg;
     
+    % Domar weight volatility (GO-weighted average of sectoral Domar volatilities)
+    empirical_targets.sigma_Domar_avg = sigma_Domar_avg;
+    
     % Full sectoral distributions (for diagnostics)
     empirical_targets.sigma_L_sectoral = sigma_L_sectoral;
     empirical_targets.sigma_I_sectoral = sigma_I_sectoral;
+    empirical_targets.sigma_Domar_sectoral = sigma_Domar_sectoral;
 end
 
 function [client_indices, ranking] = compute_client_rankings(ionet_data, sector_indices, n_sectors)

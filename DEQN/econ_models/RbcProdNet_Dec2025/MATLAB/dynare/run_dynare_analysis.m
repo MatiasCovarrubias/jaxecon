@@ -692,6 +692,19 @@ function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n
     sigma_I_sectoral = std(i_simul, 0, 2)';
     sigma_I_avg = sum(va_weights .* sigma_I_sectoral);
     
+    %% ===== DOMAR WEIGHT VOLATILITY =====
+    % Domar weight: Domar_i = GO_i / VA_agg
+    % In log deviations from SS: log(Domar_i(t)/Domar_i^ss) = q_simul(i,t) - yagg_simul(t)
+    % This directly gives the cyclical component (no HP filtering needed for model)
+    
+    domar_simul = q_simul - repmat(yagg_simul, n_sectors, 1);  % Log Domar deviation from SS
+    
+    % Sectoral Domar weight volatility
+    sigma_Domar_sectoral = std(domar_simul, 0, 2)';
+    
+    % Average Domar weight volatility (GO-weighted)
+    sigma_Domar_avg = sum(go_weights .* sigma_Domar_sectoral);
+    
     %% Store results
     ModelStats = struct();
     
@@ -710,9 +723,13 @@ function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n
     ModelStats.sigma_L_avg = sigma_L_avg;
     ModelStats.sigma_I_avg = sigma_I_avg;
     
+    % Domar weight volatility (GO-weighted average)
+    ModelStats.sigma_Domar_avg = sigma_Domar_avg;
+    
     % Full distributions (for diagnostics)
     ModelStats.sigma_L_sectoral = sigma_L_sectoral;
     ModelStats.sigma_I_sectoral = sigma_I_sectoral;
+    ModelStats.sigma_Domar_sectoral = sigma_Domar_sectoral;
     ModelStats.corr_matrix_VA = corr_matrix_VA;
     ModelStats.va_weights = va_weights;
     ModelStats.go_weights = go_weights;

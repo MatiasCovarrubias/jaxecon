@@ -6,15 +6,17 @@ function [ModData, params] = calibrate_steady_state(params, opts)
 %   2. Lower sigma_l to target value
 %   3. Match value added and IO network expenditure shares
 %   4. Match all expenditure shares (consumption, capital, investment network)
+%   5. Homotopy on eps_l (Frisch elasticity) from 0.5 to target value
 %
 % INPUTS:
 %   params  - Structure with model parameters and calibration targets
 %             Required fields:
-%               - beta, eps_l, eps_c, theta, delta, rho, Sigma_A
+%               - beta, eps_c, theta, delta, rho, Sigma_A
 %               - n_sectors
 %               - conssh_data, capsh_data, vash_data, ionet_data, invnet_data
 %             Optional fields (defaults provided):
 %               - sigma_c, sigma_m, sigma_q, sigma_y, sigma_I, sigma_l (target values)
+%               - eps_l (target Frisch elasticity, default 0.5 = no homotopy)
 %
 %   opts    - Structure with calibration options (optional)
 %             Fields:
@@ -54,6 +56,7 @@ params = set_default(params, 'sigma_q', 0.5);
 params = set_default(params, 'sigma_y', 0.8);
 params = set_default(params, 'sigma_I', 0.5);
 params = set_default(params, 'sigma_l', 0.1);
+params = set_default(params, 'eps_l', 0.5);
 
 sigma_c_target = params.sigma_c;
 sigma_m_target = params.sigma_m;
@@ -61,6 +64,7 @@ sigma_q_target = params.sigma_q;
 sigma_y_target = params.sigma_y;
 sigma_I_target = params.sigma_I;
 sigma_l_target = params.sigma_l;
+eps_l_target = params.eps_l;
 
 n_sectors = params.n_sectors;
 gridpoints = opts.gridpoints;
@@ -81,6 +85,7 @@ params.sigma_q = 0.99;
 params.sigma_y = 0.99;
 params.sigma_I = 0.99;
 params.sigma_l = 0.99;
+params.eps_l = 0.5;  % Start with eps_l = 0.5, homotopy to target in Stage 5
 
 % Intensity shares equal to expenditure shares in CD case
 params.xi = params.conssh_data;
@@ -224,6 +229,48 @@ end
 
 if opts.verbose
     fprintf('\n  Stage 4 completed (%.2f s) | θ = %.4f\n', toc(tic_stage4), ModData.parameters.partheta);
+end
+
+%% ========== STAGE 5: Homotopy on eps_l (Frisch elasticity) ==========
+% Starting eps_l is 0.5 (set in Stage 1), traverse to target eps_l
+eps_l_start = 0.5;
+
+if eps_l_target ~= eps_l_start
+    if opts.verbose
+        fprintf('\n');
+        fprintf('  ┌─ STAGE 5: Homotopy on ε_l (Frisch elasticity) ─────────────────┐\n');
+        fprintf('  │  Homotopy: %.2f → %.2f (%d steps)                              │\n', eps_l_start, eps_l_target, gridpoints);
+        fprintf('  └────────────────────────────────────────────────────────────────┘\n');
+    end
+    
+    % Use solution from Stage 4 as starting point
+    sol_guess = sol_final;
+    eps_l_grid = linspace(eps_l_start, eps_l_target, gridpoints);
+    
+    tic_stage5 = tic;
+    for i = 1:gridpoints
+        tic_iter = tic;
+        params.eps_l = eps_l_grid(i);
+        fh_compStSt = @(x) ProdNetRbc_SS_expshares(x, params, 0);
+        [sol_final, ~, exfl] = fsolve(fh_compStSt, sol_guess, fsolve_opts);
+        [~, ModData] = ProdNetRbc_SS_expshares(sol_final, params, 0);
+        sol_guess = sol_final;
+        
+        if opts.verbose
+            fprintf('    [%d/%d] ε_l = %.3f  →  %s (%.2fs)\n', i, gridpoints, params.eps_l, exit_flag_str(exfl), toc(tic_iter));
+        end
+    end
+    
+    if opts.verbose
+        fprintf('\n  Stage 5 completed (%.2f s) | θ = %.4f\n', toc(tic_stage5), ModData.parameters.partheta);
+    end
+else
+    if opts.verbose
+        fprintf('\n  Stage 5 skipped (ε_l already at target: %.2f)\n', eps_l_target);
+    end
+end
+
+if opts.verbose
     fprintf('\n');
     fprintf('  ════════════════════════════════════════════════════════════════\n');
     fprintf('    ✓ STEADY STATE CALIBRATION COMPLETE\n');

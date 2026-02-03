@@ -1,4 +1,9 @@
-// Stochastic, First ORder Approximation Solution.
+// First-Order (Linear) Approximation Solution
+// 
+// This file computes the first-order perturbation solution.
+// Outputs: ghx (state transition), ghu (shock impact) → A, B, C, D matrices
+// Use stoch_simul_2ndOrder.mod for second-order approximation.
+
 @#include "model_config.mod"
 @#include "ProdNetRbc_base.mod"
 
@@ -40,6 +45,7 @@ shocks;
 @#endfor
 end;
 
-//stoch_simul(order=2, periods=0, irf=0, nocorr, nograph, pruning,nofunctions);
-//stoch_simul(order=2, periods=0, irf=60, replic=100, nocorr, nofunctions) cagg lagg;
-stoch_simul(order=2, periods=0, irf=0, ar=1, nocorr, nograph, nofunctions) cagg lagg yagg iagg magg;
+// First-order approximation: computes ghx, ghu (linear policy functions)
+// periods=0: no simulation (we do that in MATLAB with simult_)
+// ar=1: compute first autocorrelation
+stoch_simul(order=1, periods=0, irf=0, ar=1, nocorr, nograph, nofunctions) cagg lagg yagg iagg magg;

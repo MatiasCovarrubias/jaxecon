@@ -1,12 +1,22 @@
 function [Results] = run_dynare_analysis(ModData, params, opts)
 % RUN_DYNARE_ANALYSIS Runs Dynare analysis including solution, simulation, and IRFs
 %
-% This function orchestrates all Dynare-based analysis:
-%   1. Log-linear (stochastic) solution
-%   2. Log-linear simulation with random shocks
-%   3. Log-linear impulse responses
-%   4. Perfect foresight impulse responses
-%   5. Deterministic simulation with random shocks
+% This function orchestrates all Dynare-based analysis with SEPARATE first-order
+% and second-order perturbation solutions:
+%
+%   FIRST-ORDER (Linear Approximation):
+%     1. Solves model with order=1 → computes ghx, ghu
+%     2. Extracts A, B, C, D state-space matrices
+%     3. Runs first-order simulation with random shocks
+%     4. Computes first-order impulse responses
+%
+%   SECOND-ORDER (Quadratic Approximation):
+%     5. Solves model with order=2 → computes ghx, ghu, ghxx, ghxu, ghuu, ghs2
+%     6. Runs second-order simulation with pruning (captures precautionary effects)
+%
+%   PERFECT FORESIGHT (Nonlinear):
+%     7. Perfect foresight IRFs (uses Newton solver, fully nonlinear)
+%     8. Deterministic simulation with random shocks
 %
 % INPUTS:
 %   ModData  - Structure from steady state calibration containing:
@@ -23,28 +33,33 @@ function [Results] = run_dynare_analysis(ModData, params, opts)
 %              - Sigma_A: Covariance matrix of TFP shocks
 %
 %   opts     - Structure with analysis options:
-%              - run_loglin_simul: Run log-linear simulation with random shocks (default: true)
-%              - run_loglin_irs: Run log-linear IRFs (default: true)
-%              - run_determ_irs: Run perfect foresight IRFs (default: true)
-%              - run_determ_simul: Run deterministic simulation (default: true)
+%              - run_firstorder_simul: Run first-order simulation (default: true)
+%              - run_secondorder_simul: Run second-order simulation (default: false)
+%              - run_firstorder_irs: Run first-order IRFs (default: true)
+%              - run_secondorder_irs: Run second-order IRFs (default: false)
+%              - run_pf_irs: Run perfect foresight IRFs (default: true)
+%              - run_pf_simul: Run perfect foresight simulation (default: true)
 %              - sector_indices: Sectors to shock for IRFs (default: [1])
-%              - modorder: Approximation order for simulation (default: 1)
 %              - verbose: Print progress (default: true)
 %              - ir_horizon: Horizon for IR calculation (default: 200)
-%              - simul_T_loglin: Log-linear simulation length (default: 10000)
-%              - simul_T_determ: Deterministic simulation length (default: 1000)
+%              - simul_T_firstorder: First-order simulation length (default: 10000)
+%              - simul_T_secondorder: Second-order simulation length (default: 10000)
+%              - simul_T_pf: Perfect foresight simulation length (default: 1000)
 %              - rng_seed: RNG seed for reproducibility (default: [] = current state)
-%                          Can be: integer seed, or saved rng_state struct
 %
-%   NOTE: The stochastic solution (stoch_simul) ALWAYS runs if not already computed.
-%         It is required for all log-linear analysis and cannot be skipped.
+%   NOTE: First-order solution (stoch_simul.mod) ALWAYS runs if not already computed.
+%         Second-order solution (stoch_simul_2ndOrder.mod) runs if run_secondorder_simul=true OR run_secondorder_irs=true.
 %
 % OUTPUTS:
 %   Results  - Structure with all analysis results:
-%              - SolData: Solution matrices (A, B, C, D) and steady states
-%              - SimulData: Simulation results (log-linear and deterministic)
-%              - IRSLoglin: Log-linear impulse responses
-%              - IRSDeterm: Perfect foresight impulse responses
+%              - oo_1st, M_1st: First-order Dynare objects
+%              - oo_2nd, M_2nd: Second-order Dynare objects (if computed)
+%              - SolData: A, B, C, D state-space matrices (from first-order)
+%              - SimulFirstOrder: First-order simulation results
+%              - SimulSecondOrder: Second-order simulation results (if computed)
+%              - IRSFirstOrder_raw: First-order impulse responses
+%              - IRSSecondOrder_raw: Second-order impulse responses (if computed)
+%              - IRSPerfectForesight_raw: Perfect foresight impulse responses
 
 %% Input validation
 validate_params(params, {'n_sectors', 'IRshock', 'Sigma_A'}, 'run_dynare_analysis');
@@ -54,27 +69,27 @@ if nargin < 3
     opts = struct();
 end
 
-opts = set_default(opts, 'run_loglin_simul', true);  % Run log-linear (1st order) simulation with random shocks
-opts = set_default(opts, 'run_2ndorder_simul', false);  % Run 2nd order simulation with random shocks
-opts = set_default(opts, 'run_loglin_irs', true);
-opts = set_default(opts, 'run_determ_irs', true);
-opts = set_default(opts, 'run_determ_simul', true);
+opts = set_default(opts, 'run_firstorder_simul', true);   % Run first-order (linear) simulation
+opts = set_default(opts, 'run_secondorder_simul', false); % Run second-order (quadratic) simulation
+opts = set_default(opts, 'run_firstorder_irs', true);     % Run first-order IRFs
+opts = set_default(opts, 'run_secondorder_irs', false);   % Run second-order IRFs
+opts = set_default(opts, 'run_pf_irs', true);             % Run perfect foresight IRFs
+opts = set_default(opts, 'run_pf_simul', true);           % Run perfect foresight simulation
 opts = set_default(opts, 'sector_indices', [1]);
-opts = set_default(opts, 'modorder', 1);  % Order for log-linear simulation (kept for backward compatibility)
 opts = set_default(opts, 'verbose', true);
 opts = set_default(opts, 'ir_horizon', 200);  % IR calculation horizon
 opts = set_default(opts, 'rng_seed', []);  % Empty = use current RNG state; integer = set specific seed
-opts = set_default(opts, 'simul_T_loglin', 10000);  % Log-linear simulation length
-opts = set_default(opts, 'simul_T_2ndorder', 10000);  % Second-order simulation length
-opts = set_default(opts, 'simul_T_determ', 1000);   % Deterministic simulation length
+opts = set_default(opts, 'simul_T_firstorder', 10000);   % First-order simulation length
+opts = set_default(opts, 'simul_T_secondorder', 10000);  % Second-order simulation length
+opts = set_default(opts, 'simul_T_pf', 1000);            % Perfect foresight simulation length
 opts = set_default(opts, 'model_type', 'VA');  % Model type: 'VA', 'GO', or 'GO_noVA'
 
 % Validate sector indices
 validate_sector_indices(opts.sector_indices, params.n_sectors, 'run_dynare_analysis');
 
 n_sectors = params.n_sectors;
-simul_T_loglin = opts.simul_T_loglin;
-simul_T_determ = opts.simul_T_determ;
+simul_T_firstorder = opts.simul_T_firstorder;
+simul_T_pf = opts.simul_T_pf;
 
 %% Prepare data for Dynare
 if opts.verbose
@@ -138,21 +153,21 @@ Results.params = params;
 Results.Cagg_ss = Cagg_ss;
 Results.Lagg_ss = Lagg_ss;
 
-%% 1. Stochastic Solution (Log-Linear) - ALWAYS REQUIRED
-% Check if we already have valid saved stochastic objects
-have_saved_stoch = false;
+%% 1. First-Order Solution (Linear Approximation) - ALWAYS REQUIRED
+% This computes ghx, ghu for the A, B, C, D state-space matrices
+have_saved_1st = false;
 try
-    oo_stoch = evalin('base', 'oo_stoch_');
-    if isstruct(oo_stoch.dr) && isfield(oo_stoch.dr, 'ghx')
-        have_saved_stoch = true;
+    oo_1st = evalin('base', 'oo_1st_');
+    if isstruct(oo_1st.dr) && isfield(oo_1st.dr, 'ghx')
+        have_saved_1st = true;
     end
 catch
-    % No saved stochastic objects
+    % No saved first-order objects
 end
 
-if ~have_saved_stoch
+if ~have_saved_1st
     if opts.verbose
-        fprintf('\n  ── Solving Log-Linear Model (stoch_simul) ──────────────────────\n');
+        fprintf('\n  ── First-Order Solution (stoch_simul, order=1) ─────────────────\n');
     end
     
     tic;
@@ -170,33 +185,33 @@ if ~have_saved_stoch
     
     elapsed = toc;
     if opts.verbose
-        fprintf('     ✓ Log-linear solution completed (%.2f s)\n', elapsed);
+        fprintf('     ✓ First-order solution completed (%.2f s)\n', elapsed);
     end
     
-    % Save stochastic objects (determ_simul will overwrite oo_, M_, options_)
-    oo_stoch = evalin('base', 'oo_');
-    M_stoch = evalin('base', 'M_');
-    options_stoch = evalin('base', 'options_');
-    assignin('base', 'oo_stoch_', oo_stoch);
-    assignin('base', 'M_stoch_', M_stoch);
-    assignin('base', 'options_stoch_', options_stoch);
+    % Save first-order objects (deterministic/2nd-order will overwrite oo_, M_, options_)
+    oo_1st = evalin('base', 'oo_');
+    M_1st = evalin('base', 'M_');
+    options_1st = evalin('base', 'options_');
+    assignin('base', 'oo_1st_', oo_1st);
+    assignin('base', 'M_1st_', M_1st);
+    assignin('base', 'options_1st_', options_1st);
     
     if opts.verbose
-        fprintf('     ✓ Stochastic objects cached\n');
+        fprintf('     ✓ First-order objects cached (ghx, ghu)\n');
     end
 else
     if opts.verbose
-        fprintf('\n  ✓ Using cached stochastic solution\n');
+        fprintf('\n  ✓ Using cached first-order solution\n');
     end
 end
 
-% Get Dynare objects from saved stochastic solution
-oo_ = evalin('base', 'oo_stoch_');
-M_ = evalin('base', 'M_stoch_');
-options_ = evalin('base', 'options_stoch_');
+% Get Dynare objects from saved first-order solution
+oo_ = evalin('base', 'oo_1st_');
+M_ = evalin('base', 'M_1st_');
+options_ = evalin('base', 'options_1st_');
 
-Results.oo_ = oo_;
-Results.M_ = M_;
+Results.oo_1st = oo_;
+Results.M_1st = M_;
 Results.steady_state = oo_.steady_state;
 
 %% Extract Theoretical Statistics from State Space
@@ -217,10 +232,10 @@ if opts.verbose && ~isempty(fieldnames(TheoStats))
     end
 end
 
-%% 2. Log-Linear Simulation (with random shocks)
-if opts.run_loglin_simul
+%% 2. First-Order Simulation (with random shocks)
+if opts.run_firstorder_simul
     if opts.verbose
-        fprintf('\n  ── Log-Linear Simulation (T = %d) ────────────────────────────\n', simul_T_loglin);
+        fprintf('\n  ── First-Order Simulation (T = %d) ───────────────────────────\n', simul_T_firstorder);
     end
     
     tic;
@@ -242,10 +257,11 @@ if opts.run_loglin_simul
     end
     
     % Generate random shocks
-    shockssim = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, simul_T_loglin);
+    shockssim = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, simul_T_firstorder);
     
-    % Simulate using Dynare's simult_
-    dynare_simul_loglin = simult_(M_, options_, oo_.steady_state, oo_.dr, shockssim, opts.modorder);
+    % Simulate using Dynare's simult_ with first-order solution (order=1)
+    % Uses only ghx, ghu (linear policy functions)
+    dynare_simul_1st = simult_(M_, options_, oo_.steady_state, oo_.dr, shockssim, 1);
     
     % Extract solution matrices (State Space Representation)
     % S(t) = A*S(t-1) + B*e(t)
@@ -254,8 +270,8 @@ if opts.run_loglin_simul
     SolData.shockssim = shockssim;
     
     % Compute simulation statistics
-    varlev = exp(dynare_simul_loglin(1:idx.n_dynare,:));
-    variables_var = var(dynare_simul_loglin, 0, 2);
+    varlev = exp(dynare_simul_1st(1:idx.n_dynare,:));
+    variables_var = var(dynare_simul_1st, 0, 2);
     
     shocks_sd = sqrt(var(shockssim, 0, 1)).';
     states_sd = sqrt(variables_var(1:idx.n_states));
@@ -271,34 +287,94 @@ if opts.run_loglin_simul
     end
     
     Results.SolData = SolData;
-    Results.SimulLoglin = dynare_simul_loglin;
+    Results.SimulFirstOrder = dynare_simul_1st;
     
     % Compute model statistics (comparable to HP-filtered empirical targets)
-    ModelStats = compute_model_statistics(dynare_simul_loglin, idx, policies_ss, n_sectors);
+    ModelStats = compute_model_statistics(dynare_simul_1st, idx, policies_ss, n_sectors);
     Results.ModelStats = ModelStats;
     
     if opts.verbose
-        fprintf('\n     Model Statistics (log-linear simulation):\n');
+        fprintf('\n     Model Statistics (first-order simulation):\n');
         fprintf('       σ(Y_agg):  %.4f\n', ModelStats.sigma_VA_agg);
         fprintf('       σ(L) avg:  %.4f\n', ModelStats.sigma_L_avg);
         fprintf('       σ(I) avg:  %.4f\n', ModelStats.sigma_I_avg);
     end
 end
 
-%% 2b. Second-Order Simulation (with random shocks)
-if opts.run_2ndorder_simul
-    simul_T_2ndorder = opts.simul_T_2ndorder;
+%% 2b. Second-Order Solution and Simulation
+if opts.run_secondorder_simul
+    simul_T_secondorder = opts.simul_T_secondorder;
+    
+    % First, compute second-order solution (separate from first-order)
+    have_saved_2nd = false;
+    try
+        oo_2nd = evalin('base', 'oo_2nd_');
+        if isstruct(oo_2nd.dr) && isfield(oo_2nd.dr, 'ghxx')
+            have_saved_2nd = true;
+        end
+    catch
+        % No saved second-order objects
+    end
+    
+    if ~have_saved_2nd
+        if opts.verbose
+            fprintf('\n  ── Second-Order Solution (stoch_simul_2ndOrder, order=2) ──────\n');
+        end
+        
+        tic;
+        
+        % Change to dynare folder, run 2nd order, and return
+        current_dir = pwd;
+        cd(dynare_folder);
+        try
+            dynare stoch_simul_2ndOrder;
+        catch ME
+            cd(current_dir);
+            rethrow(ME);
+        end
+        cd(current_dir);
+        
+        elapsed = toc;
+        if opts.verbose
+            fprintf('     ✓ Second-order solution completed (%.2f s)\n', elapsed);
+        end
+        
+        % Save second-order objects
+        oo_2nd = evalin('base', 'oo_');
+        M_2nd = evalin('base', 'M_');
+        options_2nd = evalin('base', 'options_');
+        assignin('base', 'oo_2nd_', oo_2nd);
+        assignin('base', 'M_2nd_', M_2nd);
+        assignin('base', 'options_2nd_', options_2nd);
+        
+        if opts.verbose
+            fprintf('     ✓ Second-order objects cached (ghx, ghu, ghxx, ghxu, ghuu, ghs2)\n');
+            fprintf('     ⚠ No pruning: uses full quadratic dynamics\n');
+        end
+    else
+        if opts.verbose
+            fprintf('\n  ✓ Using cached second-order solution\n');
+        end
+        oo_2nd = evalin('base', 'oo_2nd_');
+        M_2nd = evalin('base', 'M_2nd_');
+        options_2nd = evalin('base', 'options_2nd_');
+    end
+    
+    Results.oo_2nd = oo_2nd;
+    Results.M_2nd = M_2nd;
+    
+    % Now run second-order simulation
     if opts.verbose
-        fprintf('\n  ── Second-Order Simulation (T = %d) ─────────────────────────\n', simul_T_2ndorder);
+        fprintf('\n  ── Second-Order Simulation (T = %d) ─────────────────────────\n', simul_T_secondorder);
     end
     
     tic;
     
-    % Use same RNG state as log-linear for comparability (if available)
+    % Use same RNG state as first-order for comparability (if available)
     if isfield(Results, 'rng_state')
         rng(Results.rng_state);
         if opts.verbose
-            fprintf('     RNG: Using same seed as log-linear simulation\n');
+            fprintf('     RNG: Using same seed as first-order simulation\n');
         end
     elseif ~isempty(opts.rng_seed)
         if isstruct(opts.rng_seed)
@@ -308,23 +384,23 @@ if opts.run_2ndorder_simul
         end
     end
     
-    % Generate random shocks (same as log-linear if same RNG state)
-    shockssim_2nd = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, simul_T_2ndorder);
+    % Generate random shocks (same as first-order if same RNG state)
+    shockssim_2nd = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, simul_T_secondorder);
     
-    % Simulate using Dynare's simult_ with order=2 and pruning
-    % Note: The solution already has second-order terms (ghxx, ghxu, ghuu) from stoch_simul with order=2
-    dynare_simul_2ndorder = simult_(M_, options_, oo_.steady_state, oo_.dr, shockssim_2nd, 2);
+    % Simulate using Dynare's simult_ with order=2
+    % Uses ghx, ghu (linear) + ghxx, ghxu, ghuu, ghs2 (quadratic terms)
+    dynare_simul_2nd = simult_(M_2nd, options_2nd, oo_2nd.steady_state, oo_2nd.dr, shockssim_2nd, 2);
     
     elapsed = toc;
     if opts.verbose
         fprintf('     ✓ Completed (%.2f s)\n', elapsed);
     end
     
-    Results.Simul2ndOrder = dynare_simul_2ndorder;
+    Results.SimulSecondOrder = dynare_simul_2nd;
     Results.shockssim_2nd = shockssim_2nd;
     
     % Compute model statistics for 2nd order
-    ModelStats2nd = compute_model_statistics(dynare_simul_2ndorder, idx, policies_ss, n_sectors);
+    ModelStats2nd = compute_model_statistics(dynare_simul_2nd, idx, policies_ss, n_sectors);
     Results.ModelStats2nd = ModelStats2nd;
     
     if opts.verbose
@@ -335,10 +411,10 @@ if opts.run_2ndorder_simul
     end
 end
 
-%% 3. Log-Linear Impulse Responses
-if opts.run_loglin_irs
+%% 3. First-Order Impulse Responses
+if opts.run_firstorder_irs
     if opts.verbose
-        fprintf('\n  ── Log-Linear IRFs (horizon = %d) ───────────────────────────\n', opts.ir_horizon);
+        fprintf('\n  ── First-Order IRFs (horizon = %d) ──────────────────────────\n', opts.ir_horizon);
     end
     
     tic;
@@ -358,8 +434,8 @@ if opts.run_loglin_irs
         % Zero exogenous shocks (shock is in initial condition)
         shockssim_ir = zeros([opts.ir_horizon, n_sectors]);
         
-        % Simulate
-        dynare_simul = simult_(M_, options_, steady_state_shocked, oo_.dr, shockssim_ir, opts.modorder);
+        % Simulate using first-order solution (order=1)
+        dynare_simul = simult_(M_, options_, steady_state_shocked, oo_.dr, shockssim_ir, 1);
         
         IRSLoglin_all{ii} = dynare_simul;
         
@@ -373,12 +449,94 @@ if opts.run_loglin_irs
         fprintf('     ✓ Completed %d sectors (%.2f s)\n', numel(opts.sector_indices), elapsed);
     end
     
-    Results.IRSLoglin_raw = IRSLoglin_all;
+    Results.IRSFirstOrder_raw = IRSLoglin_all;
     Results.ir_sector_indices = opts.sector_indices;
 end
 
+%% 3b. Second-Order Impulse Responses
+if opts.run_secondorder_irs
+    % Ensure second-order solution is available
+    have_saved_2nd = false;
+    try
+        oo_2nd = evalin('base', 'oo_2nd_');
+        if isstruct(oo_2nd.dr) && isfield(oo_2nd.dr, 'ghxx')
+            have_saved_2nd = true;
+        end
+    catch
+        % No saved second-order objects
+    end
+    
+    if ~have_saved_2nd
+        if opts.verbose
+            fprintf('\n  ── Second-Order Solution (required for 2nd-order IRFs) ────────\n');
+        end
+        
+        tic;
+        current_dir = pwd;
+        cd(dynare_folder);
+        try
+            dynare stoch_simul_2ndOrder;
+        catch ME
+            cd(current_dir);
+            rethrow(ME);
+        end
+        cd(current_dir);
+        
+        elapsed = toc;
+        if opts.verbose
+            fprintf('     ✓ Second-order solution completed (%.2f s)\n', elapsed);
+        end
+        
+        oo_2nd = evalin('base', 'oo_');
+        M_2nd = evalin('base', 'M_');
+        options_2nd = evalin('base', 'options_');
+        assignin('base', 'oo_2nd_', oo_2nd);
+        assignin('base', 'M_2nd_', M_2nd);
+        assignin('base', 'options_2nd_', options_2nd);
+    else
+        oo_2nd = evalin('base', 'oo_2nd_');
+        M_2nd = evalin('base', 'M_2nd_');
+        options_2nd = evalin('base', 'options_2nd_');
+    end
+    
+    if opts.verbose
+        fprintf('\n  ── Second-Order IRFs (horizon = %d) ─────────────────────────\n', opts.ir_horizon);
+    end
+    
+    tic;
+    IRS2ndOrder_all = cell(numel(opts.sector_indices), 1);
+    
+    for ii = 1:numel(opts.sector_indices)
+        sector_idx = opts.sector_indices(ii);
+        
+        % Set shock in initial TFP (log deviation from steady state)
+        % Same convention as first-order IRFs
+        steady_state_shocked = oo_2nd.steady_state;
+        steady_state_shocked(n_sectors + sector_idx) = -params.IRshock;
+        
+        % Zero exogenous shocks (shock is in initial condition)
+        shockssim_ir = zeros([opts.ir_horizon, n_sectors]);
+        
+        % Simulate using second-order solution (order=2, no pruning)
+        dynare_simul = simult_(M_2nd, options_2nd, steady_state_shocked, oo_2nd.dr, shockssim_ir, 2);
+        
+        IRS2ndOrder_all{ii} = dynare_simul;
+        
+        if opts.verbose
+            fprintf('     • Sector %d\n', sector_idx);
+        end
+    end
+    
+    elapsed = toc;
+    if opts.verbose
+        fprintf('     ✓ Completed %d sectors (%.2f s)\n', numel(opts.sector_indices), elapsed);
+    end
+    
+    Results.IRSSecondOrder_raw = IRS2ndOrder_all;
+end
+
 %% 4. Perfect Foresight Impulse Responses
-if opts.run_determ_irs
+if opts.run_pf_irs
     if opts.verbose
         fprintf('\n  ── Perfect Foresight IRFs (horizon = %d) ──────────────────────\n', opts.ir_horizon);
     end
@@ -389,7 +547,7 @@ if opts.run_determ_irs
     for ii = 1:numel(opts.sector_indices)
         sector_idx = opts.sector_indices(ii);
         
-        % Set initial shock (same convention as log-linear IRFs)
+        % Set initial shock (same convention as first-order IRFs)
         % TFP deviation = -params.IRshock
         shocksim_0 = zeros([n_sectors, 1]);
         shocksim_0(sector_idx, 1) = -params.IRshock;
@@ -428,38 +586,38 @@ if opts.run_determ_irs
         fprintf('     ✓ Completed %d sectors (%.2f s)\n', numel(opts.sector_indices), elapsed);
     end
     
-    Results.IRSDeterm_raw = IRSDeterm_all;
+    Results.IRSPerfectForesight_raw = IRSDeterm_all;
 end
 
-%% 5. Deterministic Simulation (Perfect Foresight with Random Shocks)
-if opts.run_determ_simul
+%% 5. Perfect Foresight Simulation (with Random Shocks)
+if opts.run_pf_simul
     if opts.verbose
-        fprintf('\n  ── Deterministic Simulation (T = %d) ─────────────────────────\n', simul_T_determ);
+        fprintf('\n  ── Perfect Foresight Simulation (T = %d) ─────────────────────\n', simul_T_pf);
     end
     
     tic;
     
-    % Generate random shocks for deterministic simulation
-    shockssim = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, simul_T_determ);
+    % Generate random shocks for perfect foresight simulation
+    shockssim = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, simul_T_pf);
     
     % Prepare shock matrix for perfect foresight
     % Dynare expects (periods+2 x n_exo): [initial; simulation periods; terminal]
-    simul_periods = simul_T_determ - 2;  % Number of periods for perfect_foresight
-    shockssim_determ = zeros(simul_T_determ, n_sectors);
-    shockssim_determ(2:end-1, :) = shockssim(1:simul_T_determ-2, :);  % Fill simulation periods
+    simul_periods = simul_T_pf - 2;  % Number of periods for perfect_foresight
+    shockssim_pf = zeros(simul_T_pf, n_sectors);
+    shockssim_pf(2:end-1, :) = shockssim(1:simul_T_pf-2, :);  % Fill simulation periods
     
     if opts.verbose
         fprintf('     Shock matrix: %d × %d | Periods: %d\n', ...
-            size(shockssim_determ, 1), size(shockssim_determ, 2), simul_periods);
+            size(shockssim_pf, 1), size(shockssim_pf, 2), simul_periods);
     end
     
     % Save to workspace (needed by .mod file)
-    assignin('base', 'shockssim_determ', shockssim_determ);
+    assignin('base', 'shockssim_pf', shockssim_pf);
     assignin('base', 'simul_periods', simul_periods);
     
     % Update ModStruct_temp with simulation parameters (in dynare folder)
     modstruct_path = fullfile(dynare_folder, 'ModStruct_temp.mat');
-    save(modstruct_path, 'shockssim_determ', 'simul_periods', '-append');
+    save(modstruct_path, 'shockssim_pf', 'simul_periods', '-append');
     
     % Run deterministic simulation (change to dynare folder)
     current_dir = pwd;
@@ -470,10 +628,10 @@ if opts.run_determ_simul
         
         % Get results
         Simulated_time_series = evalin('base', 'Simulated_time_series');
-        dynare_simul_determ = Simulated_time_series.data';
+        dynare_simul_pf = Simulated_time_series.data';
         
-        Results.SimulDeterm = dynare_simul_determ;
-        Results.shockssim_determ = shockssim_determ;
+        Results.SimulPerfectForesight = dynare_simul_pf;
+        Results.shockssim_pf = shockssim_pf;
         
         elapsed = toc;
         if opts.verbose
@@ -484,8 +642,8 @@ if opts.run_determ_simul
         if opts.verbose
             fprintf('     ⚠ Failed: %s\n', ME.message);
         end
-        Results.SimulDeterm = [];
-        Results.determ_simul_error = ME;
+        Results.SimulPerfectForesight = [];
+        Results.pf_simul_error = ME;
     end
 end
 

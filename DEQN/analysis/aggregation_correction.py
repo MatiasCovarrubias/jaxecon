@@ -455,63 +455,107 @@ def create_theoretical_descriptive_stats(theo_stats: dict, label: str = "Log-Lin
 
 def create_perfect_foresight_descriptive_stats(
     determ_stats: dict,
-    label: str = "Perfect Foresight"
+    label: str = "Perfect Foresight",
+    n_sectors: int = 37,
 ) -> dict:
     """
     Create pre-computed descriptive statistics from perfect foresight (deterministic) statistics.
 
-    Perfect foresight statistics are stored in ModelData.Statistics.Determ with keys like:
-        - Cagg_volatility, Lagg_volatility (std)
-        - Cagg_mean_logdev, Yagg_mean_logdev, etc. (mean log deviations)
+    Supports two formats:
+    1. Legacy format (pre-Feb 2026): Individual fields like Cagg_volatility, Cagg_mean_logdev
+    2. New format (Feb 2026+): Full vectors policies_mean, policies_std
 
     Note: Skewness and Kurtosis are not available for perfect foresight (would need simulation).
 
     Args:
-        determ_stats: Dictionary with deterministic statistics from MATLAB
-                     Expected keys: Cagg_volatility, Lagg_volatility,
-                                   Cagg_mean_logdev, Yagg_mean_logdev, etc.
+        determ_stats: Dictionary with deterministic statistics from MATLAB.
+                     Legacy format: Cagg_volatility, Lagg_volatility, Cagg_mean_logdev, etc.
+                     New format: policies_mean (412x1), policies_std (412x1)
         label: Label for this experiment in the output
+        n_sectors: Number of sectors (default 37)
 
     Returns:
         Dictionary in format {label: {var_label: {"Mean": val, "Sd": val, "Skewness": val, "Excess Kurtosis": val}}}
         Ready to pass to create_descriptive_stats_table as theoretical_stats
     """
-    # Mapping from variable names to (mean_key, volatility_key, skewness_key, kurtosis_key)
-    var_mapping = {
-        "Agg. Consumption": ("Cagg_mean_logdev", "Cagg_volatility", "Cagg_skewness", "Cagg_kurtosis"),
-        "Agg. Labor": ("Lagg_mean_logdev", "Lagg_volatility", "Lagg_skewness", "Lagg_kurtosis"),
-        "Agg. Output": ("Yagg_mean_logdev", "Yagg_volatility", "Yagg_skewness", "Yagg_kurtosis"),
-        "Agg. Investment": ("Iagg_mean_logdev", "Iagg_volatility", "Iagg_skewness", "Iagg_kurtosis"),
-        "Agg. Intermediates": ("Magg_mean_logdev", "Magg_volatility", "Magg_skewness", "Magg_kurtosis"),
-    }
-
     result = {}
-    for var_name, (mean_key, vol_key, skew_key, kurt_key) in var_mapping.items():
-        stats_dict = {}
+    n = n_sectors
 
-        # Get mean (stored as fraction, convert to %)
-        if mean_key in determ_stats:
-            stats_dict["Mean"] = float(determ_stats[mean_key]) * 100
+    # Check if we have new format (policies_mean/policies_std vectors)
+    has_new_format = "policies_std" in determ_stats or "policies_mean" in determ_stats
 
-        # Get volatility/std (stored as fraction, convert to %)
-        if vol_key and vol_key in determ_stats:
-            stats_dict["Sd"] = float(determ_stats[vol_key]) * 100
-        else:
-            stats_dict["Sd"] = float("nan")
+    if has_new_format:
+        # New format: extract from full policy vectors
+        # Policy indexing (for 37 sectors, 412 = 11*37 + 5 policies):
+        #   policies[11*n+0] = cagg
+        #   policies[11*n+1] = lagg
+        #   policies[11*n+2] = yagg
+        #   policies[11*n+3] = iagg
+        #   policies[11*n+4] = magg
+        agg_indices = {
+            "Agg. Consumption": 11 * n,
+            "Agg. Labor": 11 * n + 1,
+            "Agg. Output": 11 * n + 2,
+            "Agg. Investment": 11 * n + 3,
+            "Agg. Intermediates": 11 * n + 4,
+        }
 
-        # Get skewness (if available from MATLAB)
-        if skew_key and skew_key in determ_stats:
-            stats_dict["Skewness"] = float(determ_stats[skew_key])
-        else:
+        policies_mean = determ_stats.get("policies_mean")
+        policies_std = determ_stats.get("policies_std")
+
+        for var_name, idx in agg_indices.items():
+            stats_dict = {}
+
+            if policies_mean is not None and idx < len(policies_mean):
+                stats_dict["Mean"] = float(policies_mean[idx]) * 100  # Convert to %
+
+            if policies_std is not None and idx < len(policies_std):
+                stats_dict["Sd"] = float(policies_std[idx]) * 100  # Convert to %
+            else:
+                stats_dict["Sd"] = float("nan")
+
+            # Skewness and kurtosis not available in new format
             stats_dict["Skewness"] = float("nan")
-
-        # Get excess kurtosis (if available from MATLAB)
-        if kurt_key and kurt_key in determ_stats:
-            stats_dict["Excess Kurtosis"] = float(determ_stats[kurt_key])
-        else:
             stats_dict["Excess Kurtosis"] = float("nan")
 
-        if stats_dict:
-            result[var_name] = stats_dict
+            if stats_dict:
+                result[var_name] = stats_dict
+    else:
+        # Legacy format: use individual field names
+        var_mapping = {
+            "Agg. Consumption": ("Cagg_mean_logdev", "Cagg_volatility", "Cagg_skewness", "Cagg_kurtosis"),
+            "Agg. Labor": ("Lagg_mean_logdev", "Lagg_volatility", "Lagg_skewness", "Lagg_kurtosis"),
+            "Agg. Output": ("Yagg_mean_logdev", "Yagg_volatility", "Yagg_skewness", "Yagg_kurtosis"),
+            "Agg. Investment": ("Iagg_mean_logdev", "Iagg_volatility", "Iagg_skewness", "Iagg_kurtosis"),
+            "Agg. Intermediates": ("Magg_mean_logdev", "Magg_volatility", "Magg_skewness", "Magg_kurtosis"),
+        }
+
+        for var_name, (mean_key, vol_key, skew_key, kurt_key) in var_mapping.items():
+            stats_dict = {}
+
+            # Get mean (stored as fraction, convert to %)
+            if mean_key in determ_stats:
+                stats_dict["Mean"] = float(determ_stats[mean_key]) * 100
+
+            # Get volatility/std (stored as fraction, convert to %)
+            if vol_key and vol_key in determ_stats:
+                stats_dict["Sd"] = float(determ_stats[vol_key]) * 100
+            else:
+                stats_dict["Sd"] = float("nan")
+
+            # Get skewness (if available from MATLAB)
+            if skew_key and skew_key in determ_stats:
+                stats_dict["Skewness"] = float(determ_stats[skew_key])
+            else:
+                stats_dict["Skewness"] = float("nan")
+
+            # Get excess kurtosis (if available from MATLAB)
+            if kurt_key and kurt_key in determ_stats:
+                stats_dict["Excess Kurtosis"] = float(determ_stats[kurt_key])
+            else:
+                stats_dict["Excess Kurtosis"] = float("nan")
+
+            if stats_dict:
+                result[var_name] = stats_dict
 
     return {label: result}

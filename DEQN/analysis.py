@@ -241,8 +241,8 @@ def main():
         policies_ss = policies_ss[:n_policies]
 
     # Load simulation data (optional - for Dynare comparison)
-    dynare_simul_loglin = None
-    dynare_simul_determ = None
+    dynare_simul_1storder = None
+    dynare_simul_pf = None
 
     if model_data_simulation_file is not None:
         simul_path = os.path.join(model_dir, model_data_simulation_file)
@@ -251,11 +251,17 @@ def main():
             simul_data = sio.loadmat(simul_path, simplify_cells=True)
             simul = simul_data.get("ModelData_simulation", {})
 
-            if "Loglin" in simul and "full_simul" in simul["Loglin"]:
-                dynare_simul_loglin = jnp.array(simul["Loglin"]["full_simul"], dtype=precision)
+            # First-order simulation (new: FirstOrder, legacy: Loglin)
+            if "FirstOrder" in simul and "full_simul" in simul["FirstOrder"]:
+                dynare_simul_1storder = jnp.array(simul["FirstOrder"]["full_simul"], dtype=precision)
+            elif "Loglin" in simul and "full_simul" in simul["Loglin"]:
+                dynare_simul_1storder = jnp.array(simul["Loglin"]["full_simul"], dtype=precision)
 
-            if "Determ" in simul and "full_simul" in simul["Determ"]:
-                dynare_simul_determ = jnp.array(simul["Determ"]["full_simul"], dtype=precision)
+            # Perfect foresight simulation (new: PerfectForesight, legacy: Determ)
+            if "PerfectForesight" in simul and "full_simul" in simul["PerfectForesight"]:
+                dynare_simul_pf = jnp.array(simul["PerfectForesight"]["full_simul"], dtype=precision)
+            elif "Determ" in simul and "full_simul" in simul["Determ"]:
+                dynare_simul_pf = jnp.array(simul["Determ"]["full_simul"], dtype=precision)
         else:
             print(f"  ⚠ Simulation file not found: {model_data_simulation_file} (skipping)")
 
@@ -405,9 +411,9 @@ def main():
         )
 
     # Process Dynare simulations (if available)
-    if dynare_simul_loglin is not None:
-        loglin_analysis_vars = process_simulation_with_consistent_aggregation(
-            simul_data=dynare_simul_loglin,
+    if dynare_simul_1storder is not None:
+        firstorder_analysis_vars = process_simulation_with_consistent_aggregation(
+            simul_data=dynare_simul_1storder,
             policies_ss=policies_ss,
             state_ss=state_ss,
             P_ergodic=P_ergodic,
@@ -415,15 +421,15 @@ def main():
             Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
             burn_in=config["burn_in_periods"],
-            source_label="Log-Linear (Dynare)",
+            source_label="First-Order (Dynare)",
         )
 
-        for var_name, var_values in loglin_analysis_vars.items():
+        for var_name, var_values in firstorder_analysis_vars.items():
             n_nan = jnp.sum(jnp.isnan(var_values))
             if n_nan > 0:
                 print(f"    ⚠ WARNING: {var_name} has {n_nan} NaN values!", flush=True)
 
-        analysis_variables_data["Log-Linear (Dynare)"] = loglin_analysis_vars
+        analysis_variables_data["First-Order (Dynare)"] = firstorder_analysis_vars
 
     # Initialize theoretical/precomputed stats for descriptive stats table
     theoretical_stats = {}
@@ -456,34 +462,48 @@ def main():
         for var_name, params_dict in theo_dist_params.items():
             print(f"    {var_name}: σ={params_dict['std']*100:.4f}%", flush=True)
 
-    # Add perfect foresight stats (from Statistics.Determ if available)
-    if "Determ" in stats:
-        determ_stats = stats["Determ"]
-        print("  ✓ Using Statistics.Determ for Perfect Foresight moments", flush=True)
+    # Add perfect foresight stats (from Statistics.PerfectForesight or legacy Statistics.Determ)
+    pf_stats_key = "PerfectForesight" if "PerfectForesight" in stats else ("Determ" if "Determ" in stats else None)
+    if pf_stats_key:
+        pf_stats = stats[pf_stats_key]
+        print(f"  ✓ Using Statistics.{pf_stats_key} for Perfect Foresight moments", flush=True)
 
-        pf_theo_stats = create_perfect_foresight_descriptive_stats(determ_stats=determ_stats, label="Perfect Foresight")
+        pf_theo_stats = create_perfect_foresight_descriptive_stats(
+            determ_stats=pf_stats, label="Perfect Foresight", n_sectors=n_sectors
+        )
         theoretical_stats.update(pf_theo_stats)
 
-        # Print available stats
-        if "Cagg_volatility" in determ_stats:
-            print(f"    Agg. Consumption: σ={float(determ_stats['Cagg_volatility'])*100:.4f}%", flush=True)
-        if "Lagg_volatility" in determ_stats:
-            print(f"    Agg. Labor: σ={float(determ_stats['Lagg_volatility'])*100:.4f}%", flush=True)
+        # Print available stats (check both new and legacy field names)
+        # New format: extract from policies_std vector
+        if "policies_std" in pf_stats:
+            policies_std = pf_stats["policies_std"]
+            n = n_sectors
+            if len(policies_std) > 11 * n + 1:
+                print(f"    Agg. Consumption: σ={float(policies_std[11*n])*100:.4f}%", flush=True)
+                print(f"    Agg. Labor: σ={float(policies_std[11*n+1])*100:.4f}%", flush=True)
+        else:
+            # Legacy format
+            cagg_vol = pf_stats.get("Cagg_volatility")
+            if cagg_vol is not None:
+                print(f"    Agg. Consumption: σ={float(cagg_vol)*100:.4f}%", flush=True)
+            lagg_vol = pf_stats.get("Lagg_volatility")
+            if lagg_vol is not None:
+                print(f"    Agg. Labor: σ={float(lagg_vol)*100:.4f}%", flush=True)
 
-    if dynare_simul_determ is not None:
-        determ_analysis_vars = process_simulation_with_consistent_aggregation(
-            simul_data=dynare_simul_determ,
+    if dynare_simul_pf is not None:
+        pf_analysis_vars = process_simulation_with_consistent_aggregation(
+            simul_data=dynare_simul_pf,
             policies_ss=policies_ss,
             state_ss=state_ss,
             P_ergodic=P_ergodic,
             Pk_ergodic=Pk_ergodic,
             Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
-            burn_in=min(config["burn_in_periods"], dynare_simul_determ.shape[1] // 10),
-            source_label="Deterministic (Dynare)",
+            burn_in=min(config["burn_in_periods"], dynare_simul_pf.shape[1] // 10),
+            source_label="Perfect Foresight (Dynare)",
         )
 
-        analysis_variables_data["Deterministic (Dynare)"] = determ_analysis_vars
+        analysis_variables_data["Perfect Foresight (Dynare)"] = pf_analysis_vars
 
     # ═══════════════════════════════════════════════════════════════════════════
     # DESCRIPTIVE STATISTICS
@@ -520,8 +540,8 @@ def main():
         analysis_name=config["analysis_name"],
     )
 
-    # Generate histograms (filter out deterministic solution)
-    histogram_data = {k: v for k, v in analysis_variables_data.items() if "Deterministic" not in k}
+    # Generate histograms (filter out deterministic/perfect foresight solution - not suitable for histograms)
+    histogram_data = {k: v for k, v in analysis_variables_data.items() if "Deterministic" not in k and "Perfect Foresight (Dynare)" not in k}
     plot_ergodic_histograms(
         analysis_variables_data=histogram_data,
         save_dir=simulation_dir,

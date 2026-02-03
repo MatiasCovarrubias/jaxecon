@@ -67,12 +67,15 @@ config.date = "_December_2025";
 config.exp_label = "_nonlinear_Min";
 
 % --- Dynare analysis settings ---
-config.run_loglin_simul = true;    % Run log-linear (1st order) stochastic simulation
-config.run_2ndorder_simul = true;  % Run 2nd order stochastic simulation
-config.run_determ_simul = true;    % Run deterministic simulation (slower)
-config.run_loglin_irs = true;      % Compute log-linear IRFs
-config.run_determ_irs = true;      % Compute deterministic IRFs (slowest)
-config.modorder = 1;               % Approximation order for log-linear simulation (keep at 1)
+% First-order (linear) approximation: uses stoch_simul.mod with order=1
+% Second-order (quadratic) approximation: uses stoch_simul_2ndOrder.mod with order=2
+% Perfect foresight (nonlinear): uses Newton solver
+config.run_firstorder_simul = true;   % Run first-order (linear) simulation
+config.run_secondorder_simul = true;  % Run second-order simulation (captures precautionary effects)
+config.run_pf_simul = true;           % Run perfect foresight simulation (slower)
+config.run_firstorder_irs = true;     % Compute first-order IRFs
+config.run_secondorder_irs = true;    % Compute second-order IRFs (asymmetric responses)
+config.run_pf_irs = true;             % Compute perfect foresight IRFs (slowest)
 
 % --- IR settings ---
 config.ir_horizon = 200;           % Horizon for IR calculation (needs to be long for convergence)
@@ -80,9 +83,9 @@ config.ir_plot_length = 60;        % Periods to plot in IR figures
 config.plot_irs = true;            % Plot IRF figures (set false for batch runs)
 
 % --- Simulation settings ---
-config.simul_T_loglin = 2500;      % Log-linear (1st order) simulation length (fast)
-config.simul_T_2ndorder = 2500;    % Second-order simulation length (fast)
-config.simul_T_determ = 500;       % Deterministic simulation length (slower)
+config.simul_T_firstorder = 2500;   % First-order (linear) simulation length (fast)
+config.simul_T_secondorder = 2500;  % Second-order (quadratic) simulation length (fast)
+config.simul_T_pf = 500;            % Perfect foresight simulation length (slower)
 
 % --- Shock values configuration ---
 % Shock convention: IRshock is defined such that the TFP deviation is -IRshock.
@@ -228,7 +231,7 @@ fprintf('║                        DYNARE ANALYSIS                             
 fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
 
 n_shocks = numel(config.shock_values);
-run_any_irs = config.run_loglin_irs || config.run_determ_irs;
+run_any_irs = config.run_firstorder_irs || config.run_secondorder_irs || config.run_pf_irs;
 
 % Storage for results
 AllShockResults = struct();
@@ -238,41 +241,40 @@ AllShockResults.DynareResults = cell(n_shocks, 1);
 AllShockResults.IRFResults = cell(n_shocks, 1);
 BaseResults = struct();
 
-% Run base simulation (stoch_simul and optionally determ_simul)
-if config.run_loglin_simul || config.run_2ndorder_simul || config.run_determ_simul
+% Run base simulation (stoch_simul and optionally pf_simul)
+if config.run_firstorder_simul || config.run_secondorder_simul || config.run_pf_simul
     dynare_opts_base = struct();
-    dynare_opts_base.run_loglin_simul = config.run_loglin_simul;
-    dynare_opts_base.run_2ndorder_simul = config.run_2ndorder_simul;
-    dynare_opts_base.run_loglin_irs = false;
-    dynare_opts_base.run_determ_irs = false;
-    dynare_opts_base.run_determ_simul = config.run_determ_simul;
+    dynare_opts_base.run_firstorder_simul = config.run_firstorder_simul;
+    dynare_opts_base.run_secondorder_simul = config.run_secondorder_simul;
+    dynare_opts_base.run_firstorder_irs = false;
+    dynare_opts_base.run_pf_irs = false;
+    dynare_opts_base.run_pf_simul = config.run_pf_simul;
     dynare_opts_base.sector_indices = sector_indices;
-    dynare_opts_base.modorder = config.modorder;
     dynare_opts_base.verbose = true;
     dynare_opts_base.ir_horizon = config.ir_horizon;
-    dynare_opts_base.simul_T_loglin = config.simul_T_loglin;
-    dynare_opts_base.simul_T_2ndorder = config.simul_T_2ndorder;
-    dynare_opts_base.simul_T_determ = config.simul_T_determ;
+    dynare_opts_base.simul_T_firstorder = config.simul_T_firstorder;
+    dynare_opts_base.simul_T_secondorder = config.simul_T_secondorder;
+    dynare_opts_base.simul_T_pf = config.simul_T_pf;
     dynare_opts_base.model_type = config.model_type;
     
     params.IRshock = config.shock_values(1).value;
     
-    fprintf('\n  ┌─ Base Simulation ─────────────────────────────────────────────┐\n');
-    fprintf('  │  Configuration:                                               │\n');
-    if config.run_loglin_simul
-        fprintf('  │    • Log-linear (1st order):  ON  (T = %d)                 │\n', config.simul_T_loglin);
+    fprintf('\n  ┌─ Simulation Configuration ────────────────────────────────────┐\n');
+    fprintf('  │  Approximation methods:                                        │\n');
+    if config.run_firstorder_simul
+        fprintf('  │    • First-order (linear):    ON  (T = %d)                 │\n', config.simul_T_firstorder);
     else
-        fprintf('  │    • Log-linear (1st order):  OFF                            │\n');
+        fprintf('  │    • First-order (linear):    OFF                            │\n');
     end
-    if config.run_2ndorder_simul
-        fprintf('  │    • Second-order:            ON  (T = %d)                 │\n', config.simul_T_2ndorder);
+    if config.run_secondorder_simul
+        fprintf('  │    • Second-order (quadratic):ON  (T = %d)                 │\n', config.simul_T_secondorder);
     else
-        fprintf('  │    • Second-order:            OFF                            │\n');
+        fprintf('  │    • Second-order (quadratic):OFF                            │\n');
     end
-    if config.run_determ_simul
-        fprintf('  │    • Deterministic (PF):      ON  (T = %d)                  │\n', config.simul_T_determ);
+    if config.run_pf_simul
+        fprintf('  │    • Perfect foresight (NL):  ON  (T = %d)                  │\n', config.simul_T_pf);
     else
-        fprintf('  │    • Deterministic (PF):      OFF                            │\n');
+        fprintf('  │    • Perfect foresight (NL):  OFF                            │\n');
     end
     fprintf('  └────────────────────────────────────────────────────────────────┘\n\n');
     
@@ -281,16 +283,16 @@ if config.run_loglin_simul || config.run_2ndorder_simul || config.run_determ_sim
     elapsed_base = toc;
     
     % Check what actually ran
-    has_loglin = isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin);
-    has_2ndorder = isfield(BaseResults, 'Simul2ndOrder') && ~isempty(BaseResults.Simul2ndOrder);
-    has_determ = isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm);
+    has_1storder = isfield(BaseResults, 'SimulFirstOrder') && ~isempty(BaseResults.SimulFirstOrder);
+    has_2ndorder = isfield(BaseResults, 'SimulSecondOrder') && ~isempty(BaseResults.SimulSecondOrder);
+    has_pf = isfield(BaseResults, 'SimulPerfectForesight') && ~isempty(BaseResults.SimulPerfectForesight);
     
-    fprintf('\n  Base simulation results:\n');
-    if has_loglin, fprintf('    ✓ SimulLoglin (1st order) computed\n'); else, fprintf('    ✗ SimulLoglin skipped\n'); end
-    if has_2ndorder, fprintf('    ✓ Simul2ndOrder computed\n'); else, fprintf('    ✗ Simul2ndOrder skipped\n'); end
-    if has_determ, fprintf('    ✓ SimulDeterm (PF) computed\n'); else, fprintf('    ✗ SimulDeterm skipped\n'); end
-    if isfield(BaseResults, 'determ_simul_error')
-        fprintf('    ⚠ Determ simulation failed: %s\n', BaseResults.determ_simul_error.message);
+    fprintf('\n  Simulation results:\n');
+    if has_1storder, fprintf('    ✓ First-order (linear) computed\n'); else, fprintf('    ✗ First-order skipped\n'); end
+    if has_2ndorder, fprintf('    ✓ Second-order (quadratic) computed\n'); else, fprintf('    ✗ Second-order skipped\n'); end
+    if has_pf, fprintf('    ✓ Perfect foresight (nonlinear) computed\n'); else, fprintf('    ✗ Perfect foresight skipped\n'); end
+    if isfield(BaseResults, 'pf_simul_error')
+        fprintf('    ⚠ Perfect foresight simulation failed: %s\n', BaseResults.pf_simul_error.message);
     end
     fprintf('    • Elapsed time: %.2f seconds\n', elapsed_base);
 end
@@ -311,16 +313,16 @@ if run_any_irs
         fprintf('     Shock value: %.4f\n', shock_config.value);
         
         dynare_opts = struct();
-        dynare_opts.run_loglin_simul = false;
-        dynare_opts.run_loglin_irs = config.run_loglin_irs;
-        dynare_opts.run_determ_irs = config.run_determ_irs;
-        dynare_opts.run_determ_simul = false;
+        dynare_opts.run_firstorder_simul = false;
+        dynare_opts.run_firstorder_irs = config.run_firstorder_irs;
+        dynare_opts.run_secondorder_irs = config.run_secondorder_irs;
+        dynare_opts.run_pf_irs = config.run_pf_irs;
+        dynare_opts.run_pf_simul = false;
         dynare_opts.sector_indices = sector_indices;
-        dynare_opts.modorder = config.modorder;
         dynare_opts.verbose = true;
         dynare_opts.ir_horizon = config.ir_horizon;
-        dynare_opts.simul_T_loglin = config.simul_T_loglin;
-        dynare_opts.simul_T_determ = config.simul_T_determ;
+        dynare_opts.simul_T_firstorder = config.simul_T_firstorder;
+        dynare_opts.simul_T_pf = config.simul_T_pf;
         dynare_opts.model_type = config.model_type;
         
         tic;
@@ -331,14 +333,14 @@ if run_any_irs
         if isfield(BaseResults, 'SolData')
             DynareResults.SolData = BaseResults.SolData;
         end
-        if isfield(BaseResults, 'SimulLoglin')
-            DynareResults.SimulLoglin = BaseResults.SimulLoglin;
+        if isfield(BaseResults, 'SimulFirstOrder')
+            DynareResults.SimulFirstOrder = BaseResults.SimulFirstOrder;
         end
-        if isfield(BaseResults, 'SimulDeterm')
-            DynareResults.SimulDeterm = BaseResults.SimulDeterm;
+        if isfield(BaseResults, 'SimulPerfectForesight')
+            DynareResults.SimulPerfectForesight = BaseResults.SimulPerfectForesight;
         end
-        if isfield(BaseResults, 'shockssim_determ')
-            DynareResults.shockssim_determ = BaseResults.shockssim_determ;
+        if isfield(BaseResults, 'shockssim_pf')
+            DynareResults.shockssim_pf = BaseResults.shockssim_pf;
         end
         if isfield(BaseResults, 'rng_state')
             DynareResults.rng_state = BaseResults.rng_state;
@@ -448,6 +450,8 @@ if isfield(BaseResults, 'SolData') && isfield(BaseResults.SolData, 'shocks_sd')
 end
 
 %% Build ModelData_simulation structure (full simulation data - heavy)
+% This structure holds full simulation time series only.
+% Summary statistics go in ModelData.Statistics (lightweight).
 ModelData_simulation = struct();
 ModelData_simulation.metadata.save_label = save_label;
 ModelData_simulation.metadata.exp_paths = exp_paths;
@@ -457,114 +461,92 @@ fprintf('╔══════════════════════�
 fprintf('║                       SIMULATION RESULTS                            ║\n');
 fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
 
-has_loglin_simul = false;
+has_1storder_simul = false;
 has_2ndorder_simul = false;
-has_determ_simul = false;
+has_pf_simul = false;
 
-% Log-linear simulation (if available)
-if isfield(BaseResults, 'SimulLoglin') && ~isempty(BaseResults.SimulLoglin)
-    has_loglin_simul = true;
-    n = params.n_sectors;
-    idx = get_variable_indices(n);
-    Cagg_ss = BaseResults.Cagg_ss;
-    Lagg_ss = BaseResults.Lagg_ss;
+n = params.n_sectors;
+idx = get_variable_indices(n);
+
+%% ===== FIRST-ORDER (Linear) Simulation =====
+if isfield(BaseResults, 'SimulFirstOrder') && ~isempty(BaseResults.SimulFirstOrder)
+    has_1storder_simul = true;
+    simul = BaseResults.SimulFirstOrder;  % n_vars × T (log deviations from SS)
     
-    ModelData_simulation.Loglin.full_simul = BaseResults.SimulLoglin;
-    ModelData_simulation.Loglin.shocks = BaseResults.SolData.shockssim;
-    ModelData_simulation.Loglin.variable_indices = idx;
+    % === ModelData_simulation: Full time series only ===
+    ModelData_simulation.FirstOrder.full_simul = simul;
+    ModelData_simulation.FirstOrder.shocks = BaseResults.SolData.shockssim;
+    ModelData_simulation.FirstOrder.variable_indices = idx;
     
-    Cagg_loglin = exp(BaseResults.SimulLoglin(idx.cagg, :));
-    Lagg_loglin = exp(BaseResults.SimulLoglin(idx.lagg, :));
-    Yagg_loglin = exp(BaseResults.SimulLoglin(idx.yagg, :));
-    Iagg_loglin = exp(BaseResults.SimulLoglin(idx.iagg, :));
-    Magg_loglin = exp(BaseResults.SimulLoglin(idx.magg, :));
+    % === ModelData.Statistics: Summary statistics ===
+    % States: [k; a] (indices 1:2n)
+    states_simul = simul(1:idx.n_states, :);
+    % Policies: remaining variables (indices 2n+1:end)
+    policies_simul = simul(idx.n_states+1:end, :);
     
-    ModelData_simulation.Loglin.Cagg = Cagg_loglin;
-    ModelData_simulation.Loglin.Lagg = Lagg_loglin;
-    ModelData_simulation.Loglin.Yagg = Yagg_loglin;
-    ModelData_simulation.Loglin.Iagg = Iagg_loglin;
-    ModelData_simulation.Loglin.Magg = Magg_loglin;
+    ModelData.Statistics.FirstOrder.states_mean = mean(states_simul, 2);
+    ModelData.Statistics.FirstOrder.states_std = std(states_simul, 0, 2);
+    ModelData.Statistics.FirstOrder.policies_mean = mean(policies_simul, 2);
+    ModelData.Statistics.FirstOrder.policies_std = std(policies_simul, 0, 2);
     
-    ModelData_simulation.Loglin.Cagg_volatility = std(Cagg_loglin)/Cagg_ss;
-    ModelData_simulation.Loglin.Lagg_volatility = std(Lagg_loglin)/Lagg_ss;
-    
-    % Also store volatilities in ModelData.Statistics for quick access
-    ModelData.Statistics.Loglin.Cagg_volatility = ModelData_simulation.Loglin.Cagg_volatility;
-    ModelData.Statistics.Loglin.Lagg_volatility = ModelData_simulation.Loglin.Lagg_volatility;
-    
-    fprintf('\n  Log-Linear Simulation:\n');
-    fprintf('    Size: %d variables × %d periods\n', ...
-        size(BaseResults.SimulLoglin, 1), size(BaseResults.SimulLoglin, 2));
-    fprintf('    Cagg volatility: %.6f\n', ModelData_simulation.Loglin.Cagg_volatility);
-    fprintf('    Lagg volatility: %.6f\n', ModelData_simulation.Loglin.Lagg_volatility);
-    
-    % Store simulation-based model statistics (for sectoral averages)
+    % Business cycle statistics (detailed)
     if isfield(BaseResults, 'ModelStats')
-        model_stats = BaseResults.ModelStats;
-        ModelData_simulation.Loglin.ModelStats = model_stats;
-        ModelData.Statistics.Loglin.ModelStats = model_stats;
+        ModelData.Statistics.FirstOrder.ModelStats = BaseResults.ModelStats;
     end
+    
+    fprintf('\n  First-Order (Linear) Simulation:\n');
+    fprintf('    Size: %d variables × %d periods\n', size(simul, 1), size(simul, 2));
+    fprintf('    States:   mean=%.2e, std=%.4f (avg)\n', ...
+        mean(abs(ModelData.Statistics.FirstOrder.states_mean)), ...
+        mean(ModelData.Statistics.FirstOrder.states_std));
+    fprintf('    Policies: mean=%.2e, std=%.4f (avg)\n', ...
+        mean(abs(ModelData.Statistics.FirstOrder.policies_mean)), ...
+        mean(ModelData.Statistics.FirstOrder.policies_std));
 end
 
-% Second-order simulation (if available)
-if isfield(BaseResults, 'Simul2ndOrder') && ~isempty(BaseResults.Simul2ndOrder)
+%% ===== SECOND-ORDER (Quadratic) Simulation =====
+if isfield(BaseResults, 'SimulSecondOrder') && ~isempty(BaseResults.SimulSecondOrder)
     has_2ndorder_simul = true;
-    n = params.n_sectors;
-    idx = get_variable_indices(n);
-    Cagg_ss = BaseResults.Cagg_ss;
-    Lagg_ss = BaseResults.Lagg_ss;
-    Yagg_ss = ModData.Yagg_ss;
-    Iagg_ss = ModData.Iagg_ss;
-    Magg_ss = ModData.Magg_ss;
+    simul = BaseResults.SimulSecondOrder;  % n_vars × T (log deviations from SS)
     
-    ModelData_simulation.SecondOrder.full_simul = BaseResults.Simul2ndOrder;
+    % === ModelData_simulation: Full time series only ===
+    ModelData_simulation.SecondOrder.full_simul = simul;
     if isfield(BaseResults, 'shockssim_2nd')
         ModelData_simulation.SecondOrder.shocks = BaseResults.shockssim_2nd;
     end
     ModelData_simulation.SecondOrder.variable_indices = idx;
     
-    Cagg_2nd = exp(BaseResults.Simul2ndOrder(idx.cagg, :));
-    Lagg_2nd = exp(BaseResults.Simul2ndOrder(idx.lagg, :));
-    Yagg_2nd = exp(BaseResults.Simul2ndOrder(idx.yagg, :));
-    Iagg_2nd = exp(BaseResults.Simul2ndOrder(idx.iagg, :));
-    Magg_2nd = exp(BaseResults.Simul2ndOrder(idx.magg, :));
+    % === ModelData.Statistics: Summary statistics ===
+    states_simul = simul(1:idx.n_states, :);
+    policies_simul = simul(idx.n_states+1:end, :);
     
-    ModelData_simulation.SecondOrder.Cagg = Cagg_2nd;
-    ModelData_simulation.SecondOrder.Lagg = Lagg_2nd;
-    ModelData_simulation.SecondOrder.Yagg = Yagg_2nd;
-    ModelData_simulation.SecondOrder.Iagg = Iagg_2nd;
-    ModelData_simulation.SecondOrder.Magg = Magg_2nd;
+    ModelData.Statistics.SecondOrder.states_mean = mean(states_simul, 2);
+    ModelData.Statistics.SecondOrder.states_std = std(states_simul, 0, 2);
+    ModelData.Statistics.SecondOrder.policies_mean = mean(policies_simul, 2);
+    ModelData.Statistics.SecondOrder.policies_std = std(policies_simul, 0, 2);
     
-    ModelData_simulation.SecondOrder.Cagg_volatility = std(Cagg_2nd)/Cagg_ss;
-    ModelData_simulation.SecondOrder.Lagg_volatility = std(Lagg_2nd)/Lagg_ss;
-    
-    % Mean log deviations from SS (key for precautionary effects)
-    ModelData_simulation.SecondOrder.Cagg_mean_logdev = mean(log(Cagg_2nd)) - log(Cagg_ss);
-    ModelData_simulation.SecondOrder.Yagg_mean_logdev = mean(log(Yagg_2nd)) - log(Yagg_ss);
-    ModelData_simulation.SecondOrder.Lagg_mean_logdev = mean(log(Lagg_2nd)) - log(Lagg_ss);
-    ModelData_simulation.SecondOrder.Iagg_mean_logdev = mean(log(Iagg_2nd)) - log(Iagg_ss);
-    ModelData_simulation.SecondOrder.Magg_mean_logdev = mean(log(Magg_2nd)) - log(Magg_ss);
-    
-    % Also store volatilities in ModelData.Statistics for quick access
-    ModelData.Statistics.SecondOrder.Cagg_volatility = ModelData_simulation.SecondOrder.Cagg_volatility;
-    ModelData.Statistics.SecondOrder.Lagg_volatility = ModelData_simulation.SecondOrder.Lagg_volatility;
-    ModelData.Statistics.SecondOrder.Cagg_mean_logdev = ModelData_simulation.SecondOrder.Cagg_mean_logdev;
-    ModelData.Statistics.SecondOrder.Yagg_mean_logdev = ModelData_simulation.SecondOrder.Yagg_mean_logdev;
-    ModelData.Statistics.SecondOrder.Lagg_mean_logdev = ModelData_simulation.SecondOrder.Lagg_mean_logdev;
-    ModelData.Statistics.SecondOrder.Iagg_mean_logdev = ModelData_simulation.SecondOrder.Iagg_mean_logdev;
-    ModelData.Statistics.SecondOrder.Magg_mean_logdev = ModelData_simulation.SecondOrder.Magg_mean_logdev;
-    
-    fprintf('\n  Second-Order Simulation:\n');
-    fprintf('    Size: %d variables × %d periods\n', ...
-        size(BaseResults.Simul2ndOrder, 1), size(BaseResults.Simul2ndOrder, 2));
-    fprintf('    Cagg volatility: %.6f\n', ModelData_simulation.SecondOrder.Cagg_volatility);
-    fprintf('    Lagg volatility: %.6f\n', ModelData_simulation.SecondOrder.Lagg_volatility);
-    
-    % Store simulation-based model statistics (for sectoral averages)
+    % Business cycle statistics (detailed)
     if isfield(BaseResults, 'ModelStats2nd')
-        model_stats_2nd = BaseResults.ModelStats2nd;
-        ModelData_simulation.SecondOrder.ModelStats = model_stats_2nd;
-        ModelData.Statistics.SecondOrder.ModelStats = model_stats_2nd;
+        ModelData.Statistics.SecondOrder.ModelStats = BaseResults.ModelStats2nd;
+    end
+    
+    fprintf('\n  Second-Order (Quadratic) Simulation:\n');
+    fprintf('    Size: %d variables × %d periods\n', size(simul, 1), size(simul, 2));
+    fprintf('    States:   mean=%.4f, std=%.4f (avg)\n', ...
+        mean(ModelData.Statistics.SecondOrder.states_mean), ...
+        mean(ModelData.Statistics.SecondOrder.states_std));
+    fprintf('    Policies: mean=%.4f, std=%.4f (avg)\n', ...
+        mean(ModelData.Statistics.SecondOrder.policies_mean), ...
+        mean(ModelData.Statistics.SecondOrder.policies_std));
+    
+    % Compare means to first-order (precautionary effects)
+    if has_1storder_simul
+        mean_diff_states = ModelData.Statistics.SecondOrder.states_mean - ...
+                           ModelData.Statistics.FirstOrder.states_mean;
+        mean_diff_policies = ModelData.Statistics.SecondOrder.policies_mean - ...
+                             ModelData.Statistics.FirstOrder.policies_mean;
+        fprintf('    Precautionary shift: states=%.4f, policies=%.4f (avg mean diff)\n', ...
+            mean(mean_diff_states), mean(mean_diff_policies));
     end
 end
 
@@ -606,137 +588,59 @@ if isfield(BaseResults, 'rng_state')
     ModelData_simulation.rng_state = BaseResults.rng_state;
 end
 
-% Deterministic simulation (if available)
-if isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm)
-    has_determ_simul = true;
-    n = params.n_sectors;
-    idx = get_variable_indices(n);
-    Cagg_ss = BaseResults.Cagg_ss;
-    Lagg_ss = BaseResults.Lagg_ss;
-    Yagg_ss = ModData.Yagg_ss;
-    Iagg_ss = ModData.Iagg_ss;
-    Magg_ss = ModData.Magg_ss;
+%% ===== PERFECT FORESIGHT (Nonlinear) Simulation =====
+if isfield(BaseResults, 'SimulPerfectForesight') && ~isempty(BaseResults.SimulPerfectForesight)
+    has_pf_simul = true;
+    simul = BaseResults.SimulPerfectForesight;  % n_vars × T (log deviations from SS)
     
-    ModelData_simulation.Determ.full_simul = BaseResults.SimulDeterm;
+    % === ModelData_simulation: Full time series only ===
+    ModelData_simulation.PerfectForesight.full_simul = simul;
     if isfield(BaseResults, 'shockssim_determ')
-        ModelData_simulation.Determ.shocks = BaseResults.shockssim_determ;
+        ModelData_simulation.PerfectForesight.shocks = BaseResults.shockssim_determ;
     end
+    ModelData_simulation.PerfectForesight.variable_indices = idx;
     
-    Cagg_determ = exp(BaseResults.SimulDeterm(idx.cagg, :));
-    Lagg_determ = exp(BaseResults.SimulDeterm(idx.lagg, :));
-    Yagg_determ = exp(BaseResults.SimulDeterm(idx.yagg, :));
-    Iagg_determ = exp(BaseResults.SimulDeterm(idx.iagg, :));
-    Magg_determ = exp(BaseResults.SimulDeterm(idx.magg, :));
+    % === ModelData.Statistics: Summary statistics ===
+    states_simul = simul(1:idx.n_states, :);
+    policies_simul = simul(idx.n_states+1:end, :);
     
-    ModelData_simulation.Determ.Cagg = Cagg_determ;
-    ModelData_simulation.Determ.Lagg = Lagg_determ;
-    ModelData_simulation.Determ.Yagg = Yagg_determ;
-    ModelData_simulation.Determ.Iagg = Iagg_determ;
-    ModelData_simulation.Determ.Magg = Magg_determ;
-    % Compute log deviations for all aggregates (used for all stats)
-    Cagg_logdev = log(Cagg_determ) - log(Cagg_ss);
-    Lagg_logdev = log(Lagg_determ) - log(Lagg_ss);
-    Yagg_logdev = log(Yagg_determ) - log(Yagg_ss);
-    Iagg_logdev = log(Iagg_determ) - log(Iagg_ss);
-    Magg_logdev = log(Magg_determ) - log(Magg_ss);
+    ModelData.Statistics.PerfectForesight.states_mean = mean(states_simul, 2);
+    ModelData.Statistics.PerfectForesight.states_std = std(states_simul, 0, 2);
+    ModelData.Statistics.PerfectForesight.policies_mean = mean(policies_simul, 2);
+    ModelData.Statistics.PerfectForesight.policies_std = std(policies_simul, 0, 2);
     
-    % Volatilities (std of log deviations)
-    ModelData_simulation.Determ.Cagg_volatility = std(Cagg_logdev);
-    ModelData_simulation.Determ.Lagg_volatility = std(Lagg_logdev);
-    ModelData_simulation.Determ.Yagg_volatility = std(Yagg_logdev);
-    ModelData_simulation.Determ.Iagg_volatility = std(Iagg_logdev);
-    ModelData_simulation.Determ.Magg_volatility = std(Magg_logdev);
+    fprintf('\n  Perfect Foresight (Nonlinear) Simulation:\n');
+    fprintf('    Size: %d variables × %d periods\n', size(simul, 1), size(simul, 2));
+    fprintf('    States:   mean=%.4f, std=%.4f (avg)\n', ...
+        mean(ModelData.Statistics.PerfectForesight.states_mean), ...
+        mean(ModelData.Statistics.PerfectForesight.states_std));
+    fprintf('    Policies: mean=%.4f, std=%.4f (avg)\n', ...
+        mean(ModelData.Statistics.PerfectForesight.policies_mean), ...
+        mean(ModelData.Statistics.PerfectForesight.policies_std));
     
-    % Mean log deviations from SS (key for precautionary effects)
-    ModelData_simulation.Determ.Cagg_mean_logdev = mean(Cagg_logdev);
-    ModelData_simulation.Determ.Yagg_mean_logdev = mean(Yagg_logdev);
-    ModelData_simulation.Determ.Lagg_mean_logdev = mean(Lagg_logdev);
-    ModelData_simulation.Determ.Iagg_mean_logdev = mean(Iagg_logdev);
-    ModelData_simulation.Determ.Magg_mean_logdev = mean(Magg_logdev);
-    
-    % Skewness of log deviations
-    ModelData_simulation.Determ.Cagg_skewness = skewness(Cagg_logdev);
-    ModelData_simulation.Determ.Lagg_skewness = skewness(Lagg_logdev);
-    ModelData_simulation.Determ.Yagg_skewness = skewness(Yagg_logdev);
-    ModelData_simulation.Determ.Iagg_skewness = skewness(Iagg_logdev);
-    ModelData_simulation.Determ.Magg_skewness = skewness(Magg_logdev);
-    
-    % Excess kurtosis of log deviations (MATLAB kurtosis() returns regular kurtosis, subtract 3)
-    ModelData_simulation.Determ.Cagg_kurtosis = kurtosis(Cagg_logdev) - 3;
-    ModelData_simulation.Determ.Lagg_kurtosis = kurtosis(Lagg_logdev) - 3;
-    ModelData_simulation.Determ.Yagg_kurtosis = kurtosis(Yagg_logdev) - 3;
-    ModelData_simulation.Determ.Iagg_kurtosis = kurtosis(Iagg_logdev) - 3;
-    ModelData_simulation.Determ.Magg_kurtosis = kurtosis(Magg_logdev) - 3;
-    
-    % Store all statistics in ModelData.Statistics.Determ for quick access
-    % Volatilities
-    ModelData.Statistics.Determ.Cagg_volatility = ModelData_simulation.Determ.Cagg_volatility;
-    ModelData.Statistics.Determ.Lagg_volatility = ModelData_simulation.Determ.Lagg_volatility;
-    ModelData.Statistics.Determ.Yagg_volatility = ModelData_simulation.Determ.Yagg_volatility;
-    ModelData.Statistics.Determ.Iagg_volatility = ModelData_simulation.Determ.Iagg_volatility;
-    ModelData.Statistics.Determ.Magg_volatility = ModelData_simulation.Determ.Magg_volatility;
-    % Mean log deviations
-    ModelData.Statistics.Determ.Cagg_mean_logdev = ModelData_simulation.Determ.Cagg_mean_logdev;
-    ModelData.Statistics.Determ.Yagg_mean_logdev = ModelData_simulation.Determ.Yagg_mean_logdev;
-    ModelData.Statistics.Determ.Lagg_mean_logdev = ModelData_simulation.Determ.Lagg_mean_logdev;
-    ModelData.Statistics.Determ.Iagg_mean_logdev = ModelData_simulation.Determ.Iagg_mean_logdev;
-    ModelData.Statistics.Determ.Magg_mean_logdev = ModelData_simulation.Determ.Magg_mean_logdev;
-    % Skewness
-    ModelData.Statistics.Determ.Cagg_skewness = ModelData_simulation.Determ.Cagg_skewness;
-    ModelData.Statistics.Determ.Lagg_skewness = ModelData_simulation.Determ.Lagg_skewness;
-    ModelData.Statistics.Determ.Yagg_skewness = ModelData_simulation.Determ.Yagg_skewness;
-    ModelData.Statistics.Determ.Iagg_skewness = ModelData_simulation.Determ.Iagg_skewness;
-    ModelData.Statistics.Determ.Magg_skewness = ModelData_simulation.Determ.Magg_skewness;
-    % Excess Kurtosis
-    ModelData.Statistics.Determ.Cagg_kurtosis = ModelData_simulation.Determ.Cagg_kurtosis;
-    ModelData.Statistics.Determ.Lagg_kurtosis = ModelData_simulation.Determ.Lagg_kurtosis;
-    ModelData.Statistics.Determ.Yagg_kurtosis = ModelData_simulation.Determ.Yagg_kurtosis;
-    ModelData.Statistics.Determ.Iagg_kurtosis = ModelData_simulation.Determ.Iagg_kurtosis;
-    ModelData.Statistics.Determ.Magg_kurtosis = ModelData_simulation.Determ.Magg_kurtosis;
-    
-    fprintf('\n  Deterministic (Perfect Foresight) Simulation:\n');
-    fprintf('    Size: %d variables × %d periods\n', ...
-        size(BaseResults.SimulDeterm, 1), size(BaseResults.SimulDeterm, 2));
-    fprintf('    ┌────────────────────────────────────────────────────────────────────┐\n');
-    fprintf('    │ Variable        Volatility    Mean logdev   Skewness   Ex.Kurtosis │\n');
-    fprintf('    ├────────────────────────────────────────────────────────────────────┤\n');
-    fprintf('    │ Cagg           %10.6f    %10.6f   %8.4f    %8.4f │\n', ...
-        ModelData_simulation.Determ.Cagg_volatility, ...
-        ModelData_simulation.Determ.Cagg_mean_logdev, ...
-        ModelData_simulation.Determ.Cagg_skewness, ...
-        ModelData_simulation.Determ.Cagg_kurtosis);
-    fprintf('    │ Lagg           %10.6f    %10.6f   %8.4f    %8.4f │\n', ...
-        ModelData_simulation.Determ.Lagg_volatility, ...
-        ModelData_simulation.Determ.Lagg_mean_logdev, ...
-        ModelData_simulation.Determ.Lagg_skewness, ...
-        ModelData_simulation.Determ.Lagg_kurtosis);
-    fprintf('    │ Yagg           %10.6f    %10.6f   %8.4f    %8.4f │\n', ...
-        ModelData_simulation.Determ.Yagg_volatility, ...
-        ModelData_simulation.Determ.Yagg_mean_logdev, ...
-        ModelData_simulation.Determ.Yagg_skewness, ...
-        ModelData_simulation.Determ.Yagg_kurtosis);
-    fprintf('    │ Iagg           %10.6f    %10.6f   %8.4f    %8.4f │\n', ...
-        ModelData_simulation.Determ.Iagg_volatility, ...
-        ModelData_simulation.Determ.Iagg_mean_logdev, ...
-        ModelData_simulation.Determ.Iagg_skewness, ...
-        ModelData_simulation.Determ.Iagg_kurtosis);
-    fprintf('    │ Magg           %10.6f    %10.6f   %8.4f    %8.4f │\n', ...
-        ModelData_simulation.Determ.Magg_volatility, ...
-        ModelData_simulation.Determ.Magg_mean_logdev, ...
-        ModelData_simulation.Determ.Magg_skewness, ...
-        ModelData_simulation.Determ.Magg_kurtosis);
-    fprintf('    └────────────────────────────────────────────────────────────────────┘\n');
-    
-    if has_loglin_simul
-        fprintf('\n  ┌─ Comparison: Log-Linear vs Perfect Foresight ───────────────────┐\n');
-        fprintf('  │                       Log-Linear     Perf.Foresight              │\n');
-        fprintf('  │  Cagg volatility:     %10.6f     %10.6f                │\n', ...
-            ModelData_simulation.Loglin.Cagg_volatility, ...
-            ModelData_simulation.Determ.Cagg_volatility);
-        fprintf('  │  Lagg volatility:     %10.6f     %10.6f                │\n', ...
-            ModelData_simulation.Loglin.Lagg_volatility, ...
-            ModelData_simulation.Determ.Lagg_volatility);
-        fprintf('  └────────────────────────────────────────────────────────────────────┘\n');
+    % Compare all three methods
+    if has_1storder_simul || has_2ndorder_simul
+        fprintf('\n    ── Comparison across methods (avg over all variables) ──\n');
+        fprintf('                         Mean(states)   Std(states)   Mean(pol)   Std(pol)\n');
+        if has_1storder_simul
+            fprintf('    First-Order:         %11.4f   %11.4f   %9.4f   %9.4f\n', ...
+                mean(ModelData.Statistics.FirstOrder.states_mean), ...
+                mean(ModelData.Statistics.FirstOrder.states_std), ...
+                mean(ModelData.Statistics.FirstOrder.policies_mean), ...
+                mean(ModelData.Statistics.FirstOrder.policies_std));
+        end
+        if has_2ndorder_simul
+            fprintf('    Second-Order:        %11.4f   %11.4f   %9.4f   %9.4f\n', ...
+                mean(ModelData.Statistics.SecondOrder.states_mean), ...
+                mean(ModelData.Statistics.SecondOrder.states_std), ...
+                mean(ModelData.Statistics.SecondOrder.policies_mean), ...
+                mean(ModelData.Statistics.SecondOrder.policies_std));
+        end
+        fprintf('    Perfect Foresight:   %11.4f   %11.4f   %9.4f   %9.4f\n', ...
+            mean(ModelData.Statistics.PerfectForesight.states_mean), ...
+            mean(ModelData.Statistics.PerfectForesight.states_std), ...
+            mean(ModelData.Statistics.PerfectForesight.policies_mean), ...
+            mean(ModelData.Statistics.PerfectForesight.policies_std));
     end
     
     %% Capital Preallocation Analysis (Perfect Foresight)
@@ -752,8 +656,8 @@ if isfield(BaseResults, 'SimulDeterm') && ~isempty(BaseResults.SimulDeterm)
     prealloc_opts.save_label = save_label;
     prealloc_opts.highlighted_sector = sector_indices(1);  % Mining/Oil/Gas (sector 1)
     
-    CapitalStats = analyze_capital_preallocation(BaseResults.SimulDeterm, params, prealloc_opts, ModData);
-    ModelData_simulation.Determ.CapitalStats = CapitalStats;
+    CapitalStats = analyze_capital_preallocation(BaseResults.SimulPerfectForesight, params, prealloc_opts, ModData);
+    ModelData_simulation.PerfectForesight.CapitalStats = CapitalStats;
 end
 
 %% Build ModelData_IRs structure (IRF data)
@@ -784,20 +688,45 @@ if run_any_irs && ~isempty(AllShockResults.IRFResults{1})
     fprintf('║                         IRF SUMMARY                                 ║\n');
     fprintf('╚════════════════════════════════════════════════════════════════════╝\n');
     fprintf('\n');
-    fprintf('  %-12s %6s %10s %10s %10s\n', 'Shock', 'A₀', 'Peak(LL)', 'Peak(NL)', 'Amplif');
-    fprintf('  %s\n', repmat('─', 1, 52));
-    for i = 1:n_shocks
-        irf_res = AllShockResults.IRFResults{i};
-        shock_cfg = config.shock_values(i);
-        A_level = exp(-shock_cfg.value);  % Initial TFP level
-        avg_peak_ll = mean(irf_res.Statistics.peak_values_loglin);
-        avg_peak_det = mean(irf_res.Statistics.peak_values_determ);
-        avg_amplif = mean(irf_res.Statistics.amplifications);
-        fprintf('  %-12s %6.2f %10.4f %10.4f %10.4f\n', ...
-            shock_cfg.label, A_level, avg_peak_ll, avg_peak_det, avg_amplif);
+    
+    % Check if second-order IRFs are available
+    has_2ndorder_irfs = isfield(AllShockResults.IRFResults{1}.Statistics, 'peak_values_secondorder') && ...
+        any(AllShockResults.IRFResults{1}.Statistics.peak_values_secondorder > 0);
+    
+    if has_2ndorder_irfs
+        fprintf('  %-12s %6s %10s %10s %10s %10s\n', 'Shock', 'A₀', 'Peak(1st)', 'Peak(2nd)', 'Peak(PF)', 'Amplif(PF)');
+        fprintf('  %s\n', repmat('─', 1, 66));
+        for i = 1:n_shocks
+            irf_res = AllShockResults.IRFResults{i};
+            shock_cfg = config.shock_values(i);
+            A_level = exp(-shock_cfg.value);  % Initial TFP level
+            avg_peak_1st = mean(irf_res.Statistics.peak_values_firstorder);
+            avg_peak_2nd = mean(irf_res.Statistics.peak_values_secondorder);
+            avg_peak_pf = mean(irf_res.Statistics.peak_values_pf);
+            avg_amplif_rel = mean(irf_res.Statistics.amplifications_rel);
+            fprintf('  %-12s %6.2f %10.4f %10.4f %10.4f %9.1f%%\n', ...
+                shock_cfg.label, A_level, avg_peak_1st, avg_peak_2nd, avg_peak_pf, avg_amplif_rel);
+        end
+        fprintf('  %s\n', repmat('─', 1, 66));
+        fprintf('  1st = First-Order, 2nd = Second-Order, PF = Perfect Foresight\n');
+        fprintf('  Peak = |max consumption deviation|, Amplif = (PF/1st - 1) × 100\n');
+    else
+        fprintf('  %-12s %6s %10s %10s %10s\n', 'Shock', 'A₀', 'Peak(1st)', 'Peak(PF)', 'Amplif');
+        fprintf('  %s\n', repmat('─', 1, 52));
+        for i = 1:n_shocks
+            irf_res = AllShockResults.IRFResults{i};
+            shock_cfg = config.shock_values(i);
+            A_level = exp(-shock_cfg.value);  % Initial TFP level
+            avg_peak_1st = mean(irf_res.Statistics.peak_values_firstorder);
+            avg_peak_pf = mean(irf_res.Statistics.peak_values_pf);
+            avg_amplif_rel = mean(irf_res.Statistics.amplifications_rel);
+            fprintf('  %-12s %6.2f %10.4f %10.4f %9.1f%%\n', ...
+                shock_cfg.label, A_level, avg_peak_1st, avg_peak_pf, avg_amplif_rel);
+        end
+        fprintf('  %s\n', repmat('─', 1, 52));
+        fprintf('  1st = First-Order, PF = Perfect Foresight\n');
+        fprintf('  Peak = |max consumption deviation|, Amplif = (PF/1st - 1) × 100\n');
     end
-    fprintf('  %s\n', repmat('─', 1, 52));
-    fprintf('  Note: Peak = |max consumption deviation|, Amplif = Peak(NL) - Peak(LL)\n');
 end
 
 %% Save results
@@ -813,7 +742,7 @@ if config.save_results
     fprintf('\n  ✓ ModelData saved: %s\n', filename_model);
     
     % Save ModelData_simulation (full simulations - heavy)
-    if has_loglin_simul || has_2ndorder_simul || has_determ_simul
+    if has_1storder_simul || has_2ndorder_simul || has_pf_simul
         filename_simul = fullfile(exp_paths.experiment, 'ModelData_simulation.mat');
         save(filename_simul, 'ModelData_simulation');
         fprintf('  ✓ ModelData_simulation saved: %s\n', filename_simul);
@@ -830,10 +759,10 @@ else
 end
 
 %% Nonlinearity and Preallocation Diagnostics
-if has_loglin_simul || has_2ndorder_simul || has_determ_simul || has_irfs
+if has_1storder_simul || has_2ndorder_simul || has_pf_simul || has_irfs
     Diagnostics = print_nonlinearity_diagnostics(ModelData_simulation, AllShockResults, params, config, ModData);
     ModelData.Diagnostics = Diagnostics;
 end
 
 %% Summary Table (concise, copy-pasteable)
-print_summary_table(config, params, calib_data, BaseResults, AllShockResults, ModelData, has_loglin_simul, has_2ndorder_simul, has_determ_simul, has_irfs, n_shocks, save_label);
+print_summary_table(config, params, calib_data, BaseResults, AllShockResults, ModelData, has_1storder_simul, has_2ndorder_simul, has_pf_simul, has_irfs, n_shocks, save_label);

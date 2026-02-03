@@ -230,11 +230,11 @@ end
 
 function labels = get_default_legend_labels(n_series)
     if n_series == 1
-        labels = {'Nonlinear'};
+        labels = {'Perfect Foresight'};
     elseif n_series == 2
-        labels = {'Nonlinear', 'Log-linear'};
+        labels = {'Perfect Foresight', 'First-Order'};
     else
-        labels = {'Nonlinear', 'Log-linear', 'Cobb-Douglas'};
+        labels = {'Perfect Foresight', 'First-Order', 'Second-Order'};
     end
 end
 

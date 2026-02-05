@@ -30,4 +30,4 @@ end;
 
 perfect_foresight_setup(periods=198);
 oo_.exo_simul=shockssim_ir;
-perfect_foresight_solver(tolf=1e-3);
+perfect_foresight_solver(endogenous_terminal_period, tolf=1e-3);

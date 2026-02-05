@@ -76,6 +76,6 @@ end;
 // If changing burn_in/burn_out/simul_T_pf in main.m, update this!
 perfect_foresight_setup(periods=698);
 oo_.exo_simul = shockssim_determ;
-perfect_foresight_solver(tolf=1e-3);
+perfect_foresight_solver(endogenous_terminal_period, tolf=1e-3);
 
 

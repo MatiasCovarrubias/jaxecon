@@ -97,7 +97,7 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         )
         params = restored_state["params"]
         opt_state = restored_state["opt_state"]
-        restored_step = restored_state["step"]
+        restored_step = int(restored_state["step"])  # Convert to Python int (TrainState expects int, not JAX array)
 
         train_state_obj = TrainState.create(apply_fn=neural_net.apply, params=params, tx=optax.adam(lr_schedule))
         train_state_obj = train_state_obj.replace(opt_state=opt_state, step=restored_step)

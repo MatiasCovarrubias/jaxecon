@@ -85,7 +85,11 @@ config.plot_irs = true;            % Plot IRF figures (set false for batch runs)
 % --- Simulation settings ---
 config.simul_T_firstorder = 2500;   % First-order (linear) simulation length (fast)
 config.simul_T_secondorder = 2500;  % Second-order (quadratic) simulation length (fast)
-config.simul_T_pf = 500;            % Perfect foresight simulation length (slower)
+config.simul_T_pf = 500;            % Perfect foresight simulation: periods WITH shocks
+config.pf_burn_in = 100;            % Burn-in periods (no shocks) before active simulation
+config.pf_burn_out = 100;           % Burn-out periods (no shocks) after active simulation
+% Total PF simulation = burn_in + simul_T_pf + burn_out = 700 periods
+% Burn periods help convergence by letting model smoothly transition from/to SS
 
 % --- Shock values configuration ---
 % Shock convention: IRshock is defined such that the TFP deviation is -IRshock.
@@ -172,11 +176,19 @@ fprintf('\n  Empirical Targets (HP-filtered, λ=%d, %s aggregation):\n', ...
     emp_tgt.hp_lambda, emp_tgt.aggregation_method);
 fprintf('    ── Aggregate volatilities ──\n');
 fprintf('    σ(Y_agg):         %.4f   (aggregate GDP, Törnqvist)\n', emp_tgt.sigma_VA_agg);
+if ~isnan(emp_tgt.sigma_C_agg)
+    fprintf('    σ(C_agg):         %.4f   (aggregate consumption, NIPA PCE)\n', emp_tgt.sigma_C_agg);
+else
+    fprintf('    σ(C_agg):         N/A     (Real GDP Components.xls not found)\n');
+end
 fprintf('    σ(L_agg):         %.4f   (aggregate labor, simple sum)\n', emp_tgt.sigma_L_agg);
 fprintf('    σ(I_agg):         %.4f   (aggregate investment, Törnqvist)\n', emp_tgt.sigma_I_agg);
-fprintf('    ── Average sectoral volatilities ──\n');
+fprintf('    ── Average sectoral volatilities (VA-weighted) ──\n');
 fprintf('    σ(L) avg:         %.4f   (VA-weighted avg of sectoral labor vol)\n', emp_tgt.sigma_L_avg);
 fprintf('    σ(I) avg:         %.4f   (VA-weighted avg of sectoral investment vol)\n', emp_tgt.sigma_I_avg);
+fprintf('    ── Average sectoral volatilities (own-variable weighted) ──\n');
+fprintf('    σ(L) emp-wgt:     %.4f   (employment-weighted avg of sectoral labor vol)\n', emp_tgt.sigma_L_avg_empweighted);
+fprintf('    σ(I) inv-wgt:     %.4f   (investment-weighted avg of sectoral investment vol)\n', emp_tgt.sigma_I_avg_invweighted);
 
 %% Steady State Calibration
 fprintf('\n');
@@ -255,6 +267,8 @@ if config.run_firstorder_simul || config.run_secondorder_simul || config.run_pf_
     dynare_opts_base.simul_T_firstorder = config.simul_T_firstorder;
     dynare_opts_base.simul_T_secondorder = config.simul_T_secondorder;
     dynare_opts_base.simul_T_pf = config.simul_T_pf;
+    dynare_opts_base.pf_burn_in = config.pf_burn_in;
+    dynare_opts_base.pf_burn_out = config.pf_burn_out;
     dynare_opts_base.model_type = config.model_type;
     
     params.IRshock = config.shock_values(1).value;
@@ -272,7 +286,9 @@ if config.run_firstorder_simul || config.run_secondorder_simul || config.run_pf_
         fprintf('  │    • Second-order (quadratic):OFF                            │\n');
     end
     if config.run_pf_simul
-        fprintf('  │    • Perfect foresight (NL):  ON  (T = %d)                  │\n', config.simul_T_pf);
+        pf_total = config.pf_burn_in + config.simul_T_pf + config.pf_burn_out;
+        fprintf('  │    • Perfect foresight (NL):  ON  (T_active=%d, T_total=%d) │\n', config.simul_T_pf, pf_total);
+        fprintf('  │      Burn-in: %d, Burn-out: %d (no shocks at boundaries)  │\n', config.pf_burn_in, config.pf_burn_out);
     else
         fprintf('  │    • Perfect foresight (NL):  OFF                            │\n');
     end
@@ -561,6 +577,14 @@ if isfield(BaseResults, 'TheoStats') && ~isempty(fieldnames(BaseResults.TheoStat
     fprintf('  │  σ(Y_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
         theo_stats.sigma_VA_agg, emp_tgt.sigma_VA_agg, ...
         theo_stats.sigma_VA_agg / emp_tgt.sigma_VA_agg);
+    if isfield(theo_stats, 'sigma_C_agg') && ~isnan(emp_tgt.sigma_C_agg)
+        fprintf('  │  σ(C_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
+            theo_stats.sigma_C_agg, emp_tgt.sigma_C_agg, ...
+            theo_stats.sigma_C_agg / emp_tgt.sigma_C_agg);
+    elseif ~isnan(emp_tgt.sigma_C_agg)
+        fprintf('  │  σ(C_agg):                           N/A      %6.4f      N/A │\n', ...
+            emp_tgt.sigma_C_agg);
+    end
     fprintf('  │  σ(I_agg):                        %6.4f      %6.4f    %5.2f │\n', ...
         theo_stats.sigma_I_agg, emp_tgt.sigma_I_agg, ...
         theo_stats.sigma_I_agg / emp_tgt.sigma_I_agg);
@@ -572,13 +596,18 @@ if isfield(BaseResults, 'TheoStats') && ~isempty(fieldnames(BaseResults.TheoStat
         fprintf('  │  σ(L_hc):                         %6.4f      %6.4f    %5.2f │\n', ...
             model_stats.sigma_L_hc_agg, emp_tgt.sigma_L_agg, ...
             model_stats.sigma_L_hc_agg / emp_tgt.sigma_L_agg);
-        fprintf('  │  ── Average sectoral volatilities (from simulation) ────────── │\n');
+        fprintf('  │  ── Average sectoral volatilities (VA-weighted, from simul) ──  │\n');
         fprintf('  │  σ(L) avg:                        %6.4f      %6.4f    %5.2f │\n', ...
             model_stats.sigma_L_avg, emp_tgt.sigma_L_avg, ...
             model_stats.sigma_L_avg / emp_tgt.sigma_L_avg);
         fprintf('  │  σ(I) avg:                        %6.4f      %6.4f    %5.2f │\n', ...
             model_stats.sigma_I_avg, emp_tgt.sigma_I_avg, ...
             model_stats.sigma_I_avg / emp_tgt.sigma_I_avg);
+        fprintf('  │  ── Sectoral volatilities (own-variable weighted, data only) ── │\n');
+        fprintf('  │  σ(L) emp-wgt:                       N/A      %6.4f      N/A │\n', ...
+            emp_tgt.sigma_L_avg_empweighted);
+        fprintf('  │  σ(I) inv-wgt:                       N/A      %6.4f      N/A │\n', ...
+            emp_tgt.sigma_I_avg_invweighted);
     end
     fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
@@ -591,14 +620,28 @@ end
 %% ===== PERFECT FORESIGHT (Nonlinear) Simulation =====
 if isfield(BaseResults, 'SimulPerfectForesight') && ~isempty(BaseResults.SimulPerfectForesight)
     has_pf_simul = true;
-    simul = BaseResults.SimulPerfectForesight;  % n_vars × T (log deviations from SS)
+    simul = BaseResults.SimulPerfectForesight;  % n_vars × T_active (log deviations from SS)
     
     % === ModelData_simulation: Full time series only ===
-    ModelData_simulation.PerfectForesight.full_simul = simul;
-    if isfield(BaseResults, 'shockssim_determ')
-        ModelData_simulation.PerfectForesight.shocks = BaseResults.shockssim_determ;
+    ModelData_simulation.PerfectForesight.full_simul = simul;  % Active periods only
+    if isfield(BaseResults, 'shockssim_pf')
+        ModelData_simulation.PerfectForesight.shocks = BaseResults.shockssim_pf;  % Active shocks
     end
     ModelData_simulation.PerfectForesight.variable_indices = idx;
+    
+    % Store burn period metadata
+    if isfield(BaseResults, 'pf_burn_in')
+        ModelData_simulation.PerfectForesight.burn_in = BaseResults.pf_burn_in;
+        ModelData_simulation.PerfectForesight.burn_out = BaseResults.pf_burn_out;
+        ModelData_simulation.PerfectForesight.T_active = BaseResults.pf_T_active;
+        ModelData_simulation.PerfectForesight.T_total = BaseResults.pf_T_total;
+    end
+    
+    % Optionally store full simulation including burn periods
+    if isfield(BaseResults, 'SimulPerfectForesight_full')
+        ModelData_simulation.PerfectForesight.full_simul_with_burn = BaseResults.SimulPerfectForesight_full;
+        ModelData_simulation.PerfectForesight.shocks_with_burn = BaseResults.shockssim_pf_full;
+    end
     
     % === ModelData.Statistics: Summary statistics ===
     states_simul = simul(1:idx.n_states, :);
@@ -610,6 +653,10 @@ if isfield(BaseResults, 'SimulPerfectForesight') && ~isempty(BaseResults.SimulPe
     ModelData.Statistics.PerfectForesight.policies_std = std(policies_simul, 0, 2);
     
     fprintf('\n  Perfect Foresight (Nonlinear) Simulation:\n');
+    if isfield(BaseResults, 'pf_burn_in')
+        fprintf('    Active periods: %d (burn-in: %d, burn-out: %d, total: %d)\n', ...
+            BaseResults.pf_T_active, BaseResults.pf_burn_in, BaseResults.pf_burn_out, BaseResults.pf_T_total);
+    end
     fprintf('    Size: %d variables × %d periods\n', size(simul, 1), size(simul, 2));
     fprintf('    States:   mean=%.4f, std=%.4f (avg)\n', ...
         mean(ModelData.Statistics.PerfectForesight.states_mean), ...

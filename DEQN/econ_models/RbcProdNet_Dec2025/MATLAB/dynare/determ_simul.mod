@@ -1,5 +1,20 @@
 // Deterministic simulation of matrix shocksim shocks.
-// Requires: shockssim_determ (simul_periods x n_sectors), simul_periods
+// Requires: shockssim_determ (T_total x n_sectors)
+//
+// BURN-IN/BURN-OUT APPROACH:
+// - Total periods = burn_in + T_active + burn_out = 100 + 500 + 100 = 700
+// - Burn-in/burn-out periods have ZERO shocks (smooth transition from/to SS)
+// - Active shocks placed in middle period (rows burn_in+2 to burn_in+1+T_active)
+// - This helps convergence for longer simulations by relaxing boundary constraints
+//
+// Shock matrix structure (T_total=700 rows):
+//   Row 1: initial period (t=0), zero shock
+//   Rows 2-101: burn-in (t=1 to 100), zero shocks
+//   Rows 102-601: active (t=101 to 600), random shocks
+//   Rows 602-699: burn-out (t=601 to 698), zero shocks
+//   Row 700: terminal period (t=699), zero shock
+//
+// Dynare periods = T_total - 2 = 700 - 2 = 698
 @#include "model_config.mod"
 @#include "ProdNetRbc_base.mod"
 
@@ -56,10 +71,10 @@ magg = policies_ss(11*parn_sectors+5);
         
 end;
 
-// shockssim_determ must be (500 x n_sectors) 
-// Row 1: initial period, Rows 2:499: simulation, Row 500: terminal
-// periods = simul_T_determ - 2 = 500 - 2 = 498
-perfect_foresight_setup(periods=498);
+// periods = T_total - 2 = 700 - 2 = 698
+// IMPORTANT: Must hardcode this value (Dynare macro limitation)
+// If changing burn_in/burn_out/simul_T_pf in main.m, update this!
+perfect_foresight_setup(periods=698);
 oo_.exo_simul = shockssim_determ;
 perfect_foresight_solver(tolf=1e-3);
 

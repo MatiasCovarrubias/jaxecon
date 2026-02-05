@@ -44,8 +44,14 @@ function [Results] = run_dynare_analysis(ModData, params, opts)
 %              - ir_horizon: Horizon for IR calculation (default: 200)
 %              - simul_T_firstorder: First-order simulation length (default: 10000)
 %              - simul_T_secondorder: Second-order simulation length (default: 10000)
-%              - simul_T_pf: Perfect foresight simulation length (default: 1000)
+%              - simul_T_pf: Perfect foresight simulation length (active periods with shocks, default: 500)
+%              - pf_burn_in: Burn-in periods with no shocks before active simulation (default: 100)
+%              - pf_burn_out: Burn-out periods with no shocks after active simulation (default: 100)
 %              - rng_seed: RNG seed for reproducibility (default: [] = current state)
+%
+%   NOTE: Perfect foresight total periods = pf_burn_in + simul_T_pf + pf_burn_out.
+%         Burn periods help convergence by letting model smoothly transition from/to SS.
+%         IMPORTANT: The .mod file has hardcoded periods=698, which expects total=700.
 %
 %   NOTE: First-order solution (stoch_simul.mod) ALWAYS runs if not already computed.
 %         Second-order solution (stoch_simul_2ndOrder.mod) runs if run_secondorder_simul=true OR run_secondorder_irs=true.
@@ -81,7 +87,9 @@ opts = set_default(opts, 'ir_horizon', 200);  % IR calculation horizon
 opts = set_default(opts, 'rng_seed', []);  % Empty = use current RNG state; integer = set specific seed
 opts = set_default(opts, 'simul_T_firstorder', 10000);   % First-order simulation length
 opts = set_default(opts, 'simul_T_secondorder', 10000);  % Second-order simulation length
-opts = set_default(opts, 'simul_T_pf', 1000);            % Perfect foresight simulation length
+opts = set_default(opts, 'simul_T_pf', 500);             % Perfect foresight: active periods with shocks
+opts = set_default(opts, 'pf_burn_in', 100);             % Burn-in periods (no shocks) before active
+opts = set_default(opts, 'pf_burn_out', 100);            % Burn-out periods (no shocks) after active
 opts = set_default(opts, 'model_type', 'VA');  % Model type: 'VA', 'GO', or 'GO_noVA'
 
 % Validate sector indices
@@ -591,33 +599,69 @@ end
 
 %% 5. Perfect Foresight Simulation (with Random Shocks)
 if opts.run_pf_simul
+    % Calculate total simulation length with burn-in/burn-out periods
+    burn_in = opts.pf_burn_in;
+    burn_out = opts.pf_burn_out;
+    T_active = simul_T_pf;  % Periods with shocks
+    T_total = burn_in + T_active + burn_out;  % Total periods
+    
     if opts.verbose
-        fprintf('\n  ── Perfect Foresight Simulation (T = %d) ─────────────────────\n', simul_T_pf);
+        fprintf('\n  ── Perfect Foresight Simulation ─────────────────────────────\n');
+        fprintf('     Active periods (with shocks): %d\n', T_active);
+        fprintf('     Burn-in (no shocks): %d | Burn-out (no shocks): %d\n', burn_in, burn_out);
+        fprintf('     Total simulation: %d periods\n', T_total);
     end
     
     tic;
     
-    % Generate random shocks for perfect foresight simulation
-    shockssim = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, simul_T_pf);
+    % Generate random shocks for the ACTIVE period only
+    shockssim_active = mvnrnd(zeros([n_sectors,1]), params.Sigma_A, T_active);
     
-    % Prepare shock matrix for perfect foresight
-    % Dynare expects (periods+2 x n_exo): [initial; simulation periods; terminal]
-    simul_periods = simul_T_pf - 2;  % Number of periods for perfect_foresight
-    shockssim_pf = zeros(simul_T_pf, n_sectors);
-    shockssim_pf(2:end-1, :) = shockssim(1:simul_T_pf-2, :);  % Fill simulation periods
+    % Build full shock matrix with burn-in/burn-out (zeros at boundaries)
+    % Dynare expects (T_total x n_exo): [initial; simulation periods; terminal]
+    % Row 1: initial period (t=0)
+    % Rows 2:T_total-1: simulation periods (t=1 to T_total-2)
+    % Row T_total: terminal period (t=T_total-1)
+    %
+    % Shock placement:
+    %   - Rows 1 to burn_in+1: zeros (burn-in + initial)
+    %   - Rows burn_in+2 to burn_in+1+T_active: active shocks
+    %   - Rows burn_in+2+T_active to T_total: zeros (burn-out + terminal)
+    
+    shockssim_pf = zeros(T_total, n_sectors);
+    
+    % Place active shocks after burn-in period
+    active_start = burn_in + 2;  % First row for active shocks (after initial + burn-in)
+    active_end = active_start + T_active - 1;
+    shockssim_pf(active_start:active_end, :) = shockssim_active;
+    
+    % Dynare periods = T_total - 2 (excluding initial and terminal)
+    simul_periods = T_total - 2;
     
     if opts.verbose
-        fprintf('     Shock matrix: %d × %d | Periods: %d\n', ...
+        fprintf('     Shock matrix: %d × %d | Dynare periods: %d\n', ...
             size(shockssim_pf, 1), size(shockssim_pf, 2), simul_periods);
+        fprintf('     Active shock rows: %d to %d\n', active_start, active_end);
+    end
+    
+    % Verify the hardcoded periods in determ_simul.mod matches
+    % Expected: periods = T_total - 2 = 698 for T_total = 700
+    expected_mod_periods = T_total - 2;
+    if expected_mod_periods ~= 698
+        warning(['Perfect foresight expects periods=%d, but determ_simul.mod has periods=698 hardcoded.\n' ...
+                 'Update determ_simul.mod to match, or adjust burn_in/burn_out/simul_T_pf to get T_total=700.'], ...
+                expected_mod_periods);
     end
     
     % Save to workspace (needed by .mod file)
-    assignin('base', 'shockssim_pf', shockssim_pf);
+    % NOTE: Using 'shockssim_determ' to match determ_simul.mod variable name
+    shockssim_determ = shockssim_pf;
+    assignin('base', 'shockssim_determ', shockssim_determ);
     assignin('base', 'simul_periods', simul_periods);
     
     % Update ModStruct_temp with simulation parameters (in dynare folder)
     modstruct_path = fullfile(dynare_folder, 'ModStruct_temp.mat');
-    save(modstruct_path, 'shockssim_pf', 'simul_periods', '-append');
+    save(modstruct_path, 'shockssim_determ', 'simul_periods', '-append');
     
     % Run deterministic simulation (change to dynare folder)
     current_dir = pwd;
@@ -628,10 +672,28 @@ if opts.run_pf_simul
         
         % Get results
         Simulated_time_series = evalin('base', 'Simulated_time_series');
-        dynare_simul_pf = Simulated_time_series.data';
+        dynare_simul_pf_full = Simulated_time_series.data';  % Full simulation including burn periods
         
-        Results.SimulPerfectForesight = dynare_simul_pf;
-        Results.shockssim_pf = shockssim_pf;
+        % Extract only the active periods (excluding burn-in and burn-out)
+        % Simulation output has T_total rows, we want rows burn_in+1 to burn_in+T_active
+        active_simul_start = burn_in + 1;
+        active_simul_end = burn_in + T_active;
+        dynare_simul_pf = dynare_simul_pf_full(:, active_simul_start:active_simul_end);
+        
+        if opts.verbose
+            fprintf('     Full simulation: %d periods | Active extracted: %d periods\n', ...
+                size(dynare_simul_pf_full, 2), size(dynare_simul_pf, 2));
+        end
+        
+        % Store results
+        Results.SimulPerfectForesight = dynare_simul_pf;  % Active periods only
+        Results.SimulPerfectForesight_full = dynare_simul_pf_full;  % Full including burn
+        Results.shockssim_pf = shockssim_active;  % Only active shocks
+        Results.shockssim_pf_full = shockssim_pf;  % Full shock matrix
+        Results.pf_burn_in = burn_in;
+        Results.pf_burn_out = burn_out;
+        Results.pf_T_active = T_active;
+        Results.pf_T_total = T_total;
         
         elapsed = toc;
         if opts.verbose

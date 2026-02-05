@@ -129,11 +129,21 @@ params.vash_data = vash_data;
 params.ionet_data = ionet_data;
 params.invnet_data = invnet_data;
 
+%% Load aggregate consumption from NIPA (Real GDP Components)
+% This is aggregate real PCE, already chain-weighted by BEA
+% Used for aggregate consumption volatility benchmark
+Cons_agg = [];
+if exist('Real GDP Components.xls', 'file')
+    Cons_agg = xlsread('Real GDP Components.xls', 1, 'C9:BU9')';
+elseif exist('Data/Real GDP Components.xls', 'file')
+    Cons_agg = xlsread('Data/Real GDP Components.xls', 1, 'C9:BU9')';
+end
+
 %% Compute empirical business cycle targets (HP-filtered, Törnqvist aggregation)
 % Uses Törnqvist index for VA and Investment (proper aggregation)
 % Uses simple sum for Employment (real units)
 % GO47bea is used for Domar weight volatility
-empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn, GO47bea, VA47bea);
+empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn, GO47bea, VA47bea, Cons_agg);
 
 %% Compute client indices and rankings
 [client_indices, ranking] = compute_client_rankings(ionet_data, sector_indices, n_sectors);
@@ -167,7 +177,7 @@ calib_data.shock_scaling = shock_scaling;
 
 end
 
-function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn, GO_raw, VA_for_domar)
+function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, VAn, Invn, GO_raw, VA_for_domar, Cons_agg)
 % COMPUTE_EMPIRICAL_TARGETS Compute business cycle moments from data
 %
 % Uses Törnqvist index aggregation for VA and Investment (proper economic aggregation)
@@ -175,10 +185,11 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
 %
 % Computes HP-filtered (lambda=100) volatilities of:
 %   - Aggregate GDP (value added) - Törnqvist
+%   - Aggregate consumption - NIPA real PCE (chain-weighted by BEA)
 %   - Aggregate labor - simple sum (headcount)
 %   - Aggregate investment - Törnqvist
-%   - Average sectoral labor volatility (VA-weighted)
-%   - Average sectoral investment volatility (VA-weighted)
+%   - Average sectoral labor volatility (VA-weighted and employment-weighted)
+%   - Average sectoral investment volatility (VA-weighted and investment-weighted)
 %   - Average Domar weight volatility (GO-weighted)
 %
 % INPUTS:
@@ -189,6 +200,7 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
 %   Invn         - Nominal investment by sector (T1 x n_sectors) - for shares
 %   GO_raw       - Real gross output by sector (T2 x n_sectors) - for Domar weights
 %   VA_for_domar - Real value added matching GO_raw dimensions (T2 x n_sectors) - for Domar denominator
+%   Cons_agg     - Aggregate real consumption from NIPA (T x 1), can be empty
 
     hp_lambda = 100;  % Standard for annual data
     epsilon = 1e-10;  % Floor for log computation
@@ -209,6 +221,15 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
     % Compute time-average weights (for sectoral averages)
     va_weights = mean(VAsh, 1);
     va_weights = va_weights / sum(va_weights);
+    
+    % Employment weights (employment is in natural units - persons/FTE)
+    EMPsh = EMP_clean ./ repmat(sum(EMP_clean, 2), 1, n_sectors);
+    emp_weights = mean(EMPsh, 1);
+    emp_weights = emp_weights / sum(emp_weights);
+    
+    % Nominal investment weights (proper economic shares)
+    inv_weights = mean(Invsh, 1);
+    inv_weights = inv_weights / sum(inv_weights);
     
     %% ===== AGGREGATE VARIABLES VIA TÖRNQVIST INDEX =====
     % Törnqvist: log growth = sum_j [ 0.5*(s_{j,t} + s_{j,t-1}) * (log y_{j,t} - log y_{j,t-1}) ]
@@ -257,6 +278,17 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
     [~, L_agg_cycle] = hpfilter(log_aggEMP, hp_lambda);
     sigma_L_agg = std(L_agg_cycle);
     
+    % Aggregate Consumption volatility (NIPA real PCE - already aggregated by BEA)
+    % Note: This is household consumption, not sectoral consumption expenditure
+    if ~isempty(Cons_agg)
+        Cons_clean = max(Cons_agg, epsilon);
+        log_C_agg = log(Cons_clean);
+        [~, C_agg_cycle] = hpfilter(log_C_agg, hp_lambda);
+        sigma_C_agg = std(C_agg_cycle);
+    else
+        sigma_C_agg = NaN;
+    end
+    
     %% ===== SECTORAL VOLATILITIES (average of sectoral volatilities) =====
     
     % Sectoral labor volatility
@@ -267,6 +299,7 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
         sigma_L_sectoral(i) = std(L_cycle);
     end
     sigma_L_avg = sum(va_weights .* sigma_L_sectoral);
+    sigma_L_avg_empweighted = sum(emp_weights .* sigma_L_sectoral);
     
     % Sectoral investment volatility
     sigma_I_sectoral = zeros(1, n_sectors);
@@ -276,6 +309,7 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
         sigma_I_sectoral(i) = std(I_cycle);
     end
     sigma_I_avg = sum(va_weights .* sigma_I_sectoral);
+    sigma_I_avg_invweighted = sum(inv_weights .* sigma_I_sectoral);
     
     %% ===== DOMAR WEIGHT VOLATILITY =====
     % Domar weight: Domar_i(t) = GO_i(t) / VA_agg(t)
@@ -310,16 +344,25 @@ function empirical_targets = compute_empirical_targets(VA_raw, EMP_raw, InvRaw, 
     empirical_targets.hp_lambda = hp_lambda;
     empirical_targets.va_weights = va_weights;
     empirical_targets.go_weights = go_weights;
+    empirical_targets.emp_weights = emp_weights;
+    empirical_targets.inv_weights = inv_weights;
     empirical_targets.aggregation_method = 'tornqvist';
     
-    % Aggregate volatilities (Törnqvist for VA/I, simple sum for L)
+    % Aggregate volatilities (Törnqvist for VA/I, simple sum for L, NIPA for C)
     empirical_targets.sigma_VA_agg = sigma_VA_agg;
+    empirical_targets.sigma_C_agg = sigma_C_agg;
     empirical_targets.sigma_L_agg = sigma_L_agg;
     empirical_targets.sigma_I_agg = sigma_I_agg;
     
     % Sectoral volatilities (VA-weighted average of sectoral volatilities)
     empirical_targets.sigma_L_avg = sigma_L_avg;
     empirical_targets.sigma_I_avg = sigma_I_avg;
+    
+    % Sectoral volatilities with own-variable weights
+    % sigma_L_avg_empweighted: average labor volatility weighted by employment shares
+    % sigma_I_avg_invweighted: average investment volatility weighted by nominal investment shares
+    empirical_targets.sigma_L_avg_empweighted = sigma_L_avg_empweighted;
+    empirical_targets.sigma_I_avg_invweighted = sigma_I_avg_invweighted;
     
     % Domar weight volatility (GO-weighted average of sectoral Domar volatilities)
     empirical_targets.sigma_Domar_avg = sigma_Domar_avg;

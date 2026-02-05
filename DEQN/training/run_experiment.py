@@ -89,6 +89,7 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         abstract_target = {
             "params": jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_params),
             "opt_state": jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_opt_state),
+            "step": ocp.utils.to_shape_dtype_struct(jnp.array(0)),  # Step is saved as part of TrainState
         }
 
         restored_state = restore_checkpoint_manager.restore(
@@ -96,9 +97,10 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         )
         params = restored_state["params"]
         opt_state = restored_state["opt_state"]
+        restored_step = restored_state["step"]
 
         train_state_obj = TrainState.create(apply_fn=neural_net.apply, params=params, tx=optax.adam(lr_schedule))
-        train_state_obj = train_state_obj.replace(opt_state=opt_state, step=latest_step)
+        train_state_obj = train_state_obj.replace(opt_state=opt_state, step=restored_step)
 
     # GET TRAIN AND EVAL FUNCTIONS
     from DEQN.algorithm.eval import create_eval_fn

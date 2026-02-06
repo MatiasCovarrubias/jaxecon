@@ -207,13 +207,19 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
     }
 
     # Extract statistics (MATLAB uses peak_values_firstorder/peak_values_pf; legacy uses _loglin/_determ)
-    stats = shock_result.get("Statistics", {}) or {}
+    stats = shock_result.get("Statistics")
+    if stats is None:
+        stats = {}
     if stats:
-        processed["peak_values_loglin"] = stats.get("peak_values_loglin") or stats.get("peak_values_firstorder")
-        processed["peak_values_determ"] = stats.get("peak_values_determ") or stats.get("peak_values_pf")
+        v = stats.get("peak_values_loglin")
+        processed["peak_values_loglin"] = v if v is not None else stats.get("peak_values_firstorder")
+        v = stats.get("peak_values_determ")
+        processed["peak_values_determ"] = v if v is not None else stats.get("peak_values_pf")
         processed["amplifications"] = stats.get("amplifications")
-        processed["half_lives_loglin"] = stats.get("half_lives_loglin") or stats.get("half_lives_firstorder")
-        processed["half_lives_determ"] = stats.get("half_lives_determ") or stats.get("half_lives_pf")
+        v = stats.get("half_lives_loglin")
+        processed["half_lives_loglin"] = v if v is not None else stats.get("half_lives_firstorder")
+        v = stats.get("half_lives_determ")
+        processed["half_lives_determ"] = v if v is not None else stats.get("half_lives_pf")
 
     # IRF field names from process_sector_irs.m: IRSFirstOrder, IRSPerfectForesight (and optional IRSSecondOrder)
     irfs = shock_result.get("IRFs", [])
@@ -233,8 +239,14 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
             sector_idx = int(sector_idx.item())
         sector_idx = int(sector_idx) - 1  # MATLAB 1-based -> Python 0-based
 
-        irs_loglin = irf_data.get("IRSFirstOrder") or irf_data.get("IRSLoglin")
-        irs_determ = irf_data.get("IRSPerfectForesight") or irf_data.get("IRSPF") or irf_data.get("IRSDeterm")
+        irs_loglin = irf_data.get("IRSFirstOrder")
+        if irs_loglin is None:
+            irs_loglin = irf_data.get("IRSLoglin")
+        irs_determ = irf_data.get("IRSPerfectForesight")
+        if irs_determ is None:
+            irs_determ = irf_data.get("IRSPF")
+        if irs_determ is None:
+            irs_determ = irf_data.get("IRSDeterm")
 
         if irs_loglin is not None:
             arr_loglin = np.array(irs_loglin)

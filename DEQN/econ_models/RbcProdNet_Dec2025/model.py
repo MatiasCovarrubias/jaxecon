@@ -359,10 +359,13 @@ class Model:
         """
         Calculate analysis variables as a dictionary with descriptive labels.
 
+        Expects state_logdev and policies_logdev in raw log-deviation form (log X - log X_ss),
+        not standardized by state_sd/policies_sd. Log level is recovered as logdev + ss.
+
         Returns:
             dict: Dictionary mapping variable labels to their log deviations from steady state
         """
-        # Denormalize weights from log deviations to levels
+        # Weights and policies: log level = logdev + ss
         # Get steady state prices in levels
         P_ss = jnp.exp(self.policies_ss[8 * self.n_sectors : 9 * self.n_sectors])
         Pk_ss = jnp.exp(self.policies_ss[2 * self.n_sectors : 3 * self.n_sectors])

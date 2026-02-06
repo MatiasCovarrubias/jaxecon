@@ -97,6 +97,7 @@ from DEQN.analysis.stochastic_ss import (  # noqa: E402
     create_stochss_loss_fn,
 )
 from DEQN.analysis.tables import (  # noqa: E402
+    create_calibration_table,
     create_comparative_stats_table,
     create_descriptive_stats_table,
     create_stochastic_ss_table,
@@ -466,10 +467,17 @@ def main():
     pf_stats_key = "PerfectForesight" if "PerfectForesight" in stats else ("Determ" if "Determ" in stats else None)
     if pf_stats_key:
         pf_stats = stats[pf_stats_key]
-        print(f"  ✓ Using Statistics.{pf_stats_key} for Perfect Foresight moments", flush=True)
+        pf_model_stats = pf_stats.get("ModelStats") if isinstance(pf_stats, dict) else None
+        if pf_model_stats is not None:
+            print(f"  ✓ Using Statistics.{pf_stats_key} (+ ModelStats) for Perfect Foresight moments", flush=True)
+        else:
+            print(f"  ✓ Using Statistics.{pf_stats_key} for Perfect Foresight moments", flush=True)
 
         pf_theo_stats = create_perfect_foresight_descriptive_stats(
-            determ_stats=pf_stats, label="Perfect Foresight", n_sectors=n_sectors
+            determ_stats=pf_stats,
+            label="Perfect Foresight",
+            n_sectors=n_sectors,
+            model_stats=pf_model_stats,
         )
         theoretical_stats.update(pf_theo_stats)
 
@@ -504,6 +512,90 @@ def main():
         )
 
         analysis_variables_data["Perfect Foresight (Dynare)"] = pf_analysis_vars
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CALIBRATION TABLE (First-Order Model vs Empirical Targets)
+    # ═══════════════════════════════════════════════════════════════════════════
+    calibration_emp = md.get("EmpiricalTargets") or (md.get("Calibration") or md.get("calibration") or {}).get("empirical_targets") or (md.get("Calibration") or md.get("calibration") or {}).get("EmpiricalTargets")
+    fo_stats = stats.get("FirstOrder") or stats.get("firstorder")
+    calibration_model_stats = (fo_stats.get("ModelStats") or fo_stats.get("modelstats")) if isinstance(fo_stats, dict) else None
+    if calibration_emp is not None:
+        create_calibration_table(
+            empirical_targets=calibration_emp,
+            first_order_model_stats=calibration_model_stats,
+            save_path=os.path.join(analysis_dir, "calibration_table.tex"),
+            analysis_name=config["analysis_name"],
+        )
+    else:
+        print("  ⚠ Calibration table skipped: no empirical targets in ModelData (EmpiricalTargets / calibration.empirical_targets).")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # IMPULSE RESPONSES
+    # ═══════════════════════════════════════════════════════════════════════════
+    matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
+    matlab_ir_data = load_matlab_irs(
+        matlab_ir_dir=matlab_ir_dir,
+        shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
+        irs_file_path=irs_path,  # Use the custom IRs file path from config
+    )
+
+    sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
+    ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
+    shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
+    max_periods = config.get("ir_max_periods", 80)
+
+    for sector_idx in sectors_to_plot:
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+        )
+
+        for ir_variable in ir_variables:
+            plot_sector_ir_by_shock_size(
+                gir_data=gir_data,
+                matlab_ir_data=matlab_ir_data,
+                sector_idx=sector_idx,
+                sector_label=sector_label,
+                variable_to_plot=ir_variable,
+                shock_sizes=shock_sizes,
+                save_dir=irs_dir,
+                analysis_name=config["analysis_name"],
+                max_periods=max_periods,
+                n_sectors=n_sectors,
+            )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SECTORAL BARPLOTS (stochastic SS and mean ergodic distribution)
+    # ═══════════════════════════════════════════════════════════════════════════
+    upstreamness_data = econ_model.upstreamness()
+
+    if stochastic_ss_policies:
+        for var_name in ["K", "L", "Y", "M", "Q"]:
+            try:
+                plot_sectoral_variable_stochss(
+                    stochastic_ss_states=stochastic_ss_states,
+                    stochastic_ss_policies=stochastic_ss_policies,
+                    variable_name=var_name,
+                    save_dir=simulation_dir,
+                    analysis_name=config["analysis_name"],
+                    econ_model=econ_model,
+                    upstreamness_data=upstreamness_data,
+                )
+            except Exception as e:
+                print(f"    ✗ Failed to create stochastic SS {var_name} plot: {e}", flush=True)
+
+    if raw_simulation_data:
+        for var_name in ["K", "L", "Y", "M", "Q"]:
+            try:
+                plot_sectoral_variable_ergodic(
+                    raw_simulation_data=raw_simulation_data,
+                    variable_name=var_name,
+                    save_dir=simulation_dir,
+                    analysis_name=config["analysis_name"],
+                    econ_model=econ_model,
+                    upstreamness_data=upstreamness_data,
+                )
+            except Exception as e:
+                print(f"    ✗ Failed to create ergodic {var_name} plot: {e}", flush=True)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # DESCRIPTIVE STATISTICS
@@ -549,40 +641,6 @@ def main():
         theo_dist_params=histogram_theo_params if histogram_theo_params else None,
     )
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # IMPULSE RESPONSES
-    # ═══════════════════════════════════════════════════════════════════════════
-    matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
-    matlab_ir_data = load_matlab_irs(
-        matlab_ir_dir=matlab_ir_dir,
-        shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
-        irs_file_path=irs_path,  # Use the custom IRs file path from config
-    )
-
-    sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
-    ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
-    shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
-    max_periods = config.get("ir_max_periods", 80)
-
-    for sector_idx in sectors_to_plot:
-        sector_label = (
-            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
-        )
-
-        for ir_variable in ir_variables:
-            plot_sector_ir_by_shock_size(
-                gir_data=gir_data,
-                matlab_ir_data=matlab_ir_data,
-                sector_idx=sector_idx,
-                sector_label=sector_label,
-                variable_to_plot=ir_variable,
-                shock_sizes=shock_sizes,
-                save_dir=irs_dir,
-                analysis_name=config["analysis_name"],
-                max_periods=max_periods,
-                n_sectors=n_sectors,
-            )
-
     # Model-specific plots
     if MODEL_SPECIFIC_PLOTS:
         for plot_spec in MODEL_SPECIFIC_PLOTS:
@@ -602,40 +660,6 @@ def main():
                     )
                 except Exception as e:
                     print(f"    ✗ Failed to create {plot_name} for {experiment_label}: {e}", flush=True)
-
-    # Compute upstreamness measures
-    upstreamness_data = econ_model.upstreamness()
-
-    # Stochastic SS sectoral plots
-    if stochastic_ss_policies:
-        for var_name in ["K", "L", "Y", "M", "Q"]:
-            try:
-                plot_sectoral_variable_stochss(
-                    stochastic_ss_states=stochastic_ss_states,
-                    stochastic_ss_policies=stochastic_ss_policies,
-                    variable_name=var_name,
-                    save_dir=simulation_dir,
-                    analysis_name=config["analysis_name"],
-                    econ_model=econ_model,
-                    upstreamness_data=upstreamness_data,
-                )
-            except Exception as e:
-                print(f"    ✗ Failed to create stochastic SS {var_name} plot: {e}", flush=True)
-
-    # Ergodic sectoral plots
-    if raw_simulation_data:
-        for var_name in ["K", "L", "Y", "M", "Q"]:
-            try:
-                plot_sectoral_variable_ergodic(
-                    raw_simulation_data=raw_simulation_data,
-                    variable_name=var_name,
-                    save_dir=simulation_dir,
-                    analysis_name=config["analysis_name"],
-                    econ_model=econ_model,
-                    upstreamness_data=upstreamness_data,
-                )
-            except Exception as e:
-                print(f"    ✗ Failed to create ergodic {var_name} plot: {e}", flush=True)
 
     print("\n" + "═" * 72)
     print("  ANALYSIS COMPLETE")

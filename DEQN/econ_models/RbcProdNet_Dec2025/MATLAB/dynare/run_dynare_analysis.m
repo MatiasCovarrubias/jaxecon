@@ -304,8 +304,10 @@ if opts.run_firstorder_simul
     if opts.verbose
         fprintf('\n     Model Statistics (first-order simulation):\n');
         fprintf('       σ(Y_agg):  %.4f\n', ModelStats.sigma_VA_agg);
-        fprintf('       σ(L) avg:  %.4f\n', ModelStats.sigma_L_avg);
-        fprintf('       σ(I) avg:  %.4f\n', ModelStats.sigma_I_avg);
+        fprintf('       σ(L) avg (VA-wgt):  %.4f   | σ(L) avg (emp-wgt):  %.4f\n', ...
+            ModelStats.sigma_L_avg, ModelStats.sigma_L_avg_empweighted);
+        fprintf('       σ(I) avg (VA-wgt):  %.4f   | σ(I) avg (inv-wgt):  %.4f\n', ...
+            ModelStats.sigma_I_avg, ModelStats.sigma_I_avg_invweighted);
     end
 end
 
@@ -414,8 +416,10 @@ if opts.run_secondorder_simul
     if opts.verbose
         fprintf('\n     Model Statistics (2nd-order simulation):\n');
         fprintf('       σ(Y_agg):  %.4f\n', ModelStats2nd.sigma_VA_agg);
-        fprintf('       σ(L) avg:  %.4f\n', ModelStats2nd.sigma_L_avg);
-        fprintf('       σ(I) avg:  %.4f\n', ModelStats2nd.sigma_I_avg);
+        fprintf('       σ(L) avg (VA-wgt):  %.4f   | σ(L) avg (emp-wgt):  %.4f\n', ...
+            ModelStats2nd.sigma_L_avg, ModelStats2nd.sigma_L_avg_empweighted);
+        fprintf('       σ(I) avg (VA-wgt):  %.4f   | σ(I) avg (inv-wgt):  %.4f\n', ...
+            ModelStats2nd.sigma_I_avg, ModelStats2nd.sigma_I_avg_invweighted);
     end
 end
 
@@ -695,9 +699,19 @@ if opts.run_pf_simul
         Results.pf_T_active = T_active;
         Results.pf_T_total = T_total;
         
+        % Compute model statistics for perfect foresight (comparable to 1st/2nd order)
+        ModelStatsPF = compute_model_statistics(dynare_simul_pf, idx, policies_ss, n_sectors);
+        Results.ModelStatsPF = ModelStatsPF;
+        
         elapsed = toc;
         if opts.verbose
             fprintf('     ✓ Completed (%.2f s)\n', elapsed);
+            fprintf('\n     Model Statistics (perfect foresight simulation):\n');
+            fprintf('       σ(Y_agg):  %.4f\n', ModelStatsPF.sigma_VA_agg);
+            fprintf('       σ(L) avg (VA-wgt):  %.4f   | σ(L) avg (emp-wgt):  %.4f\n', ...
+                ModelStatsPF.sigma_L_avg, ModelStatsPF.sigma_L_avg_empweighted);
+            fprintf('       σ(I) avg (VA-wgt):  %.4f   | σ(I) avg (inv-wgt):  %.4f\n', ...
+                ModelStatsPF.sigma_I_avg, ModelStatsPF.sigma_I_avg_invweighted);
         end
     catch ME
         cd(current_dir);
@@ -912,6 +926,34 @@ function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n
     sigma_I_sectoral = std(i_simul, 0, 2)';
     sigma_I_avg = sum(va_weights .* sigma_I_sectoral);
     
+    %% ===== OWN-VARIABLE WEIGHTED SECTORAL VOLATILITIES =====
+    % These match the empirical targets: employment-weighted labor vol, investment-weighted inv vol
+    % Data uses time-average shares; model analog is steady-state shares (SS = long-run average)
+    
+    % Compute employment weights from steady state (L_j^ss / sum L_j^ss)
+    % Data: time-avg of employment shares (headcount, real units)
+    emp_weights = l_ss' / sum(l_ss);
+    
+    % Compute nominal investment weights from steady state
+    % Data uses NOMINAL investment shares: Invn / sum(Invn)
+    % Model analog: (I_j * P_k_j) / sum(I_j * P_k_j) at steady state
+    i_ss_idx = (idx.i(1):idx.i(2)) - idx.ss_offset;
+    i_ss_log = policies_ss(i_ss_idx);
+    i_ss = exp(i_ss_log);  % Steady state real investment by sector
+    
+    pk_ss_idx = (idx.pk(1):idx.pk(2)) - idx.ss_offset;
+    pk_ss_log = policies_ss(pk_ss_idx);
+    pk_ss = exp(pk_ss_log);  % Steady state investment price by sector
+    
+    i_nominal_ss = i_ss .* pk_ss;  % Nominal investment = I * P_k
+    inv_weights = i_nominal_ss' / sum(i_nominal_ss);
+    
+    % Employment-weighted average of sectoral labor volatility
+    sigma_L_avg_empweighted = sum(emp_weights .* sigma_L_sectoral);
+    
+    % Investment-weighted average of sectoral investment volatility (using nominal weights)
+    sigma_I_avg_invweighted = sum(inv_weights .* sigma_I_sectoral);
+    
     %% ===== DOMAR WEIGHT VOLATILITY =====
     % Domar weight: Domar_i = GO_i / VA_agg
     % In log deviations from SS: log(Domar_i(t)/Domar_i^ss) = q_simul(i,t) - yagg_simul(t)
@@ -943,6 +985,10 @@ function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n
     ModelStats.sigma_L_avg = sigma_L_avg;
     ModelStats.sigma_I_avg = sigma_I_avg;
     
+    % Sectoral moments (own-variable weighted averages, comparable to data)
+    ModelStats.sigma_L_avg_empweighted = sigma_L_avg_empweighted;
+    ModelStats.sigma_I_avg_invweighted = sigma_I_avg_invweighted;
+    
     % Domar weight volatility (GO-weighted average)
     ModelStats.sigma_Domar_avg = sigma_Domar_avg;
     
@@ -953,5 +999,7 @@ function ModelStats = compute_model_statistics(dynare_simul, idx, policies_ss, n
     ModelStats.corr_matrix_VA = corr_matrix_VA;
     ModelStats.va_weights = va_weights;
     ModelStats.go_weights = go_weights;
+    ModelStats.emp_weights = emp_weights;
+    ModelStats.inv_weights = inv_weights;
 end
 

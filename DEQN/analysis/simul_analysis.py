@@ -4,7 +4,14 @@ from jax import numpy as jnp
 
 
 def create_episode_simulation_fn_verbose(econ_model, config):
-    """Create simulation function that returns both observations and policies in logdevs."""
+    """
+    Create simulation function that returns observations and policies in log-deviation form.
+
+    The model uses standardized state and policy internally (logdev / state_sd, logdev / policies_sd).
+    Here we denormalize before returning so that simul_obs and simul_policies are in raw log
+    deviations, as expected by get_analysis_variables, utility_from_policies, and ergodic price
+    computation (log level = logdev + ss, so logdev = standardized * sd).
+    """
 
     def sample_epis_obs_and_policies(train_state, epis_rng):
         """Sample observations and policies for an episode."""

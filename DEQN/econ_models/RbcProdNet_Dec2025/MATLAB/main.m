@@ -603,11 +603,13 @@ if isfield(BaseResults, 'TheoStats') && ~isempty(fieldnames(BaseResults.TheoStat
         fprintf('  │  σ(I) avg:                        %6.4f      %6.4f    %5.2f │\n', ...
             model_stats.sigma_I_avg, emp_tgt.sigma_I_avg, ...
             model_stats.sigma_I_avg / emp_tgt.sigma_I_avg);
-        fprintf('  │  ── Sectoral volatilities (own-variable weighted, data only) ── │\n');
-        fprintf('  │  σ(L) emp-wgt:                       N/A      %6.4f      N/A │\n', ...
-            emp_tgt.sigma_L_avg_empweighted);
-        fprintf('  │  σ(I) inv-wgt:                       N/A      %6.4f      N/A │\n', ...
-            emp_tgt.sigma_I_avg_invweighted);
+        fprintf('  │  ── Average sectoral volatilities (own-variable weighted) ────  │\n');
+        fprintf('  │  σ(L) emp-wgt:                     %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_L_avg_empweighted, emp_tgt.sigma_L_avg_empweighted, ...
+            model_stats.sigma_L_avg_empweighted / emp_tgt.sigma_L_avg_empweighted);
+        fprintf('  │  σ(I) inv-wgt:                     %6.4f      %6.4f    %5.2f │\n', ...
+            model_stats.sigma_I_avg_invweighted, emp_tgt.sigma_I_avg_invweighted, ...
+            model_stats.sigma_I_avg_invweighted / emp_tgt.sigma_I_avg_invweighted);
     end
     fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
@@ -651,6 +653,11 @@ if isfield(BaseResults, 'SimulPerfectForesight') && ~isempty(BaseResults.SimulPe
     ModelData.Statistics.PerfectForesight.states_std = std(states_simul, 0, 2);
     ModelData.Statistics.PerfectForesight.policies_mean = mean(policies_simul, 2);
     ModelData.Statistics.PerfectForesight.policies_std = std(policies_simul, 0, 2);
+    
+    % Business cycle statistics (detailed)
+    if isfield(BaseResults, 'ModelStatsPF')
+        ModelData.Statistics.PerfectForesight.ModelStats = BaseResults.ModelStatsPF;
+    end
     
     fprintf('\n  Perfect Foresight (Nonlinear) Simulation:\n');
     if isfield(BaseResults, 'pf_burn_in')

@@ -13,6 +13,117 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kurtosis, skew
 
+_CALIBRATION_ROWS = [
+    ("$\\sigma(Y_{\\text{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
+    ("$\\sigma(I_{\\text{agg}})$", "sigma_I_agg", "sigma_I_agg"),
+    ("$\\sigma(L_{\\text{hc,agg}})$", "sigma_L_hc_agg", "sigma_L_agg"),
+    ("$\\sigma(\\text{Domar})$ avg", "sigma_Domar_avg", "sigma_Domar_avg"),
+    ("$\\sigma(L)$ avg (VA-wgt)", "sigma_L_avg", "sigma_L_avg"),
+    ("$\\sigma(I)$ avg (VA-wgt)", "sigma_I_avg", "sigma_I_avg"),
+    ("$\\sigma(L)$ emp-wgt", "sigma_L_avg_empweighted", "sigma_L_avg_empweighted"),
+    ("$\\sigma(I)$ inv-wgt", "sigma_I_avg_invweighted", "sigma_I_avg_invweighted"),
+]
+
+
+def _scalar_from_matlab_value(x: Any) -> Optional[float]:
+    if x is None:
+        return None
+    arr = np.asarray(x)
+    if arr.size == 0:
+        return None
+    return float(arr.ravel()[0])
+
+
+def create_calibration_table(
+    empirical_targets: Dict[str, Any],
+    first_order_model_stats: Optional[Dict[str, Any]] = None,
+    save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
+) -> str:
+    """
+    Create a LaTeX table comparing first-order model moments to empirical targets
+    (model vs data calibration table). Uses the same row/field mapping as in
+    ModelData_README.md (Recovering the Model vs Data Summary Table).
+
+    Parameters:
+    -----------
+    empirical_targets : dict
+        From ModelData.calibration.empirical_targets or ModelData.EmpiricalTargets.
+    first_order_model_stats : dict, optional
+        From ModelData.Statistics.FirstOrder.ModelStats. If None, model column shows N/A.
+    save_path : str, optional
+        If provided, save the LaTeX table to this path.
+    analysis_name : str, optional
+        Name of the analysis to include in the filename.
+
+    Returns:
+    --------
+    str : The LaTeX table code
+    """
+    rows = []
+    for row_label, model_key, data_key in _CALIBRATION_ROWS:
+        model_val = None
+        if first_order_model_stats is not None and model_key in first_order_model_stats:
+            model_val = _scalar_from_matlab_value(first_order_model_stats[model_key])
+        data_val = None
+        if data_key in empirical_targets:
+            data_val = _scalar_from_matlab_value(empirical_targets[data_key])
+        rows.append((row_label, model_val, data_val))
+
+    latex_code = _generate_calibration_latex_table(rows)
+    console_output = _generate_calibration_console_table(rows)
+
+    if save_path:
+        if analysis_name:
+            save_dir = os.path.dirname(save_path)
+            ext = os.path.splitext(os.path.basename(save_path))[1] or ".tex"
+            new_filename = f"calibration_table_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+        with open(final_save_path, "w") as f:
+            f.write(latex_code)
+
+    print(console_output)
+    return latex_code
+
+
+def _generate_calibration_console_table(rows: list) -> str:
+    output = []
+    output.append("\n" + "═" * 72)
+    output.append("  CALIBRATION TABLE (First-Order Model vs Empirical Targets)")
+    output.append("═" * 72)
+    output.append(f"\n    {'Moment':<28} {'Model (1st order)':>18} {'Data':>12}")
+    output.append("  " + "─" * 68)
+    for row_label, model_val, data_val in rows:
+        ms = f"{model_val:.4f}" if model_val is not None else "N/A"
+        ds = f"{data_val:.4f}" if data_val is not None else "N/A"
+        label_plain = row_label.replace("$", "").replace("\\text{agg}", "agg").replace("\\sigma", "sigma").replace("\\text{hc,agg}", "hc,agg")
+        output.append(f"    {label_plain[:28]:<28} {ms:>18} {ds:>12}")
+    output.append("\n" + "═" * 72)
+    return "\n".join(output)
+
+
+def _generate_calibration_latex_table(rows: list) -> str:
+    latex_code = (
+        r"\begin{tabularx}{\textwidth}{l X X}" + "\n"
+        r"\toprule" + "\n"
+        r"\textbf{Moment} & \textbf{Model (First Order)} & \textbf{Data} \\" + "\n"
+        r"\midrule" + "\n"
+    )
+    for row_label, model_val, data_val in rows:
+        model_cell = f"{model_val:.4f}" if model_val is not None else "N/A"
+        data_cell = f"{data_val:.4f}" if data_val is not None else "N/A"
+        latex_code += f"{row_label} & {model_cell} & {data_cell} \\\\\n"
+    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    latex_code += r"\\" + "\n"
+    latex_code += (
+        r"\textit{Note: Volatilities are standard deviations of HP-filtered log series. "
+        r"Model column: first-order (log-linear) solution. Data: empirical targets from calibration.}"
+        + "\n"
+    )
+    return latex_code
+
 
 def create_descriptive_stats_table(
     analysis_variables_data: Dict[str, Any],

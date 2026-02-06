@@ -1,24 +1,29 @@
 """
 Aggregation correction utilities for comparing log-linear and nonlinear simulations.
 
-The issue: In the nonlinear model, we aggregate variables using ergodic (mean) prices
-from the simulation. This changes the "steady state" reference for aggregates:
-- MATLAB/Dynare: Yagg_ss = Y_ss @ P_ss (steady-state prices)
-- Nonlinear: Yagg_ss_ergodic = Y_ss @ P_ergodic (ergodic prices)
+Market aggregates (Y, K, I, M) are price-weighted: e.g. Yagg = sum_j Y_j * P_j.
+When processing Dynare simulation data we use the same aggregation as the full model:
+- Take disaggregated sectoral series from ModelData_simulation (log deviations from SS).
+- Convert to levels: X_j(t) = X_j_ss * exp(log_dev_j(t)).
+- Aggregate with ergodic price weights: Yagg(t) = sum_j Y_j(t) * P_ergodic_j.
+- Define aggregate SS by aggregating disaggregated SS with the same prices:
+  Yagg_ss = sum_j Y_j_ss * P_ergodic_j.
+- Return log deviations: log(Yagg(t)) - log(Yagg_ss).
 
-To make comparisons consistent, we need to recenter all simulations to use
-the same steady state definition (the ergodic-price aggregated one).
+Preference aggregates (C, L) use CES aggregators and are not price-weighted; we use
+the simulation's cagg/lagg rows directly (already log deviations from SS).
 
-Correction formula:
+The nonlinear model uses ergodic (mean) prices from its own simulation, so:
+- MATLAB/Dynare SS: Yagg_ss = Y_ss @ P_ss (steady-state prices)
+- Nonlinear reference: Yagg_ss_ergodic = Y_ss @ P_ergodic (ergodic prices)
+
+Recenter formula for market aggregates (so all methods use the same reference):
     x_logdev_corrected = x_logdev + log(SS_old) - log(SS_new)
 
-This applies to price-weighted aggregates: Yagg, Kagg, Iagg, Magg.
-CES aggregates (Cagg, Lagg) don't need correction as they're quantity-only.
+Cagg and Lagg don't need this correction (quantity-only).
 
-For log-linear solutions, all variables are lognormally distributed:
-    log(X/X_ss) ~ N(0, σ²)
-    X ~ LogNormal(log(X_ss), σ)
-This allows generating synthetic samples from theoretical statistics.
+For log-linear solutions, log(X/X_ss) ~ N(0, σ²); we can generate synthetic samples
+from theoretical statistics.
 """
 
 import jax.numpy as jnp
@@ -197,71 +202,74 @@ def process_simulation_with_consistent_aggregation(
     source_label: str = "simulation",
 ) -> dict:
     """
-    Process simulation data with consistent ergodic-price aggregation.
+    Process Dynare simulation with aggregation consistent with the full nonlinear model.
 
-    This function:
-    1. Extracts sectoral variables from simulation
-    2. Aggregates using ergodic prices
-    3. Computes SS aggregates using the same ergodic prices
-    4. Returns log deviations that are consistently defined
+    Simulation data is stored as log deviations from steady state:
+        simul[i, t] = log(X_i(t)) - log(X_i_ss).
+
+    For market aggregates (Y, K, I, M) we:
+    1. Recover sectoral levels: X_j(t) = X_j_ss * exp(simul[j, t])
+    2. Aggregate using the same price weights as the nonlinear model (ergodic prices)
+    3. Compute aggregate SS by aggregating disaggregated SS with the same prices
+    4. Return log deviations: log(aggregate(t)) - log(aggregate_ss)
+
+    For preference aggregates (C, L) we use the simulation's cagg/lagg rows directly,
+    since they are already log deviations from SS and do not depend on price aggregation.
 
     Args:
-        simul_data: Simulation output (n_vars, T) in log levels
+        simul_data: (n_vars, T) log deviations from SS (ModelData_simulation full_simul)
         policies_ss: Steady state policies in log
-        state_ss: Steady state states in log
-        P_ergodic: Ergodic output prices in levels
-        Pk_ergodic: Ergodic capital prices in levels
-        Pm_ergodic: Ergodic intermediate prices in levels
+        state_ss: Steady state states in log (first n_sectors = capital)
+        P_ergodic: Output price weights in levels (same as nonlinear model)
+        Pk_ergodic: Capital price weights in levels
+        Pm_ergodic: Intermediate price weights in levels
         n_sectors: Number of sectors
         burn_in: Number of initial periods to discard
         source_label: Label for debugging output
 
     Returns:
-        Dictionary with analysis variables (log deviations from ergodic-price SS)
+        Dictionary with analysis variables (log deviations from SS)
     """
     n = n_sectors
     idx = _get_variable_indices(n)
 
-    # Apply burn-in
     n_periods = simul_data.shape[1]
     if burn_in >= n_periods:
         burn_in = n_periods // 10
     simul = simul_data[:, burn_in:]
 
-    # Extract sectoral variables in levels
-    K = jnp.exp(simul[idx["k"][0] : idx["k"][1], :])  # (n_sectors, n_periods)
-    Y = jnp.exp(simul[idx["y"][0] : idx["y"][1], :])
-    Inv = jnp.exp(simul[idx["i"][0] : idx["i"][1], :])
-    M = jnp.exp(simul[idx["m"][0] : idx["m"][1], :])
-
-    # CES aggregates from simulation (these are consistent definitions)
-    Cagg = jnp.exp(simul[idx["cagg"], :])
-    Lagg = jnp.exp(simul[idx["lagg"], :])
-
-    # Aggregate using ergodic prices
-    Kagg = K.T @ Pk_ergodic
-    Yagg = Y.T @ P_ergodic
-    Iagg = Inv.T @ Pk_ergodic
-    Magg = M.T @ Pm_ergodic
-
-    # Compute SS aggregates using SAME ergodic prices
     policies_ss_levels = jnp.exp(policies_ss)
     K_ss = jnp.exp(state_ss[:n])
     Y_ss = policies_ss_levels[10 * n : 11 * n]
     I_ss = policies_ss_levels[6 * n : 7 * n]
     M_ss = policies_ss_levels[4 * n : 5 * n]
-    Cagg_ss = policies_ss_levels[11 * n]
-    Lagg_ss = policies_ss_levels[11 * n + 1]
+
+    log_dev_k = simul[idx["k"][0] : idx["k"][1], :]
+    log_dev_y = simul[idx["y"][0] : idx["y"][1], :]
+    log_dev_i = simul[idx["i"][0] : idx["i"][1], :]
+    log_dev_m = simul[idx["m"][0] : idx["m"][1], :]
+
+    K_levels = K_ss[:, None] * jnp.exp(log_dev_k)
+    Y_levels = Y_ss[:, None] * jnp.exp(log_dev_y)
+    I_levels = I_ss[:, None] * jnp.exp(log_dev_i)
+    M_levels = M_ss[:, None] * jnp.exp(log_dev_m)
+
+    Kagg = K_levels.T @ Pk_ergodic
+    Yagg = Y_levels.T @ P_ergodic
+    Iagg = I_levels.T @ Pk_ergodic
+    Magg = M_levels.T @ Pm_ergodic
 
     Kagg_ss = K_ss @ Pk_ergodic
     Yagg_ss = Y_ss @ P_ergodic
     Iagg_ss = I_ss @ Pk_ergodic
     Magg_ss = M_ss @ Pm_ergodic
 
-    # Compute log deviations
+    cagg_logdev = jnp.ravel(simul[idx["cagg"], :])
+    lagg_logdev = jnp.ravel(simul[idx["lagg"], :])
+
     result = {
-        "Agg. Consumption": jnp.log(Cagg) - jnp.log(Cagg_ss),
-        "Agg. Labor": jnp.log(Lagg) - jnp.log(Lagg_ss),
+        "Agg. Consumption": cagg_logdev,
+        "Agg. Labor": lagg_logdev,
         "Agg. Capital": jnp.log(Kagg) - jnp.log(Kagg_ss),
         "Agg. Output": jnp.log(Yagg) - jnp.log(Yagg_ss),
         "Agg. Intermediates": jnp.log(Magg) - jnp.log(Magg_ss),
@@ -457,22 +465,29 @@ def create_perfect_foresight_descriptive_stats(
     determ_stats: dict,
     label: str = "Perfect Foresight",
     n_sectors: int = 37,
+    model_stats: dict | None = None,
 ) -> dict:
     """
     Create pre-computed descriptive statistics from perfect foresight (deterministic) statistics.
 
-    Supports two formats:
+    Supports:
     1. Legacy format (pre-Feb 2026): Individual fields like Cagg_volatility, Cagg_mean_logdev
-    2. New format (Feb 2026+): Full vectors policies_mean, policies_std
+    2. New format (Feb 2026+): policies_mean, policies_std, and optionally ModelStats
+
+    When model_stats is provided (Statistics.PerfectForesight.ModelStats), aggregate volatilities
+    are taken from it when available (sigma_VA_agg, sigma_L_agg, sigma_I_agg, sigma_M_agg).
+    ModelStats does not include sigma_C_agg; Consumption Sd is taken from policies_std.
 
     Note: Skewness and Kurtosis are not available for perfect foresight (would need simulation).
 
     Args:
         determ_stats: Dictionary with deterministic statistics from MATLAB.
-                     Legacy format: Cagg_volatility, Lagg_volatility, Cagg_mean_logdev, etc.
-                     New format: policies_mean (412x1), policies_std (412x1)
+                     Legacy: Cagg_volatility, Lagg_volatility, etc.
+                     New: policies_mean (412x1), policies_std (412x1)
         label: Label for this experiment in the output
         n_sectors: Number of sectors (default 37)
+        model_stats: Optional ModelStats struct (Statistics.PerfectForesight.ModelStats).
+                     When present, used for sigma_VA_agg, sigma_L_agg, sigma_I_agg, sigma_M_agg.
 
     Returns:
         Dictionary in format {label: {var_label: {"Mean": val, "Sd": val, "Skewness": val, "Excess Kurtosis": val}}}
@@ -480,18 +495,18 @@ def create_perfect_foresight_descriptive_stats(
     """
     result = {}
     n = n_sectors
+    ms = model_stats if model_stats else {}
 
-    # Check if we have new format (policies_mean/policies_std vectors)
+    model_stats_sd_map = {
+        "Agg. Output": "sigma_VA_agg",
+        "Agg. Labor": "sigma_L_agg",
+        "Agg. Investment": "sigma_I_agg",
+        "Agg. Intermediates": "sigma_M_agg",
+    }
+
     has_new_format = "policies_std" in determ_stats or "policies_mean" in determ_stats
 
     if has_new_format:
-        # New format: extract from full policy vectors
-        # Policy indexing (for 37 sectors, 412 = 11*37 + 5 policies):
-        #   policies[11*n+0] = cagg
-        #   policies[11*n+1] = lagg
-        #   policies[11*n+2] = yagg
-        #   policies[11*n+3] = iagg
-        #   policies[11*n+4] = magg
         agg_indices = {
             "Agg. Consumption": 11 * n,
             "Agg. Labor": 11 * n + 1,
@@ -507,14 +522,16 @@ def create_perfect_foresight_descriptive_stats(
             stats_dict = {}
 
             if policies_mean is not None and idx < len(policies_mean):
-                stats_dict["Mean"] = float(policies_mean[idx]) * 100  # Convert to %
+                stats_dict["Mean"] = float(policies_mean[idx]) * 100
 
-            if policies_std is not None and idx < len(policies_std):
-                stats_dict["Sd"] = float(policies_std[idx]) * 100  # Convert to %
+            sd_key = model_stats_sd_map.get(var_name)
+            if sd_key and sd_key in ms:
+                stats_dict["Sd"] = float(ms[sd_key]) * 100
+            elif policies_std is not None and idx < len(policies_std):
+                stats_dict["Sd"] = float(policies_std[idx]) * 100
             else:
                 stats_dict["Sd"] = float("nan")
 
-            # Skewness and kurtosis not available in new format
             stats_dict["Skewness"] = float("nan")
             stats_dict["Excess Kurtosis"] = float("nan")
 

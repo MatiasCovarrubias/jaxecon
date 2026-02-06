@@ -654,11 +654,6 @@ if isfield(BaseResults, 'SimulPerfectForesight') && ~isempty(BaseResults.SimulPe
     ModelData.Statistics.PerfectForesight.policies_mean = mean(policies_simul, 2);
     ModelData.Statistics.PerfectForesight.policies_std = std(policies_simul, 0, 2);
     
-    % Business cycle statistics (detailed)
-    if isfield(BaseResults, 'ModelStatsPF')
-        ModelData.Statistics.PerfectForesight.ModelStats = BaseResults.ModelStatsPF;
-    end
-    
     fprintf('\n  Perfect Foresight (Nonlinear) Simulation:\n');
     if isfield(BaseResults, 'pf_burn_in')
         fprintf('    Active periods: %d (burn-in: %d, burn-out: %d, total: %d)\n', ...

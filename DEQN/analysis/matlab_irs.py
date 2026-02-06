@@ -90,8 +90,8 @@ def _parse_shock_label_to_key(label: str, shock_value: float) -> str:
     """
     import re
 
-    # Try to parse label like "neg20pct", "pos5pct", "neg_5pct"
-    match = re.match(r"(neg|pos)_?(\d+)pct", label, re.IGNORECASE)
+    label_str = str(label).strip()
+    match = re.search(r"(neg|pos)_?(\d+)pct", label_str, re.IGNORECASE)
     if match:
         sign = match.group(1).lower()
         pct = int(match.group(2))
@@ -101,9 +101,9 @@ def _parse_shock_label_to_key(label: str, shock_value: float) -> str:
     # In MATLAB: -log(0.8) ≈ 0.223 means A drops to 0.8 (negative shock)
     # In MATLAB: log(1.2) ≈ 0.182 means A rises to 1.2 (positive shock)
     # The sign depends on how the label describes it, not just the numeric value
-    if "neg" in label.lower():
+    if "neg" in label_str.lower():
         sign = "neg"
-    elif "pos" in label.lower():
+    elif "pos" in label_str.lower():
         sign = "pos"
     else:
         # Last resort: compute from value (may be inaccurate)
@@ -162,12 +162,15 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
 
     for i in range(n_shocks):
         shock_cfg = shock_configs[i]
+        if isinstance(shock_cfg, np.ndarray) and shock_cfg.size > 0:
+            shock_cfg = shock_cfg.ravel()[0]
+        if not isinstance(shock_cfg, dict):
+            shock_cfg = {}
         shock_result = by_shock[i]
 
-        # Extract shock info
-        shock_value = shock_cfg.get("value", 0)
-        shock_label = shock_cfg.get("label", f"shock_{i}")
-        shock_desc = shock_cfg.get("description", "")
+        shock_value = shock_cfg.get("value", shock_cfg.get("Value", 0))
+        shock_label = shock_cfg.get("label", shock_cfg.get("Label", f"shock_{i}"))
+        shock_desc = shock_cfg.get("description", shock_cfg.get("Description", ""))
 
         # Parse the key from MATLAB label (e.g., "neg20pct" → "neg_20", "pos5pct" → "pos_5")
         key = _parse_shock_label_to_key(shock_label, shock_value)
@@ -205,16 +208,16 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
         "half_lives_determ": None,
     }
 
-    # Extract statistics
-    stats = shock_result.get("Statistics", {})
+    # Extract statistics (MATLAB uses peak_values_firstorder/peak_values_pf; legacy uses _loglin/_determ)
+    stats = shock_result.get("Statistics", {}) or {}
     if stats:
-        processed["peak_values_loglin"] = stats.get("peak_values_loglin")
-        processed["peak_values_determ"] = stats.get("peak_values_determ")
+        processed["peak_values_loglin"] = stats.get("peak_values_loglin") or stats.get("peak_values_firstorder")
+        processed["peak_values_determ"] = stats.get("peak_values_determ") or stats.get("peak_values_pf")
         processed["amplifications"] = stats.get("amplifications")
-        processed["half_lives_loglin"] = stats.get("half_lives_loglin")
-        processed["half_lives_determ"] = stats.get("half_lives_determ")
+        processed["half_lives_loglin"] = stats.get("half_lives_loglin") or stats.get("half_lives_firstorder")
+        processed["half_lives_determ"] = stats.get("half_lives_determ") or stats.get("half_lives_pf")
 
-    # Extract IRFs for each sector
+    # Extract IRFs for each sector (MATLAB uses IRSFirstOrder/IRSPF; legacy uses IRSLoglin/IRSDeterm)
     irfs = shock_result.get("IRFs", [])
     if not isinstance(irfs, (list, np.ndarray)):
         irfs = [irfs]
@@ -228,13 +231,15 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
             sector_idx = int(sector_idx.item())
         sector_idx = int(sector_idx) - 1  # Convert to 0-based
 
-        irs_loglin = irf_data.get("IRSLoglin")
-        irs_determ = irf_data.get("IRSDeterm")
+        irs_loglin = irf_data.get("IRSLoglin") or irf_data.get("IRSFirstOrder")
+        irs_determ = irf_data.get("IRSDeterm") or irf_data.get("IRSPF")
 
-        if irs_loglin is not None and irs_determ is not None:
+        if irs_loglin is not None:
+            arr_loglin = np.array(irs_loglin)
+            arr_determ = np.array(irs_determ) if irs_determ is not None else arr_loglin.copy()
             processed["sectors"][sector_idx] = {
-                "IRSLoglin": np.array(irs_loglin),
-                "IRSDeterm": np.array(irs_determ),
+                "IRSLoglin": arr_loglin,
+                "IRSDeterm": arr_determ,
             }
 
     return processed

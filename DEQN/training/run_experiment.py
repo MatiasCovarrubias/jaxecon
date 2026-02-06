@@ -99,8 +99,17 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         opt_state = restored_state["opt_state"]
         restored_step = int(restored_state["step"])  # Convert to Python int (TrainState expects int, not JAX array)
 
+        # Determine starting step: reset to 0 by default so learning rate schedule starts fresh
+        # Set config["restore_step"] = True to continue from the checkpoint's step count
+        if config.get("restore_step", False):
+            starting_step = restored_step
+            print(f"Restored from checkpoint at step {restored_step}, continuing from step {starting_step}")
+        else:
+            starting_step = 0
+            print(f"Restored from checkpoint at step {restored_step}, resetting to step {starting_step}")
+
         train_state_obj = TrainState.create(apply_fn=neural_net.apply, params=params, tx=optax.adam(lr_schedule))
-        train_state_obj = train_state_obj.replace(opt_state=opt_state, step=restored_step)
+        train_state_obj = train_state_obj.replace(opt_state=opt_state, step=starting_step)
 
     # GET TRAIN AND EVAL FUNCTIONS
     from DEQN.algorithm.eval import create_eval_fn

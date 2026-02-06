@@ -94,6 +94,7 @@ config = {
     "seed": 1,
     "restore": False,
     "restore_exper_name": None,
+    "restore_step": False,  # If True, continue from checkpoint's step count (low LR). If False, reset to step 0.
     "comment": "",
     # Econ Model parameters
     "model_param_overrides": {

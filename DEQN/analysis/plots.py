@@ -508,16 +508,23 @@ def plot_combined_impulse_responses(
                     matlab_ir_data, sector_idx, var_label, max_periods
                 )
 
-                if matlab_irs_pos and pos_key in matlab_irs_pos:
-                    pos_loglin = matlab_irs_pos[pos_key]["loglin"][:max_periods] * 100
-                    pos_determ = matlab_irs_pos[pos_key]["determ"][:max_periods] * 100
+                pos_keys = (
+                    [pos_key] if (matlab_irs_pos and pos_key in matlab_irs_pos) else (list(matlab_irs_pos.keys()) if matlab_irs_pos else [])
+                )
+                neg_keys = (
+                    [neg_key] if (matlab_irs_neg and neg_key in matlab_irs_neg) else (list(matlab_irs_neg.keys()) if matlab_irs_neg else [])
+                )
+
+                for pk in pos_keys:
+                    pos_loglin = matlab_irs_pos[pk]["loglin"][:max_periods] * 100
+                    pos_determ = matlab_irs_pos[pk]["determ"][:max_periods] * 100
+                    pct = pk.replace("pos_", "")
                     t_loglin = np.arange(len(pos_loglin))
                     t_determ = np.arange(len(pos_determ))
-
                     ax.plot(
                         t_loglin,
                         pos_loglin,
-                        label=f"Loglinear (+{shock_size}%)",
+                        label=f"Loglinear (+{pct}%)",
                         color=colors[4],
                         linewidth=2,
                         linestyle="--",
@@ -526,23 +533,23 @@ def plot_combined_impulse_responses(
                     ax.plot(
                         t_determ,
                         pos_determ,
-                        label=f"Perfect Foresight (+{shock_size}%)",
+                        label=f"Perfect Foresight (+{pct}%)",
                         color=colors[2],
                         linewidth=2,
                         linestyle="-.",
                         alpha=0.8,
                     )
 
-                if matlab_irs_neg and neg_key in matlab_irs_neg:
-                    neg_loglin = matlab_irs_neg[neg_key]["loglin"][:max_periods] * 100
-                    neg_determ = matlab_irs_neg[neg_key]["determ"][:max_periods] * 100
+                for nk in neg_keys:
+                    neg_loglin = matlab_irs_neg[nk]["loglin"][:max_periods] * 100
+                    neg_determ = matlab_irs_neg[nk]["determ"][:max_periods] * 100
+                    pct = nk.replace("neg_", "")
                     t_loglin = np.arange(len(neg_loglin))
                     t_determ = np.arange(len(neg_determ))
-
                     ax.plot(
                         t_loglin,
                         neg_loglin,
-                        label=f"Loglinear (-{shock_size}%)",
+                        label=f"Loglinear (-{pct}%)",
                         color=colors[5],
                         linewidth=2,
                         linestyle="--",
@@ -551,7 +558,7 @@ def plot_combined_impulse_responses(
                     ax.plot(
                         t_determ,
                         neg_determ,
-                        label=f"Perfect Foresight (-{shock_size}%)",
+                        label=f"Perfect Foresight (-{pct}%)",
                         color=colors[3],
                         linewidth=2,
                         linestyle="-.",
@@ -886,9 +893,11 @@ def plot_sector_ir_by_shock_size(
         matlab_irs = get_matlab_ir_for_analysis_variable(matlab_ir_data, sector_idx, variable_to_plot, max_periods)
 
         if matlab_irs:
-            if pos_key in matlab_irs:
-                pos_loglin = matlab_irs[pos_key]["loglin"][:max_periods] * 100
-                pos_determ = matlab_irs[pos_key]["determ"][:max_periods] * 100
+            pos_keys = [pos_key] if pos_key in matlab_irs else [k for k in matlab_irs if k.startswith("pos_")]
+            neg_keys = [neg_key] if neg_key in matlab_irs else [k for k in matlab_irs if k.startswith("neg_")]
+            for pk in pos_keys:
+                pos_loglin = matlab_irs[pk]["loglin"][:max_periods] * 100
+                pos_determ = matlab_irs[pk]["determ"][:max_periods] * 100
                 ax.plot(
                     np.arange(len(pos_loglin)),
                     pos_loglin,
@@ -907,10 +916,9 @@ def plot_sector_ir_by_shock_size(
                     alpha=0.8,
                     label="Perfect Foresight" if j == 0 else None,
                 )
-
-            if neg_key in matlab_irs:
-                neg_loglin = matlab_irs[neg_key]["loglin"][:max_periods] * 100
-                neg_determ = matlab_irs[neg_key]["determ"][:max_periods] * 100
+            for nk in neg_keys:
+                neg_loglin = matlab_irs[nk]["loglin"][:max_periods] * 100
+                neg_determ = matlab_irs[nk]["determ"][:max_periods] * 100
                 ax.plot(
                     np.arange(len(neg_loglin)),
                     neg_loglin,

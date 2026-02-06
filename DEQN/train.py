@@ -100,7 +100,7 @@ config = {
         # "pareps_c": 0.1,
     },
     "mc_draws": 32,  # number of monte-carlo draws for loss calculation
-    "init_range": 6,  # range around the SS for state initialization in the model.
+    "init_range": {"endostate": 6, "exostate": 6},  # range around SS (% deviation). Can be scalar or dict.
     "model_vol_scale": 0.1,  # scale for model volatility (used for simulation and expectation)
     "simul_vol_scale": 10.0,  # scale for simulation volatility (only used in simulation)
     # Training parameters
@@ -118,7 +118,7 @@ config = {
         "mc_draws": 64,
         "simul_vol_scale": 1,
         "eval_n_epis": 64,
-        "init_range": 6,
+        "init_range": {"endostate": 6, "exostate": 6},
     },
 }
 

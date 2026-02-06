@@ -94,8 +94,22 @@ class Model:
             self.Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.Lagg_ss ** (1 + self.eps_l ** (-1))
         ) ** (1 - self.eps_c ** (-1))
 
-    def initial_state(self, rng, range=1):
-        """Get initial state by sampling uniformly from a range around the steady state"""
+    def initial_state(self, rng, init_range=1):
+        """Get initial state by sampling uniformly from a range around the steady state.
+
+        Args:
+            rng: JAX random key
+            init_range: Either a scalar (used for both endo and exo states) or a dict with keys
+                       'endostate' and 'exostate' for separate control over endogenous (K)
+                       and exogenous (A) state initialization ranges.
+                       The range value represents percentage deviation from steady state.
+        """
+        if isinstance(init_range, dict):
+            range_endo = init_range.get("endostate", 1)
+            range_exo = init_range.get("exostate", 1)
+        else:
+            range_endo = init_range
+            range_exo = init_range
 
         rng_k, rng_a, rng_c = random.split(rng, 3)
         K_ss = jnp.exp(self.state_ss[: self.n_sectors])  # get K in StSt (in levels)
@@ -103,11 +117,11 @@ class Model:
         K_init = random.uniform(
             rng_k,
             shape=(self.n_sectors,),
-            minval=(1 - range / 100) * K_ss,
-            maxval=(1 + range / 300) * K_ss,
+            minval=(1 - range_endo / 100) * K_ss,
+            maxval=(1 + range_endo / 300) * K_ss,
         )
         A_init = random.uniform(
-            rng_a, shape=(self.n_sectors,), minval=(1 - range / 100) * A_ss, maxval=(1 + range / 100) * A_ss
+            rng_a, shape=(self.n_sectors,), minval=(1 - range_exo / 100) * A_ss, maxval=(1 + range_exo / 100) * A_ss
         )
         state_init_notnorm = jnp.concatenate([jnp.log(K_init), jnp.log(A_init)])
         state_init = (state_init_notnorm - self.state_ss) / self.state_sd  # normalize

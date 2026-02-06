@@ -478,6 +478,7 @@ def main():
             label="Perfect Foresight",
             n_sectors=n_sectors,
             model_stats=pf_model_stats,
+            policies_ss=policies_ss,
         )
         theoretical_stats.update(pf_theo_stats)
 

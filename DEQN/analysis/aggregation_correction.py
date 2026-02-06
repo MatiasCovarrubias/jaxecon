@@ -233,6 +233,8 @@ def process_simulation_with_consistent_aggregation(
     n = n_sectors
     idx = _get_variable_indices(n)
 
+    if simul_data.shape[0] < simul_data.shape[1]:
+        simul_data = simul_data.T
     n_periods = simul_data.shape[1]
     if burn_in >= n_periods:
         burn_in = n_periods // 10
@@ -466,6 +468,7 @@ def create_perfect_foresight_descriptive_stats(
     label: str = "Perfect Foresight",
     n_sectors: int = 37,
     model_stats: dict | None = None,
+    policies_ss: jnp.ndarray | None = None,
 ) -> dict:
     """
     Create pre-computed descriptive statistics from perfect foresight (deterministic) statistics.
@@ -478,6 +481,9 @@ def create_perfect_foresight_descriptive_stats(
     are taken from it when available (sigma_VA_agg, sigma_L_agg, sigma_I_agg, sigma_M_agg).
     ModelStats does not include sigma_C_agg; Consumption Sd is taken from policies_std.
 
+    policies_mean in MATLAB is the mean over time of log levels; mean log deviation in percent
+    is (policies_mean - policies_ss) * 100. When policies_ss is provided, Mean is computed that way.
+
     Note: Skewness and Kurtosis are not available for perfect foresight (would need simulation).
 
     Args:
@@ -488,6 +494,8 @@ def create_perfect_foresight_descriptive_stats(
         n_sectors: Number of sectors (default 37)
         model_stats: Optional ModelStats struct (Statistics.PerfectForesight.ModelStats).
                      When present, used for sigma_VA_agg, sigma_L_agg, sigma_I_agg, sigma_M_agg.
+        policies_ss: Optional steady-state policies (log levels). When provided, Mean for
+                     aggregates is (policies_mean - policies_ss) * 100 (mean log deviation in %).
 
     Returns:
         Dictionary in format {label: {var_label: {"Mean": val, "Sd": val, "Skewness": val, "Excess Kurtosis": val}}}
@@ -517,12 +525,21 @@ def create_perfect_foresight_descriptive_stats(
 
         policies_mean = determ_stats.get("policies_mean")
         policies_std = determ_stats.get("policies_std")
+        ps = None
+        if policies_ss is not None:
+            ps = jnp.asarray(policies_ss)
+            if hasattr(ps, "shape") and len(ps.shape) > 1:
+                ps = jnp.ravel(ps)
 
         for var_name, idx in agg_indices.items():
             stats_dict = {}
 
             if policies_mean is not None and idx < len(policies_mean):
-                stats_dict["Mean"] = float(policies_mean[idx]) * 100
+                pm = float(policies_mean[idx])
+                if ps is not None and idx < len(ps):
+                    stats_dict["Mean"] = (pm - float(ps[idx])) * 100
+                else:
+                    stats_dict["Mean"] = pm * 100
 
             sd_key = model_stats_sd_map.get(var_name)
             if sd_key and sd_key in ms:

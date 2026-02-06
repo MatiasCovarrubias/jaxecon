@@ -24,6 +24,24 @@ _CALIBRATION_ROWS = [
     ("$\\sigma(I)$ inv-wgt", "sigma_I_avg_invweighted", "sigma_I_avg_invweighted"),
 ]
 
+_CALIBRATION_CONSOLE_LABELS = [
+    "σ(Y_agg)",
+    "σ(I_agg)",
+    "σ(L_hc_agg)",
+    "σ(Domar)avg",
+    "σ(L) avg",
+    "σ(I) avg",
+    "σ(L) emp-wgt",
+    "σ(I) inv-wgt",
+]
+
+_CALIBRATION_SECTION_BREAKS = [0, 4, 6, 8]
+_CALIBRATION_SECTION_TITLES = [
+    "",
+    "── Sectoral volatilities (VA-weighted) ──",
+    "── Sectoral volatilities (own-variable weighted) ──",
+]
+
 
 def _scalar_from_matlab_value(x: Any) -> Optional[float]:
     if x is None:
@@ -71,7 +89,7 @@ def create_calibration_table(
         rows.append((row_label, model_val, data_val))
 
     latex_code = _generate_calibration_latex_table(rows)
-    console_output = _generate_calibration_console_table(rows)
+    console_output = _generate_calibration_console_table(rows, analysis_name)
 
     if save_path:
         if analysis_name:
@@ -88,38 +106,73 @@ def create_calibration_table(
     return latex_code
 
 
-def _generate_calibration_console_table(rows: list) -> str:
+def _generate_calibration_console_table(rows: list, analysis_name: Optional[str] = None) -> str:
+    line_len = 80
     output = []
-    output.append("\n" + "═" * 72)
-    output.append("  CALIBRATION TABLE (First-Order Model vs Empirical Targets)")
-    output.append("═" * 72)
-    output.append(f"\n    {'Moment':<28} {'Model (1st order)':>18} {'Data':>12}")
-    output.append("  " + "─" * 68)
-    for row_label, model_val, data_val in rows:
-        ms = f"{model_val:.4f}" if model_val is not None else "N/A"
-        ds = f"{data_val:.4f}" if data_val is not None else "N/A"
-        label_plain = row_label.replace("$", "").replace("\\text{agg}", "agg").replace("\\sigma", "sigma").replace("\\text{hc,agg}", "hc,agg")
-        output.append(f"    {label_plain[:28]:<28} {ms:>18} {ds:>12}")
-    output.append("\n" + "═" * 72)
+    output.append("")
+    output.append("=" * line_len)
+    output.append(" " * ((line_len - 42) // 2) + "CALIBRATION TABLE (Model vs Data)")
+    output.append("=" * line_len)
+    if analysis_name:
+        output.append(f"Experiment: {analysis_name}")
+    output.append("-" * line_len)
+    output.append("")
+    output.append("[B] MODEL vs DATA (Business Cycle Moments)")
+    output.append("                    Model      Data    Ratio")
+    output.append("    " + "-" * 52)
+
+    for i, ((_, model_val, data_val), console_label) in enumerate(zip(rows, _CALIBRATION_CONSOLE_LABELS)):
+        for section_idx in range(len(_CALIBRATION_SECTION_BREAKS) - 1):
+            if i == _CALIBRATION_SECTION_BREAKS[section_idx + 1] and _CALIBRATION_SECTION_TITLES[section_idx + 1]:
+                output.append("")
+                output.append(f"    {_CALIBRATION_SECTION_TITLES[section_idx + 1]}")
+                output.append("    " + "-" * 52)
+                break
+
+        ms = f"{model_val:7.4f}" if model_val is not None else "    N/A"
+        ds = f"{data_val:7.4f}" if data_val is not None else "    N/A"
+        if model_val is not None and data_val is not None and abs(data_val) > 1e-10:
+            ratio = model_val / data_val
+            ratio_str = f"  {ratio:5.2f}"
+        else:
+            ratio_str = "   —"
+        output.append(f"    {console_label:<18} {ms}   {ds} {ratio_str}")
+
+    output.append("")
+    output.append("=" * line_len)
+    output.append("")
     return "\n".join(output)
 
 
 def _generate_calibration_latex_table(rows: list) -> str:
     latex_code = (
-        r"\begin{tabularx}{\textwidth}{l X X}" + "\n"
+        r"\begin{tabular}{l r r r}" + "\n"
         r"\toprule" + "\n"
-        r"\textbf{Moment} & \textbf{Model (First Order)} & \textbf{Data} \\" + "\n"
+        r"\textbf{Moment} & \textbf{Model (1st)} & \textbf{Data} & \textbf{Ratio} \\" + "\n"
         r"\midrule" + "\n"
     )
-    for row_label, model_val, data_val in rows:
+    for i, (row_label, model_val, data_val) in enumerate(rows):
+        if i == 4:
+            latex_code += r"\midrule" + "\n"
+            latex_code += r"\multicolumn{4}{l}{\textit{Sectoral volatilities (VA-weighted)}} \\" + "\n"
+            latex_code += r"\midrule" + "\n"
+        elif i == 6:
+            latex_code += r"\midrule" + "\n"
+            latex_code += r"\multicolumn{4}{l}{\textit{Sectoral volatilities (own-variable weighted)}} \\" + "\n"
+            latex_code += r"\midrule" + "\n"
+
         model_cell = f"{model_val:.4f}" if model_val is not None else "N/A"
         data_cell = f"{data_val:.4f}" if data_val is not None else "N/A"
-        latex_code += f"{row_label} & {model_cell} & {data_cell} \\\\\n"
-    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+        if model_val is not None and data_val is not None and abs(data_val) > 1e-10:
+            ratio_cell = f"{model_val / data_val:.2f}"
+        else:
+            ratio_cell = "—"
+        latex_code += f"{row_label} & {model_cell} & {data_cell} & {ratio_cell} \\\\\n"
+    latex_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
     latex_code += r"\\" + "\n"
     latex_code += (
         r"\textit{Note: Volatilities are standard deviations of HP-filtered log series. "
-        r"Model column: first-order (log-linear) solution. Data: empirical targets from calibration.}"
+        r"Model: first-order (log-linear) solution. Data: empirical targets from calibration.}"
         + "\n"
     )
     return latex_code

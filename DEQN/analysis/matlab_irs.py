@@ -117,23 +117,20 @@ def _parse_shock_label_to_key(label: str, shock_value: float) -> str:
 
 def _load_new_format(filepath: str) -> Dict[str, Any]:
     """
-    Load IR data from the new ModelData_IRs.mat format (Dec 2025+).
+    Load IR data from ModelData_IRs.mat produced by main.m.
 
-    The new format has structure:
-    - ModelData_IRs.by_shock: Cell array of IR results per shock
-    - ModelData_IRs.by_label: Struct with shock labels as fields
-    - ModelData_IRs.shock_configs: Array of shock configuration structs
-
-    Each shock result contains:
-    - IRFs: Cell array, each with IRSLoglin and IRSDeterm (27 x T matrices)
-    - Statistics: Peak values, half lives, amplifications
-    - shock_config: {value, label, description}
+    Structure (from main.m and process_sector_irs.m):
+    - ModelData_IRs.by_shock: cell array of shock results (one per config.shock_values)
+    - ModelData_IRs.shock_configs: struct array with .value, .label, .description
+    - Each by_shock{i} = IRFResults from process_sector_irs(): .IRFs, .Statistics, .shock_config
+    - Each IRFs{j} has .sector_idx, .client_idx, .IRSFirstOrder, .IRSSecondOrder, .IRSPerfectForesight
+    - Statistics: .peak_values_firstorder, .peak_values_pf, .half_lives_firstorder, .half_lives_pf
 
     Args:
         filepath: Path to ModelData_IRs.mat file
 
     Returns:
-        Standardized dictionary format for IR plotting
+        Standardized dict: { "neg_20": { "sectors": { 0: {"IRSLoglin": ..., "IRSDeterm": ...}, ... }, ... }, ... }
     """
     try:
         mat_data = sio.loadmat(filepath, simplify_cells=True)
@@ -172,12 +169,13 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
         shock_label = shock_cfg.get("label", shock_cfg.get("Label", f"shock_{i}"))
         shock_desc = shock_cfg.get("description", shock_cfg.get("Description", ""))
 
-        # Parse the key from MATLAB label (e.g., "neg20pct" → "neg_20", "pos5pct" → "pos_5")
         key = _parse_shock_label_to_key(shock_label, shock_value)
-
         print(f"    Processing: {shock_label} ({shock_desc}) → key={key}")
 
-        # Process this shock's IRFs
+        if isinstance(shock_result, np.ndarray) and shock_result.size > 0:
+            shock_result = shock_result.ravel()[0]
+        if not isinstance(shock_result, dict):
+            shock_result = {}
         processed = _process_new_format_shock(shock_result)
         if processed:
             ir_data[key] = processed
@@ -217,7 +215,7 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
         processed["half_lives_loglin"] = stats.get("half_lives_loglin") or stats.get("half_lives_firstorder")
         processed["half_lives_determ"] = stats.get("half_lives_determ") or stats.get("half_lives_pf")
 
-    # Extract IRFs for each sector (MATLAB uses IRSFirstOrder/IRSPF; legacy uses IRSLoglin/IRSDeterm)
+    # IRF field names from process_sector_irs.m: IRSFirstOrder, IRSPerfectForesight (and optional IRSSecondOrder)
     irfs = shock_result.get("IRFs", [])
     if not isinstance(irfs, (list, np.ndarray)):
         irfs = [irfs]
@@ -225,18 +223,22 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
     for irf_data in irfs:
         if irf_data is None:
             continue
+        if isinstance(irf_data, np.ndarray) and irf_data.size > 0:
+            irf_data = irf_data.ravel()[0]
+        if not isinstance(irf_data, dict):
+            continue
 
         sector_idx = irf_data.get("sector_idx", 0)
         if isinstance(sector_idx, np.ndarray):
             sector_idx = int(sector_idx.item())
-        sector_idx = int(sector_idx) - 1  # Convert to 0-based
+        sector_idx = int(sector_idx) - 1  # MATLAB 1-based -> Python 0-based
 
-        irs_loglin = irf_data.get("IRSLoglin") or irf_data.get("IRSFirstOrder")
-        irs_determ = irf_data.get("IRSDeterm") or irf_data.get("IRSPF")
+        irs_loglin = irf_data.get("IRSFirstOrder") or irf_data.get("IRSLoglin")
+        irs_determ = irf_data.get("IRSPerfectForesight") or irf_data.get("IRSPF") or irf_data.get("IRSDeterm")
 
         if irs_loglin is not None:
             arr_loglin = np.array(irs_loglin)
-            arr_determ = np.array(irs_determ) if irs_determ is not None else arr_loglin.copy()
+            arr_determ = np.array(irs_determ) if irs_determ is not None else None
             processed["sectors"][sector_idx] = {
                 "IRSLoglin": arr_loglin,
                 "IRSDeterm": arr_determ,
@@ -373,16 +375,21 @@ def get_sector_irs(
 
         sector_data = data["sectors"][sector_idx]
 
-        # Get the raw data
         loglin_raw = sector_data["IRSLoglin"][variable_idx, :]
-        determ_raw = sector_data["IRSDeterm"][variable_idx, :]
-
         if skip_initial:
             loglin = loglin_raw[1 : max_periods + 1]
-            determ = determ_raw[1 : max_periods + 1]
         else:
             loglin = loglin_raw[:max_periods]
-            determ = determ_raw[:max_periods]
+
+        irs_determ = sector_data.get("IRSDeterm")
+        if irs_determ is not None:
+            determ_raw = irs_determ[variable_idx, :]
+            if skip_initial:
+                determ = determ_raw[1 : max_periods + 1]
+            else:
+                determ = determ_raw[:max_periods]
+        else:
+            determ = None
 
         result[key] = {
             "loglin": loglin,

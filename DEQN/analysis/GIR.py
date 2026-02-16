@@ -194,9 +194,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             )
 
             # Create counterfactual initial state with specified shock sign
-            obs_counterfactual_logdev = create_counterfactual_state(
-                obs_init_logdev, state_idx, shock_size, shock_sign
-            )
+            obs_counterfactual_logdev = create_counterfactual_state(obs_init_logdev, state_idx, shock_size, shock_sign)
 
             # Counterfactual trajectory analysis variables (using same shocks)
             traj_analysis_vars_counter = simul_trajectory_analysis_variables(
@@ -225,14 +223,22 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         return gir_analysis_variables
 
     def compute_ir_from_state(
-        initial_state_logdev, train_state, state_idx, P_weights, Pk_weights, Pm_weights, var_labels, shock_size, shock_sign
+        initial_state_logdev,
+        train_state,
+        state_idx,
+        P_weights,
+        Pk_weights,
+        Pm_weights,
+        var_labels,
+        shock_size,
+        shock_sign,
     ):
         """
         Compute IR from a specific initial state (e.g., stochastic steady state).
-        
+
         Unlike GIR which averages over many draws from the ergodic distribution,
         this computes the IR from a single deterministic starting point.
-        
+
         Args:
             initial_state_logdev: Initial state in log deviation form
             train_state: Trained neural network state
@@ -241,31 +247,36 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             var_labels: List of variable labels in consistent order
             shock_size: Size of shock (fraction, e.g., 0.2 for 20%)
             shock_sign: "neg" or "pos"
-            
+
         Returns:
             ir_analysis_variables: Impulse response for analysis variables [T+1, n_analysis_vars]
         """
         # Generate zero shocks for the trajectory (no uncertainty after initial shock)
         zero_shocks = jnp.zeros((config["gir_trajectory_length"], econ_model.n_sectors))
-        
+
         # Original trajectory (no shock)
         traj_analysis_vars_orig = simul_trajectory_analysis_variables(
             econ_model, train_state, zero_shocks, initial_state_logdev, P_weights, Pk_weights, Pm_weights, var_labels
         )
-        
+
         # Create counterfactual initial state with specified shock
-        obs_counterfactual_logdev = create_counterfactual_state(
-            initial_state_logdev, state_idx, shock_size, shock_sign
-        )
-        
+        obs_counterfactual_logdev = create_counterfactual_state(initial_state_logdev, state_idx, shock_size, shock_sign)
+
         # Counterfactual trajectory (with initial shock, then no shocks)
         traj_analysis_vars_counter = simul_trajectory_analysis_variables(
-            econ_model, train_state, zero_shocks, obs_counterfactual_logdev, P_weights, Pk_weights, Pm_weights, var_labels
+            econ_model,
+            train_state,
+            zero_shocks,
+            obs_counterfactual_logdev,
+            P_weights,
+            Pk_weights,
+            Pm_weights,
+            var_labels,
         )
-        
+
         # Impulse response is difference
         ir_analysis_variables = traj_analysis_vars_counter - traj_analysis_vars_orig
-        
+
         return ir_analysis_variables
 
     def GIR_fn(simul_obs, train_state, simul_policies_data=None, stoch_ss_state_logdev=None):
@@ -315,7 +326,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
         # Get shock sizes from config (as percentages, e.g., [5, 10, 20])
         ir_shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
-        
+
         # Determine IR methods to compute.
         configured_methods = config.get("ir_methods")
         if configured_methods is None:
@@ -397,10 +408,8 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                             shock_size,
                             shock_sign,
                         )
-                        
-                        stochss_ir_dict = {
-                            label: stochss_ir_array[:, i] for i, label in enumerate(var_labels)
-                        }
+
+                        stochss_ir_dict = {label: stochss_ir_array[:, i] for i, label in enumerate(var_labels)}
 
                         # Store with key like "pos_5_stochss", "neg_10_stochss", etc.
                         stochss_key = f"{shock_sign}_{shock_size_pct}_stochss"

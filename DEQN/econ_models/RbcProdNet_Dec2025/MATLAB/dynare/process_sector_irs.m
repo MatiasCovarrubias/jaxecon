@@ -68,6 +68,7 @@ if ~isempty(opts.shock_description)
     fprintf('    Shock: %s\n', opts.shock_description);
 end
 
+R = get_ir_row_map();
 IRFs = cell(n_analyzed, 1);
 
 % Check which IRF types are available
@@ -132,37 +133,87 @@ for idx = 1:n_analyzed
     IRFs{idx}.IRSSecondOrder = IRS2ndOrder;       % Second-order (quadratic)
     IRFs{idx}.IRSPerfectForesight = IRSPerfForesight; % Perfect foresight (nonlinear)
     
-    % Compute statistics (row 2 is aggregate C)
-    % Use first-order as reference; fall back to second-order or pf
+    if has_1storder
+        if size(IRS1stOrder, 1) >= R.N_ROWS
+            C_util_1st = IRS1stOrder(R.C_util, :);
+        else
+            C_util_1st = IRS1stOrder(R.C_exp, :);
+        end
+        IRFs{idx}.AggregateFirstOrder = struct( ...
+            'C_utility', C_util_1st, ...
+            'C_exp', IRS1stOrder(R.C_exp, :), ...
+            'I_exp', IRS1stOrder(R.I_exp, :), ...
+            'GDP_exp', IRS1stOrder(R.GDP_exp, :));
+    else
+        IRFs{idx}.AggregateFirstOrder = [];
+    end
+    if has_2ndorder
+        if size(IRS2ndOrder, 1) >= R.N_ROWS
+            C_util_2nd = IRS2ndOrder(R.C_util, :);
+        else
+            C_util_2nd = IRS2ndOrder(R.C_exp, :);
+        end
+        IRFs{idx}.AggregateSecondOrder = struct( ...
+            'C_utility', C_util_2nd, ...
+            'C_exp', IRS2ndOrder(R.C_exp, :), ...
+            'I_exp', IRS2ndOrder(R.I_exp, :), ...
+            'GDP_exp', IRS2ndOrder(R.GDP_exp, :));
+    else
+        IRFs{idx}.AggregateSecondOrder = [];
+    end
+    if has_determ
+        if size(IRSPerfForesight, 1) >= R.N_ROWS
+            C_util_pf = IRSPerfForesight(R.C_util, :);
+        else
+            C_util_pf = IRSPerfForesight(R.C_exp, :);
+        end
+        IRFs{idx}.AggregatePerfectForesight = struct( ...
+            'C_utility', C_util_pf, ...
+            'C_exp', IRSPerfForesight(R.C_exp, :), ...
+            'I_exp', IRSPerfForesight(R.I_exp, :), ...
+            'GDP_exp', IRSPerfForesight(R.GDP_exp, :));
+    else
+        IRFs{idx}.AggregatePerfectForesight = [];
+    end
+    
     if has_1storder
         T_stats = min(100, size(IRS1stOrder, 2));
-        C_1st = IRS1stOrder(2, 1:T_stats);
+        if size(IRS1stOrder, 1) >= R.N_ROWS
+            C_1st = IRS1stOrder(R.C_util, 1:T_stats);
+        else
+            C_1st = IRS1stOrder(R.C_exp, 1:T_stats);
+        end
     else
         C_1st = [];
     end
     if has_2ndorder
         T_stats = min(100, size(IRS2ndOrder, 2));
-        C_2nd = IRS2ndOrder(2, 1:T_stats);
+        if size(IRS2ndOrder, 1) >= R.N_ROWS
+            C_2nd = IRS2ndOrder(R.C_util, 1:T_stats);
+        else
+            C_2nd = IRS2ndOrder(R.C_exp, 1:T_stats);
+        end
     else
         C_2nd = [];
     end
     if has_determ
         T_stats = min(100, size(IRSPerfForesight, 2));
-        C_pf = IRSPerfForesight(2, 1:T_stats);
+        if size(IRSPerfForesight, 1) >= R.N_ROWS
+            C_pf = IRSPerfForesight(R.C_util, 1:T_stats);
+        else
+            C_pf = IRSPerfForesight(R.C_exp, 1:T_stats);
+        end
     else
         C_pf = [];
     end
     
-    % Determine shock sign: auto-detect from TFP response if not provided
-    % Row 1 is A_ir (TFP level), A > 1 means positive shock, A < 1 means negative
     if isempty(opts.shock_sign)
-        % Use first available IRF to determine sign
         if has_1storder
-            A_initial = IRS1stOrder(1, 1);
+            A_initial = IRS1stOrder(R.A, 1);
         elseif has_2ndorder
-            A_initial = IRS2ndOrder(1, 1);
+            A_initial = IRS2ndOrder(R.A, 1);
         else
-            A_initial = IRSPerfForesight(1, 1);
+            A_initial = IRSPerfForesight(R.A, 1);
         end
         if A_initial > 1
             shock_sign = 1;   % Positive shock
@@ -259,31 +310,16 @@ if opts.plot_graphs
         labels_single.sector_indices = sector_indices(idx);
         labels_single.client_indices = labels.client_indices(idx);
         
-        % Handle cell vs array label formats
-        if iscell(labels.sector_labels)
-            labels_single.sector_labels = labels.sector_labels(idx);
-            labels_single.client_labels = labels.client_labels(idx);
-        else
-            labels_single.sector_labels = labels.sector_labels(idx);
-            labels_single.client_labels = labels.client_labels(idx);
-        end
+        labels_single.sector_labels = labels.sector_labels(idx);
+        labels_single.client_labels = labels.client_labels(idx);
         
         if isfield(labels, 'sector_labels_latex')
-            if iscell(labels.sector_labels_latex)
-                labels_single.sector_labels_latex = labels.sector_labels_latex(idx);
-                labels_single.client_labels_latex = labels.client_labels_latex(idx);
-            else
-                labels_single.sector_labels_latex = labels.sector_labels_latex(idx);
-                labels_single.client_labels_latex = labels.client_labels_latex(idx);
-            end
+            labels_single.sector_labels_latex = labels.sector_labels_latex(idx);
+            labels_single.client_labels_latex = labels.client_labels_latex(idx);
         end
         
         if isfield(labels, 'sector_labels_filename')
-            if iscell(labels.sector_labels_filename)
-                labels_single.sector_labels_filename = labels.sector_labels_filename(idx);
-            else
-                labels_single.sector_labels_filename = labels.sector_labels_filename(idx);
-            end
+            labels_single.sector_labels_filename = labels.sector_labels_filename(idx);
         end
         
         % Build graph options for this sector

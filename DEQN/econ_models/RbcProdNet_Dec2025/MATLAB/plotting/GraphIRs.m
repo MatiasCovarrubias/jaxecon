@@ -80,6 +80,9 @@ function GraphIRs(irs_1, irs_2, irs_3, ax, N, labels, range_padding, opts, legen
         legend_labels = get_default_legend_labels(n_series);
     end
     
+    %% Row map for IR data layout
+    R = get_ir_row_map();
+    
     %% Setup styling
     style = get_plot_style();
     
@@ -106,6 +109,13 @@ function GraphIRs(irs_1, irs_2, irs_3, ax, N, labels, range_padding, opts, legen
     
     %% Plot each sector
     for idx = 1:numel(sector_indices)
+        % Clear all figures so each sector gets a clean canvas
+        clf(local_fig_agg);
+        clf(local_fig_sec_in);
+        clf(local_fig_sec_out);
+        clf(local_fig_client_in);
+        clf(local_fig_client_out);
+        
         sector_idx = sector_indices(idx);
         if iscell(sector_labels_latex)
             sector_label_latex = sector_labels_latex{idx};
@@ -131,68 +141,68 @@ function GraphIRs(irs_1, irs_2, irs_3, ax, N, labels, range_padding, opts, legen
         
         % ========== AGGREGATE PANEL ==========
         figure(local_fig_agg);
-        plot_aggregate_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style);
+        plot_aggregate_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style, R);
         sgtitle(sprintf('%s%s, effect on \\textbf{Aggregate}', title_sector, shock_str), ...
             'Interpreter', 'latex', 'Fontsize', style.title_fontsize);
         
         % ========== SECTOR INPUTS PANEL ==========
         figure(local_fig_sec_in);
-        plot_sector_inputs_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style);
+        plot_sector_inputs_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style, R);
         sgtitle(sprintf('%s%s, effect on \\textbf{%s} (INPUTS)', title_sector, shock_str, sector_label_latex), ...
             'Interpreter', 'latex', 'Fontsize', style.title_fontsize);
         
         % ========== SECTOR OUTPUTS PANEL ==========
         figure(local_fig_sec_out);
-        plot_sector_outputs_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style);
+        plot_sector_outputs_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style, R);
         sgtitle(sprintf('%s%s, effect on \\textbf{%s} (OUTPUTS)', title_sector, shock_str, sector_label_latex), ...
             'Interpreter', 'latex', 'Fontsize', style.title_fontsize);
         
         % ========== CLIENT INPUTS PANEL ==========
         figure(local_fig_client_in);
-        plot_client_inputs_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style);
+        plot_client_inputs_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style, R);
         sgtitle(sprintf('%s%s, effect on \\textbf{%s} (INPUTS)', title_sector, shock_str, client_label_latex), ...
             'Interpreter', 'latex', 'Fontsize', style.title_fontsize);
         
         % ========== CLIENT OUTPUTS PANEL ==========
         figure(local_fig_client_out);
-        plot_client_outputs_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style);
+        plot_client_outputs_panel(ax, N, d1, d2, d3, n_series, range_padding, line_specs, legend_entries, t_offset, style, R);
         sgtitle(sprintf('%s%s, effect on \\textbf{%s} (OUTPUTS)', title_sector, shock_str, client_label_latex), ...
             'Interpreter', 'latex', 'Fontsize', style.title_fontsize);
-    end
-    
-    %% Save figures if requested
-    if save_figures
-        if iscell(sector_labels_filename)
-            sec_label_str = sector_labels_filename{end};
-        else
-            sec_label_str = char(sector_labels_filename(end));
+        
+        % Save figures for this sector before clf clears them on next iteration
+        if save_figures
+            if iscell(sector_labels_filename)
+                sec_label_str = sector_labels_filename{idx};
+            else
+                sec_label_str = char(sector_labels_filename(idx));
+            end
+            
+            % Sanitize labels for filesystem safety
+            save_label_safe = char(save_label);
+            save_label_safe = regexprep(save_label_safe, '[^a-zA-Z0-9_\-]', '');
+            sec_label_str = regexprep(sec_label_str, '[^a-zA-Z0-9_\-]', '');
+            
+            % Create figures folder if needed
+            if ~exist(figures_folder, 'dir')
+                mkdir(figures_folder);
+            end
+            
+            % Build filename prefix
+            if isempty(save_label_safe)
+                prefix = '';
+            else
+                prefix = [save_label_safe, '_'];
+            end
+            
+            % Save as PNG with higher resolution
+            print(local_fig_sec_in, fullfile(figures_folder, ['IR_IN_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
+            print(local_fig_sec_out, fullfile(figures_folder, ['IR_OUT_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
+            print(local_fig_agg, fullfile(figures_folder, ['IR_AGGR_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
+            print(local_fig_client_in, fullfile(figures_folder, ['IR_CLIENT_IN_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
+            print(local_fig_client_out, fullfile(figures_folder, ['IR_CLIENT_OUT_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
+            
+            fprintf('Figures saved for sector %s to: %s\n', sec_label_str, figures_folder);
         end
-        
-        % Sanitize labels for filesystem safety
-        save_label_safe = char(save_label);
-        save_label_safe = regexprep(save_label_safe, '[^a-zA-Z0-9_\-]', '');
-        sec_label_str = regexprep(sec_label_str, '[^a-zA-Z0-9_\-]', '');
-        
-        % Create figures folder if needed
-        if ~exist(figures_folder, 'dir')
-            mkdir(figures_folder);
-        end
-        
-        % Build filename prefix
-        if isempty(save_label_safe)
-            prefix = '';
-        else
-            prefix = [save_label_safe, '_'];
-        end
-        
-        % Save as PNG with higher resolution
-        print(local_fig_sec_in, fullfile(figures_folder, ['IR_IN_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
-        print(local_fig_sec_out, fullfile(figures_folder, ['IR_OUT_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
-        print(local_fig_agg, fullfile(figures_folder, ['IR_AGGR_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
-        print(local_fig_client_in, fullfile(figures_folder, ['IR_CLIENT_IN_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
-        print(local_fig_client_out, fullfile(figures_folder, ['IR_CLIENT_OUT_', prefix, sec_label_str, '.png']), '-dpng', '-r150');
-        
-        fprintf('Figures saved to: %s\n', figures_folder);
     end
     
     disp(' *** FINISHED CREATING THE IRs ***');
@@ -346,206 +356,210 @@ end
 
 %% ==================== Panel Plotting Functions ====================
 
-function plot_aggregate_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style)
-    n_cols = 2;
-    n_rows = 2;
-    
-    subplot(n_rows, n_cols, 1);
-    plot_subplot_multi(ax, 1, d1, d2, d3, 1, N, padding, specs, 0, style);
-    title('$A_j$ (TFP)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
-    leg = legend(legend_entries, 'Location', 'best', 'FontSize', style.legend_fontsize);
-    set(leg, 'Box', 'off');
-    
-    subplot(n_rows, n_cols, 2);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 2, N, padding, specs, t_off, style);
-    title('$C$ (Consumption)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
-    
-    subplot(n_rows, n_cols, 3);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 3, N, padding, specs, t_off, style);
-    title('$L$ (Labor)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
-    
-    subplot(n_rows, n_cols, 4);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 24, N, padding, specs, t_off, style);
-    title('$Y$ (Output)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
-end
-
-function plot_sector_inputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style)
+function plot_aggregate_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style, R)
     subplot(2, 3, 1);
-    plot_subplot_multi(ax, 1, d1, d2, d3, 1, N, padding, specs, 0, style);
+    plot_subplot_multi(ax, 1, d1, d2, d3, R.A, N, padding, specs, 0, style);
     title('$A_j$ (TFP)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     leg = legend(legend_entries, 'Location', 'best', 'FontSize', style.legend_fontsize);
     set(leg, 'Box', 'off');
     
     subplot(2, 3, 2);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 8, N, padding, specs, t_off, style);
+    plot_subplot_multi(ax, 0, d1, d2, d3, R.C_util, N, padding, specs, t_off, style);
+    title('$C$ (Utility Aggregate)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
+    
+    subplot(2, 3, 3);
+    plot_subplot_multi(ax, 0, d1, d2, d3, R.C_exp, N, padding, specs, t_off, style);
+    title('$C^{exp}$ (Consumption Expenditure)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
+    
+    subplot(2, 3, 4);
+    plot_subplot_multi(ax, 0, d1, d2, d3, R.I_exp, N, padding, specs, t_off, style);
+    title('$I^{exp}$ (Investment Expenditure)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
+    
+    subplot(2, 3, 5);
+    plot_subplot_multi(ax, 0, d1, d2, d3, R.GDP_exp, N, padding, specs, t_off, style);
+    title('$GDP^{exp}$ (GDP)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
+    
+    subplot(2, 3, 6);
+    axis off;
+end
+
+function plot_sector_inputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style, R)
+    subplot(2, 3, 1);
+    plot_subplot_multi(ax, 1, d1, d2, d3, R.A, N, padding, specs, 0, style);
+    title('$A_j$ (TFP)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
+    leg = legend(legend_entries, 'Location', 'best', 'FontSize', style.legend_fontsize);
+    set(leg, 'Box', 'off');
+    
+    subplot(2, 3, 2);
+    plot_subplot_multi(ax, 0, d1, d2, d3, R.Lj, N, padding, specs, t_off, style);
     title('$L_{j}$ (Labor)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     
     subplot(2, 3, 3);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 9, N, padding, specs, t_off, style);
+    plot_subplot_multi(ax, 0, d1, d2, d3, R.Ij, N, padding, specs, t_off, style);
     title('$I_{j}$ (Investment)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     
     subplot(2, 3, 4);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 10, N, padding, specs, t_off, style);
+    plot_subplot_multi(ax, 0, d1, d2, d3, R.Mj, N, padding, specs, t_off, style);
     title('$M_{j}$ (Intermediates)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     
     subplot(2, 3, 5);
-    plot_subplot_multi(ax, 0, d1, d2, d3, 11, N, padding, specs, t_off, style);
+    plot_subplot_multi(ax, 0, d1, d2, d3, R.Yj, N, padding, specs, t_off, style);
     title('$Y_{j}$ (Value Added)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
 end
 
-function plot_sector_outputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style)
+function plot_sector_outputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style, R)
     subplot(2, 3, 1);
-    plot_subplot_multi(ax, 1, d1, d2, d3, 1, N, padding, specs, 0, style);
+    plot_subplot_multi(ax, 1, d1, d2, d3, R.A, N, padding, specs, 0, style);
     title('$A_j$ (TFP)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     leg = legend(legend_entries, 'Location', 'best', 'FontSize', style.legend_fontsize);
     set(leg, 'Box', 'off');
     
     subplot(2, 3, 2);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 5, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Pj, N, padding, specs, t_off, style);
         title('$P_{j}$ (Price)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 4, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Cj, N, padding, specs, t_off, style);
         title('$C_{j}$ (Consumption)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     end
     
     subplot(2, 3, 3);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 12, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Qj, N, padding, specs, t_off, style);
         title('$Q_{j}$ (Gross Output)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 5, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Pj, N, padding, specs, t_off, style);
         title('$P_{j}$ (Price)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     end
     
     subplot(2, 3, 4);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 4, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Cj, N, padding, specs, t_off, style);
         title('$C_{j}$ (Consumption)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 7, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Moutj, N, padding, specs, t_off, style);
         title('$M^{out}_j$ (Intermediate Sales)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     end
     
     subplot(2, 3, 5);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 7, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Moutj, N, padding, specs, t_off, style);
         title('$M^{out}_j$ (Intermediate Sales)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 6, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Ioutj, N, padding, specs, t_off, style);
         title('$I^{out}_j$ (Investment Sales)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     end
     
     subplot(2, 3, 6);
     if n_series == 3
-        plot_subplot_multi(ax, 0, d1, d2, d3, 6, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Ioutj, N, padding, specs, t_off, style);
         title('$I^{out}_j$ (Investment Sales)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     else
-        plot_subplot_multi(ax, 0, d1, d2, d3, 12, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Qj, N, padding, specs, t_off, style);
         title('$Q_{j}$ (Gross Output)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     end
 end
 
-function plot_client_inputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style)
+function plot_client_inputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style, R)
     if n_series < 3
         subplot(2, 3, 1);
-        plot_subplot_multi(ax, 1, d1, d2, d3, 13, N, padding, specs, 0, style);
+        plot_subplot_multi(ax, 1, d1, d2, d3, R.A_client, N, padding, specs, 0, style);
         title('$A_j$ (TFP)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         leg = legend(legend_entries, 'Location', 'best', 'FontSize', style.legend_fontsize);
         set(leg, 'Box', 'off');
         
         subplot(2, 3, 2);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 18, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Lj_client, N, padding, specs, t_off, style);
         title('$L_j$ (Labor)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 3);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 19, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Ij_client, N, padding, specs, t_off, style);
         title('$I_j$ (Investment)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 4);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 20, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Mj_client, N, padding, specs, t_off, style);
         title('$M_j$ (Intermediates)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 21, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Yj_client, N, padding, specs, t_off, style);
         title('$Y_j$ (Value Added)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     else
         subplot(2, 3, 1);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 18, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Lj_client, N, padding, specs, t_off, style);
         title('$L_j$ (Labor)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 2);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 19, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Ij_client, N, padding, specs, t_off, style);
         title('$I_j$ (Investment)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 3);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 20, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Mj_client, N, padding, specs, t_off, style);
         title('$M_j$ (Intermediates)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         leg = legend(legend_entries, 'Location', 'best', 'FontSize', style.legend_fontsize);
         set(leg, 'Box', 'off');
         
         subplot(2, 3, 4);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 21, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Yj_client, N, padding, specs, t_off, style);
         title('$Y_j$ (Value Added)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 25, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Pmj_client, N, padding, specs, t_off, style);
         title('$P^m_{j}$ (Intermediate Price)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 6);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 26, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.gammaij_client, N, padding, specs, t_off, style);
         title('$\hat{\gamma}_{ij}$ (Expend. Share)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     end
 end
 
-function plot_client_outputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style)
+function plot_client_outputs_panel(ax, N, d1, d2, d3, n_series, padding, specs, legend_entries, t_off, style, R)
     if n_series < 3
         subplot(2, 3, 1);
-        plot_subplot_multi(ax, 1, d1, d2, d3, 13, N, padding, specs, 0, style);
+        plot_subplot_multi(ax, 1, d1, d2, d3, R.A_client, N, padding, specs, 0, style);
         title('$A_j$ (TFP)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         leg = legend(legend_entries, 'Location', 'best', 'FontSize', style.legend_fontsize);
         set(leg, 'Box', 'off');
         
         subplot(2, 3, 2);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 14, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Cj_client, N, padding, specs, t_off, style);
         title('$C_j$ (Consumption)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 3);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 15, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Pj_client, N, padding, specs, t_off, style);
         title('$P_j$ (Price)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 4);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 17, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Moutj_client, N, padding, specs, t_off, style);
         title('$M^{out}_j$ (Intermediate Sales)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 16, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Ioutj_client, N, padding, specs, t_off, style);
         title('$I^{out}_j$ (Investment Sales)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 6);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 22, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Qj_client, N, padding, specs, t_off, style);
         title('$Q_j$ (Gross Output)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     else
         subplot(2, 3, 1);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 15, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Pj_client, N, padding, specs, t_off, style);
         title('$P_j$ (Price)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 2);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 22, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Qj_client, N, padding, specs, t_off, style);
         title('$Q_j$ (Gross Output)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 3);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 14, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Cj_client, N, padding, specs, t_off, style);
         title('$C_j$ (Consumption)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         leg = legend(legend_entries, 'Location', 'best', 'FontSize', style.legend_fontsize);
         set(leg, 'Box', 'off');
         
         subplot(2, 3, 4);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 17, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Moutj_client, N, padding, specs, t_off, style);
         title('$M^{out}_j$ (Intermediate Sales)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
         
         subplot(2, 3, 5);
-        plot_subplot_multi(ax, 0, d1, d2, d3, 16, N, padding, specs, t_off, style);
+        plot_subplot_multi(ax, 0, d1, d2, d3, R.Ioutj_client, N, padding, specs, t_off, style);
         title('$I^{out}_j$ (Investment Sales)', 'Interpreter', 'latex', 'FontSize', style.subtitle_fontsize);
     end
 end

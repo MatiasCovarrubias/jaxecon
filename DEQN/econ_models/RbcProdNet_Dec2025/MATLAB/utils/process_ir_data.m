@@ -18,10 +18,10 @@ function irs = process_ir_data(dynare_simul, sector_idx, client_idx, params, ste
 %   policies_ss   - Steady state policy variables
 %
 % OUTPUTS:
-%   irs - Matrix of impulse responses (26 x T):
+%   irs - Matrix of impulse responses (27 x T):
 %         Row  1: A_ir (TFP level)
-%         Row  2: C_ir (aggregate consumption deviation)
-%         Row  3: L_ir (aggregate labor deviation)
+%         Row  2: C_ir (aggregate consumption expenditure, log dev from SS)
+%         Row  3: I_ir (aggregate investment expenditure, log dev from SS)
 %         Row  4: Cj_ir (sectoral consumption)
 %         Row  5: Pj_ir (sectoral price)
 %         Row  6: Ioutj_ir (sectoral investment output)
@@ -42,9 +42,10 @@ function irs = process_ir_data(dynare_simul, sector_idx, client_idx, params, ste
 %         Row 21: Yj_client_ir (client output)
 %         Row 22: Qj_client_ir (client Tobin's Q)
 %         Row 23: Kj_ir (sectoral capital)
-%         Row 24: Y_ir (aggregate output)
+%         Row 24: GDP_ir (aggregate GDP expenditure, log dev from SS)
 %         Row 25: Pmj_client_ir (client intermediate price)
 %         Row 26: gammaij_client_ir (client expenditure share deviation)
+%         Row 27: C_util_ir (utility aggregate consumption, log dev from SS)
 
     %% Input validation
     validate_params(params, {'Gamma_M', 'sigma_m'}, 'process_ir_data');
@@ -59,15 +60,33 @@ function irs = process_ir_data(dynare_simul, sector_idx, client_idx, params, ste
     pol_idx = @(dyn_range, j) dyn_range(1) - idx.ss_offset + j - 1;  % policies_ss index for sector j
     
     %% Aggregate variables
-    T = size(dynare_simul, 2);
-    n_vars = size(dynare_simul, 1);
-    
     A_ir = exp(dynare_simul(dyn_idx(idx.a, sector_idx), :));
-    C_ir = dynare_simul(idx.cagg, :) - log(Cagg_ss);
-    L_ir = dynare_simul(idx.lagg, :) - log(Lagg_ss);
-    Y_ir = dynare_simul(idx.yagg, :) - steady_state(idx.yagg);
-    I_ir = dynare_simul(idx.iagg, :) - steady_state(idx.iagg);
-    M_ir = dynare_simul(idx.magg, :) - steady_state(idx.magg);
+    % Expenditure-based aggregates (nominal, then log dev from SS)
+    epsilon = 1e-12;
+    p_log = dynare_simul(idx.p(1):idx.p(2), :);
+    c_log = dynare_simul(idx.c(1):idx.c(2), :);
+    iout_log = dynare_simul(idx.iout(1):idx.iout(2), :);
+    q_log = dynare_simul(idx.q(1):idx.q(2), :);
+    mout_log = dynare_simul(idx.mout(1):idx.mout(2), :);
+    
+    p_ss_log = policies_ss((idx.p(1)-idx.ss_offset):(idx.p(2)-idx.ss_offset));
+    c_ss_log = policies_ss((idx.c(1)-idx.ss_offset):(idx.c(2)-idx.ss_offset));
+    iout_ss_log = policies_ss((idx.iout(1)-idx.ss_offset):(idx.iout(2)-idx.ss_offset));
+    q_ss_log = policies_ss((idx.q(1)-idx.ss_offset):(idx.q(2)-idx.ss_offset));
+    mout_ss_log = policies_ss((idx.mout(1)-idx.ss_offset):(idx.mout(2)-idx.ss_offset));
+    
+    C_nom_levels = sum(exp(p_log + c_log), 1);
+    I_nom_levels = sum(exp(p_log + iout_log), 1);
+    GDP_nom_levels = sum(exp(p_log + q_log) - exp(p_log + mout_log), 1);
+    
+    C_nom_ss = sum(exp(p_ss_log + c_ss_log));
+    I_nom_ss = sum(exp(p_ss_log + iout_ss_log));
+    GDP_nom_ss = sum(exp(p_ss_log + q_ss_log) - exp(p_ss_log + mout_ss_log));
+    
+    C_ir = log(max(C_nom_levels, epsilon)) - log(max(C_nom_ss, epsilon));
+    I_ir = log(max(I_nom_levels, epsilon)) - log(max(I_nom_ss, epsilon));
+    GDP_ir = log(max(GDP_nom_levels, epsilon)) - log(max(GDP_nom_ss, epsilon));
+    C_util_ir = dynare_simul(idx.cagg, :) - log(Cagg_ss);
     
     %% Sectoral output variables (shocked sector)
     Cj_ir = dynare_simul(dyn_idx(idx.c, sector_idx), :) - policies_ss(pol_idx(idx.c, sector_idx));
@@ -111,9 +130,9 @@ function irs = process_ir_data(dynare_simul, sector_idx, client_idx, params, ste
     gammaij_client_ir = log(gammaij_lev_client_ir) - log(gammaij_lev_client_ss);
     
     %% Store results in output matrix
-    irs = [A_ir; C_ir; L_ir; Cj_ir; Pj_ir; Ioutj_ir; Moutj_ir; ...
+    irs = [A_ir; C_ir; I_ir; Cj_ir; Pj_ir; Ioutj_ir; Moutj_ir; ...
            Lj_ir; Ij_ir; Mj_ir; Yj_ir; Qj_ir; ...
            A_client_ir; Cj_client_ir; Pj_client_ir; Ioutj_client_ir; Moutj_client_ir; ...
            Lj_client_ir; Ij_client_ir; Mj_client_ir; Yj_client_ir; Qj_client_ir; ...
-           Kj_ir; Y_ir; Pmj_client_ir; gammaij_client_ir];
+           Kj_ir; GDP_ir; Pmj_client_ir; gammaij_client_ir; C_util_ir];
 end

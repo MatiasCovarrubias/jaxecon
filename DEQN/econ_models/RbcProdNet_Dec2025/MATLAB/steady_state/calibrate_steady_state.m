@@ -73,9 +73,6 @@ fsolve_opts = opts.fsolve_options;
 %% ========== STAGE 1: Solve Steady State under Cobb-Douglas ==========
 if opts.verbose
     fprintf('\n');
-    fprintf('  ┌─ STAGE 1: Cobb-Douglas Initialization ───────────────────────┐\n');
-    fprintf('  │  σ = 0.99 for all elasticities (CD approximation)            │\n');
-    fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
 
 % Set elasticities close to 1 (Cobb-Douglas)
@@ -121,12 +118,12 @@ end
 if opts.verbose
     fprintf('\n');
     fprintf('  ┌─ STAGE 2: Lowering σ_l ──────────────────────────────────────┐\n');
-    fprintf('  │  Homotopy: 0.90 → %.2f (%d steps)                            │\n', sigma_l_target, gridpoints);
+    fprintf('  │  Homotopy: 0.99 → %.2f (%d steps)                            │\n', sigma_l_target, gridpoints);
     fprintf('  └────────────────────────────────────────────────────────────────┘\n');
 end
 
 sol_guess = sol_init;
-sigma_l_grid = linspace(0.9, sigma_l_target, gridpoints);
+sigma_l_grid = linspace(0.99, sigma_l_target, gridpoints);
 
 tic_stage2 = tic;
 for i = 1:gridpoints

@@ -150,12 +150,16 @@ config = {
     "gir_trajectory_length": 100,
     "shock_size": 0.2,
     "gir_seed": 42,
+    # IR method(s): choose any of ["GIR", "IR_stoch_ss"].
+    # - GIR: average over ergodic draws
+    # - IR_stoch_ss: single IR from stochastic steady state
+    "ir_methods": ["GIR", "IR_stoch_ss"],
     # Combined IR analysis configuration
     # Sectors to analyze: specify sector indices (0-based).
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0, 2, 19, 23],
-    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Labor"],
+    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. Output"],
     "ir_shock_sizes": [20],
     "ir_max_periods": 80,
     # JAX configuration
@@ -482,22 +486,24 @@ def main():
         )
         theoretical_stats.update(pf_theo_stats)
 
-        # Print available stats (check both new and legacy field names)
-        # New format: extract from policies_std vector
-        if "policies_std" in pf_stats:
+        # Print available stats prioritizing expenditure-based ModelStats.
+        if isinstance(pf_model_stats, dict):
+            c_sd = pf_model_stats.get("sigma_C_agg")
+            i_sd = pf_model_stats.get("sigma_I_agg")
+            y_sd = pf_model_stats.get("sigma_VA_agg")
+            if c_sd is not None:
+                print(f"    Agg. Consumption (exp): σ={float(c_sd)*100:.4f}%", flush=True)
+            if i_sd is not None:
+                print(f"    Agg. Investment (exp): σ={float(i_sd)*100:.4f}%", flush=True)
+            if y_sd is not None:
+                print(f"    Agg. Output/GDP (exp): σ={float(y_sd)*100:.4f}%", flush=True)
+        elif "policies_std" in pf_stats:
+            # Fallback for old files without ModelStats
             policies_std = pf_stats["policies_std"]
             n = n_sectors
             if len(policies_std) > 11 * n + 1:
-                print(f"    Agg. Consumption: σ={float(policies_std[11*n])*100:.4f}%", flush=True)
+                print(f"    Agg. Consumption (utility): σ={float(policies_std[11*n])*100:.4f}%", flush=True)
                 print(f"    Agg. Labor: σ={float(policies_std[11*n+1])*100:.4f}%", flush=True)
-        else:
-            # Legacy format
-            cagg_vol = pf_stats.get("Cagg_volatility")
-            if cagg_vol is not None:
-                print(f"    Agg. Consumption: σ={float(cagg_vol)*100:.4f}%", flush=True)
-            lagg_vol = pf_stats.get("Lagg_volatility")
-            if lagg_vol is not None:
-                print(f"    Agg. Labor: σ={float(lagg_vol)*100:.4f}%", flush=True)
 
     if dynare_simul_pf is not None:
         pf_analysis_vars = process_simulation_with_consistent_aggregation(
@@ -517,9 +523,15 @@ def main():
     # ═══════════════════════════════════════════════════════════════════════════
     # CALIBRATION TABLE (First-Order Model vs Empirical Targets)
     # ═══════════════════════════════════════════════════════════════════════════
-    calibration_emp = md.get("EmpiricalTargets") or (md.get("Calibration") or md.get("calibration") or {}).get("empirical_targets") or (md.get("Calibration") or md.get("calibration") or {}).get("EmpiricalTargets")
+    calibration_emp = (
+        md.get("EmpiricalTargets")
+        or (md.get("Calibration") or md.get("calibration") or {}).get("empirical_targets")
+        or (md.get("Calibration") or md.get("calibration") or {}).get("EmpiricalTargets")
+    )
     fo_stats = stats.get("FirstOrder") or stats.get("firstorder")
-    calibration_model_stats = (fo_stats.get("ModelStats") or fo_stats.get("modelstats")) if isinstance(fo_stats, dict) else None
+    calibration_model_stats = (
+        (fo_stats.get("ModelStats") or fo_stats.get("modelstats")) if isinstance(fo_stats, dict) else None
+    )
     if calibration_emp is not None:
         create_calibration_table(
             empirical_targets=calibration_emp,
@@ -528,7 +540,9 @@ def main():
             analysis_name=config["analysis_name"],
         )
     else:
-        print("  ⚠ Calibration table skipped: no empirical targets in ModelData (EmpiricalTargets / calibration.empirical_targets).")
+        print(
+            "  ⚠ Calibration table skipped: no empirical targets in ModelData (EmpiricalTargets / calibration.empirical_targets)."
+        )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # IMPULSE RESPONSES
@@ -634,7 +648,11 @@ def main():
     )
 
     # Generate histograms (filter out deterministic/perfect foresight solution - not suitable for histograms)
-    histogram_data = {k: v for k, v in analysis_variables_data.items() if "Deterministic" not in k and "Perfect Foresight (Dynare)" not in k}
+    histogram_data = {
+        k: v
+        for k, v in analysis_variables_data.items()
+        if "Deterministic" not in k and "Perfect Foresight (Dynare)" not in k
+    }
     plot_ergodic_histograms(
         analysis_variables_data=histogram_data,
         save_dir=simulation_dir,

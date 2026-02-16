@@ -366,6 +366,10 @@ class Model:
             dict: Dictionary mapping variable labels to their log deviations from steady state
         """
         # Weights and policies: log level = logdev + ss
+        # Keep utility aggregates (Cagg/Lagg) for welfare objects.
+        # Build expenditure aggregates for moments/IR comparisons.
+        epsilon = jnp.array(1e-12)
+
         # Get steady state prices in levels
         P_ss = jnp.exp(self.policies_ss[8 * self.n_sectors : 9 * self.n_sectors])
         Pk_ss = jnp.exp(self.policies_ss[2 * self.n_sectors : 3 * self.n_sectors])
@@ -389,14 +393,21 @@ class Model:
         K = jnp.exp(state_notnorm[: self.n_sectors])  # put in levels
         Kagg = K @ Pk_weights_levels
 
-        Y = policies_levels[10 * self.n_sectors : 11 * self.n_sectors]
-        Yagg = Y @ P_weights_levels
-
+        C = policies_levels[: self.n_sectors]
+        Iout = policies_levels[7 * self.n_sectors : 8 * self.n_sectors]
+        Q = policies_levels[9 * self.n_sectors : 10 * self.n_sectors]
+        Mout = policies_levels[5 * self.n_sectors : 6 * self.n_sectors]
         M = policies_levels[4 * self.n_sectors : 5 * self.n_sectors]
-        Magg = M @ Pm_weights_levels
-
         Inv = policies_levels[6 * self.n_sectors : 7 * self.n_sectors]
-        Iagg = Inv @ Pk_weights_levels
+
+        # Expenditure-based aggregates (current prices)
+        Cagg_exp = jnp.sum(P_weights_levels * C)
+        Iagg_exp = jnp.sum(P_weights_levels * Iout)
+        GDPagg_exp = jnp.sum(P_weights_levels * (Q - Mout))
+
+        # Other aggregates used for diagnostics
+        Y = policies_levels[10 * self.n_sectors : 11 * self.n_sectors]
+        Magg = M @ Pm_weights_levels
 
         # Calculate steady state analysis variables in levels using steady state weights
         policies_ss_levels = jnp.exp(self.policies_ss)
@@ -405,20 +416,26 @@ class Model:
         K_ss = jnp.exp(self.state_ss[: self.n_sectors])  # put in levels
         Kagg_ss = K_ss @ Pk_weights_levels
 
-        Y_ss = policies_ss_levels[10 * self.n_sectors : 11 * self.n_sectors]
-        Yagg_ss = Y_ss @ P_weights_levels
-
+        C_ss = policies_ss_levels[: self.n_sectors]
+        Iout_ss = policies_ss_levels[7 * self.n_sectors : 8 * self.n_sectors]
+        Q_ss = policies_ss_levels[9 * self.n_sectors : 10 * self.n_sectors]
+        Mout_ss = policies_ss_levels[5 * self.n_sectors : 6 * self.n_sectors]
         M_ss = policies_ss_levels[4 * self.n_sectors : 5 * self.n_sectors]
-        Magg_ss = M_ss @ Pm_weights_levels
 
-        Inv_ss = policies_ss_levels[6 * self.n_sectors : 7 * self.n_sectors]
-        Iagg_ss = Inv_ss @ Pk_weights_levels
+        # Expenditure-based steady states
+        Cagg_exp_ss = jnp.sum(P_ss * C_ss)
+        Iagg_exp_ss = jnp.sum(P_ss * Iout_ss)
+        GDPagg_exp_ss = jnp.sum(P_ss * (Q_ss - Mout_ss))
+
+        # Other aggregate steady states used for diagnostics
+        Magg_ss = M_ss @ Pm_weights_levels
 
         # Calculate log deviations from steady state
         Kagg_logdev = jnp.log(Kagg) - jnp.log(Kagg_ss)
-        Yagg_logdev = jnp.log(Yagg) - jnp.log(Yagg_ss)
+        Cagg_exp_logdev = jnp.log(jnp.maximum(Cagg_exp, epsilon)) - jnp.log(jnp.maximum(Cagg_exp_ss, epsilon))
+        Iagg_exp_logdev = jnp.log(jnp.maximum(Iagg_exp, epsilon)) - jnp.log(jnp.maximum(Iagg_exp_ss, epsilon))
+        GDPagg_exp_logdev = jnp.log(jnp.maximum(GDPagg_exp, epsilon)) - jnp.log(jnp.maximum(GDPagg_exp_ss, epsilon))
         Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)
-        Iagg_logdev = jnp.log(Iagg) - jnp.log(Iagg_ss)
 
         # Calculate utility and its deviation
         utility = self.utility_from_policies(policies_logdev)
@@ -427,12 +444,14 @@ class Model:
 
         # Return as dictionary with descriptive labels
         return {
-            "Agg. Consumption": Cagg_logdev,
+            "Agg. Consumption": Cagg_exp_logdev,
+            "Agg. Consumption (Utility)": Cagg_logdev,
             "Agg. Labor": Lagg_logdev,
             "Agg. Capital": Kagg_logdev,
-            "Agg. Output": Yagg_logdev,
+            "Agg. Output": GDPagg_exp_logdev,
+            "Agg. GDP": GDPagg_exp_logdev,
             "Agg. Intermediates": Magg_logdev,
-            "Agg. Investment": Iagg_logdev,
+            "Agg. Investment": Iagg_exp_logdev,
             "Utility": utility_dev,
         }
 

@@ -66,7 +66,7 @@ def load_matlab_irs(
                 return _load_new_format(exp_modeldata_path)
 
     # Fall back to legacy format
-    print(f"  No ModelData_IRs.mat found, trying legacy format...")
+    print("  No ModelData_IRs.mat found, trying legacy format...")
     return _load_legacy_format(matlab_ir_dir, shock_sizes, file_pattern)
 
 
@@ -119,12 +119,14 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
     """
     Load IR data from ModelData_IRs.mat produced by main.m.
 
-    Structure (from main.m and process_sector_irs.m):
-    - ModelData_IRs.by_shock: cell array of shock results (one per config.shock_values)
-    - ModelData_IRs.shock_configs: struct array with .value, .label, .description
-    - Each by_shock{i} = IRFResults from process_sector_irs(): .IRFs, .Statistics, .shock_config
-    - Each IRFs{j} has .sector_idx, .client_idx, .IRSFirstOrder, .IRSSecondOrder, .IRSPerfectForesight
-    - Statistics: .peak_values_firstorder, .peak_values_pf, .half_lives_firstorder, .half_lives_pf
+    Supports both "new format" variants used by MATLAB:
+    1) Flat structure (current main.m):
+       - ModelData_IRs.shocks: struct array with .value/.label/.size_pct/.sign/...
+       - ModelData_IRs.irfs: cell {n_shocks}, each element is struct array over sectors
+         with fields .sector_idx, .first_order, .second_order, .perfect_foresight
+       - ModelData_IRs.peaks / half_lives / amplifications: [n_shocks x n_sectors] matrices
+    2) Nested structure (older transitional format):
+       - ModelData_IRs.shock_configs + ModelData_IRs.by_shock
 
     Args:
         filepath: Path to ModelData_IRs.mat file
@@ -145,7 +147,41 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
     md_irs = mat_data["ModelData_IRs"]
     ir_data = {}
 
-    # Get shock configurations
+    # Variant A: flat structure from current main.m
+    if "irfs" in md_irs:
+        shocks = md_irs.get("shocks", [])
+        irfs_by_shock = md_irs.get("irfs", [])
+
+        if not isinstance(shocks, (list, np.ndarray)):
+            shocks = [shocks]
+        if not isinstance(irfs_by_shock, (list, np.ndarray)):
+            irfs_by_shock = [irfs_by_shock]
+
+        n_shocks = min(len(shocks), len(irfs_by_shock))
+        print(f"    Found {n_shocks} shock configurations (flat format)")
+
+        for i in range(n_shocks):
+            shock_cfg = shocks[i]
+            if isinstance(shock_cfg, np.ndarray) and shock_cfg.size > 0:
+                shock_cfg = shock_cfg.ravel()[0]
+            if not isinstance(shock_cfg, dict):
+                shock_cfg = {}
+
+            shock_value = shock_cfg.get("value", shock_cfg.get("Value", 0))
+            shock_label = shock_cfg.get("label", shock_cfg.get("Label", f"shock_{i}"))
+            shock_desc = shock_cfg.get("description", shock_cfg.get("Description", ""))
+
+            key = _parse_shock_label_to_key(shock_label, shock_value)
+            print(f"    Processing: {shock_label} ({shock_desc}) → key={key}")
+
+            processed = _process_flat_format_shock(md_irs, i)
+            if processed:
+                ir_data[key] = processed
+                print(f"      ✓ Loaded {len(processed.get('sectors', {}))} sectors")
+
+        return ir_data
+
+    # Variant B: nested structure
     shock_configs = md_irs.get("shock_configs", [])
     by_shock = md_irs.get("by_shock", [])
 
@@ -154,8 +190,8 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
     if not isinstance(by_shock, (list, np.ndarray)):
         by_shock = [by_shock]
 
-    n_shocks = len(shock_configs)
-    print(f"    Found {n_shocks} shock configurations")
+    n_shocks = min(len(shock_configs), len(by_shock))
+    print(f"    Found {n_shocks} shock configurations (nested format)")
 
     for i in range(n_shocks):
         shock_cfg = shock_configs[i]
@@ -182,6 +218,77 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
             print(f"      ✓ Loaded {len(processed.get('sectors', {}))} sectors")
 
     return ir_data
+
+
+def _process_flat_format_shock(md_irs: Dict, shock_idx: int) -> Dict[str, Any]:
+    """
+    Process one shock from the flat ModelData_IRs format.
+    """
+    processed = {
+        "sectors": {},
+        "peak_values_loglin": None,
+        "peak_values_determ": None,
+        "amplifications": None,
+        "half_lives_loglin": None,
+        "half_lives_determ": None,
+    }
+
+    peaks = md_irs.get("peaks", {}) or {}
+    half_lives = md_irs.get("half_lives", {}) or {}
+    amplifications = md_irs.get("amplifications", {}) or {}
+
+    peak_fo = peaks.get("first_order")
+    peak_pf = peaks.get("perfect_foresight")
+    hl_fo = half_lives.get("first_order")
+    hl_pf = half_lives.get("perfect_foresight")
+    amp_abs = amplifications.get("abs")
+
+    if peak_fo is not None:
+        processed["peak_values_loglin"] = np.array(peak_fo)[shock_idx, :]
+    if peak_pf is not None:
+        processed["peak_values_determ"] = np.array(peak_pf)[shock_idx, :]
+    if hl_fo is not None:
+        processed["half_lives_loglin"] = np.array(hl_fo)[shock_idx, :]
+    if hl_pf is not None:
+        processed["half_lives_determ"] = np.array(hl_pf)[shock_idx, :]
+    if amp_abs is not None:
+        processed["amplifications"] = np.array(amp_abs)[shock_idx, :]
+
+    irfs_by_shock = md_irs.get("irfs", [])
+    if not isinstance(irfs_by_shock, (list, np.ndarray)) or shock_idx >= len(irfs_by_shock):
+        return processed
+
+    irfs = irfs_by_shock[shock_idx]
+    if not isinstance(irfs, (list, np.ndarray)):
+        irfs = [irfs]
+
+    for irf_data in irfs:
+        if irf_data is None:
+            continue
+        if isinstance(irf_data, np.ndarray) and irf_data.size > 0:
+            irf_data = irf_data.ravel()[0]
+        if not isinstance(irf_data, dict):
+            continue
+
+        sector_idx = irf_data.get("sector_idx", 0)
+        if isinstance(sector_idx, np.ndarray):
+            sector_idx = int(sector_idx.item())
+        sector_idx = int(sector_idx) - 1
+
+        irs_loglin = irf_data.get("first_order", irf_data.get("IRSFirstOrder"))
+        irs_determ = irf_data.get("perfect_foresight", irf_data.get("IRSPerfectForesight"))
+        if irs_determ is None:
+            irs_determ = irf_data.get("IRSPF", irf_data.get("IRSDeterm"))
+
+        if irs_loglin is None:
+            continue
+
+        processed["sectors"][sector_idx] = {
+            "IRSLoglin": np.array(irs_loglin),
+            "IRSDeterm": np.array(irs_determ) if irs_determ is not None else None,
+        }
+
+    return processed
 
 
 def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
@@ -360,15 +467,15 @@ def get_sector_irs(
         variable_idx: Variable index within the IR array
         max_periods: Maximum number of periods to return
         skip_initial: If True, skip period 0 (default True for correct alignment).
-                      
+
                       Dynare timing convention:
                       - MATLAB IR index 0: Initial condition with shocked TFP, but policies
                         are still at steady state (no response yet)
                       - MATLAB IR index 1+: Policies respond to the shocked TFP
-                      
+
                       Python GIR:
                       - GIR index 0: Policy response to shocked state (first response)
-                      
+
                       With skip_initial=True: MATLAB[1:] aligns with Python GIR[0:]
 
     Returns:
@@ -411,55 +518,62 @@ def get_sector_irs(
     return result
 
 
-# New format (Dec 2025+) variable indices
-# From process_ir_data.m output:
-#   Row  1: A_ir (TFP level)
-#   Row  2: C_ir (aggregate consumption deviation)
-#   Row  3: L_ir (aggregate labor deviation)
-#   Row  4: Vc_ir (value function)
-#   Row  5: Cj_ir (sectoral consumption)
-#   Row  6: Pj_ir (sectoral price)
-#   Row  7: Ioutj_ir (sectoral investment output)
-#   Row  8: Moutj_ir (sectoral intermediate output)
-#   Row  9: Lj_ir (sectoral labor)
-#   Row 10: Ij_ir (sectoral investment input)
-#   Row 11: Mj_ir (sectoral intermediate input)
-#   Row 12: Yj_ir (sectoral output)
-#   Row 13: Qj_ir (sectoral Tobin's Q)
-#   Row 14: A_client_ir (client TFP level)
-#   Row 15-23: Client sector variables
-#   Row 24: Kj_ir (sectoral capital)
-#   Row 25: Y_ir (aggregate output)
-#   Row 26: Pmj_client_ir (client intermediate price)
-#   Row 27: gammaij_client_ir (client expenditure share deviation)
+# New format (Dec 2025+), aligned with process_ir_data.m:
+#   Row  1: A_ir
+#   Row  2: C_exp_ir
+#   Row  3: I_exp_ir
+#   Row  4: Cj_ir
+#   Row  5: Pj_ir
+#   Row  6: Ioutj_ir
+#   Row  7: Moutj_ir
+#   Row  8: Lj_ir
+#   Row  9: Ij_ir
+#   Row 10: Mj_ir
+#   Row 11: Yj_ir
+#   Row 12: Qj_ir
+#   Row 13: A_client_ir
+#   Row 14: Cj_client_ir
+#   Row 15: Pj_client_ir
+#   Row 16: Ioutj_client_ir
+#   Row 17: Moutj_client_ir
+#   Row 18: Lj_client_ir
+#   Row 19: Ij_client_ir
+#   Row 20: Mj_client_ir
+#   Row 21: Yj_client_ir
+#   Row 22: Qj_client_ir
+#   Row 23: Kj_ir
+#   Row 24: GDP_exp_ir
+#   Row 25: Pmj_client_ir
+#   Row 26: gammaij_client_ir
+#   Row 27: C_utility_ir
 NEW_FORMAT_VARIABLE_INDICES = {
     "A": 0,  # TFP level (shocked sector)
-    "Cagg": 1,  # Aggregate consumption deviation
-    "Lagg": 2,  # Aggregate labor deviation
-    "Vc": 3,  # Value function
-    "Cj": 4,  # Sectoral consumption
-    "Pj": 5,  # Sectoral price
-    "Ioutj": 6,  # Sectoral investment output
-    "Moutj": 7,  # Sectoral intermediate output
-    "Lj": 8,  # Sectoral labor
-    "Ij": 9,  # Sectoral investment input
-    "Mj": 10,  # Sectoral intermediate input
-    "Yj": 11,  # Sectoral output
-    "Qj": 12,  # Sectoral Tobin's Q
-    "A_client": 13,  # Client TFP level
-    "Cj_client": 14,  # Client consumption
-    "Pj_client": 15,  # Client price
-    "Ioutj_client": 16,  # Client investment output
-    "Moutj_client": 17,  # Client intermediate output
-    "Lj_client": 18,  # Client labor
-    "Ij_client": 19,  # Client investment input
-    "Mj_client": 20,  # Client intermediate input
-    "Yj_client": 21,  # Client output
-    "Qj_client": 22,  # Client Tobin's Q
-    "Kj": 23,  # Sectoral capital
-    "Yagg": 24,  # Aggregate output
-    "Pmj_client": 25,  # Client intermediate price
-    "gammaij_client": 26,  # Client expenditure share deviation
+    "Cexp": 1,  # Aggregate consumption expenditure
+    "Iexp": 2,  # Aggregate investment expenditure
+    "Cj": 3,  # Sectoral consumption
+    "Pj": 4,  # Sectoral price
+    "Ioutj": 5,  # Sectoral investment output
+    "Moutj": 6,  # Sectoral intermediate output
+    "Lj": 7,  # Sectoral labor
+    "Ij": 8,  # Sectoral investment input
+    "Mj": 9,  # Sectoral intermediate input
+    "Yj": 10,  # Sectoral output
+    "Qj": 11,  # Sectoral Tobin's Q
+    "A_client": 12,  # Client TFP level
+    "Cj_client": 13,  # Client consumption
+    "Pj_client": 14,  # Client price
+    "Ioutj_client": 15,  # Client investment output
+    "Moutj_client": 16,  # Client intermediate output
+    "Lj_client": 17,  # Client labor
+    "Ij_client": 18,  # Client investment input
+    "Mj_client": 19,  # Client intermediate input
+    "Yj_client": 20,  # Client output
+    "Qj_client": 21,  # Client Tobin's Q
+    "Kj": 22,  # Sectoral capital
+    "GDPexp": 23,  # Aggregate GDP expenditure
+    "Pmj_client": 24,  # Client intermediate price
+    "gammaij_client": 25,  # Client expenditure share deviation
+    "Cutil": 26,  # Utility aggregate consumption
 }
 
 # Legacy format variable indices (for backwards compatibility)
@@ -495,13 +609,11 @@ MATLAB_IR_VARIABLE_INDICES = NEW_FORMAT_VARIABLE_INDICES.copy()
 
 # Mapping from analysis variable names to MATLAB variable names
 ANALYSIS_TO_MATLAB_MAPPING = {
-    "Agg. Consumption": "Cagg",
-    "Agg. Labor": "Lagg",
-    "Agg. Capital": "Kj",  # Note: Kj is sectoral capital in new format
-    "Agg. Output": "Yagg",
-    "Agg. Intermediates": "Mj",
-    "Agg. Investment": "Ij",
-    "Utility": "Vc",
+    "Agg. Consumption": "Cexp",
+    "Agg. Consumption (Utility)": "Cutil",
+    "Agg. Output": "GDPexp",
+    "Agg. GDP": "GDPexp",
+    "Agg. Investment": "Iexp",
 }
 
 
@@ -610,16 +722,60 @@ def inspect_matlab_ir_structure(
     # Check if new format
     if "ModelData_IRs" in mat_data:
         md_irs = mat_data["ModelData_IRs"]
-        by_shock = md_irs.get("by_shock", [])
 
+        print("\n=== New Format IR Structure ===")
+
+        # Flat structure path
+        if "irfs" in md_irs:
+            shocks = md_irs.get("shocks", [])
+            irfs_by_shock = md_irs.get("irfs", [])
+
+            if not isinstance(shocks, (list, np.ndarray)):
+                shocks = [shocks]
+            if not isinstance(irfs_by_shock, (list, np.ndarray)):
+                irfs_by_shock = [irfs_by_shock]
+
+            if shock_idx >= len(irfs_by_shock):
+                print(f"Shock index {shock_idx} out of range (max: {len(irfs_by_shock) - 1})")
+                return
+
+            shock_cfg = shocks[shock_idx] if shock_idx < len(shocks) else {}
+            if not isinstance(shock_cfg, dict):
+                shock_cfg = {}
+            print(f"Shock: {shock_cfg.get('label', f'shock_{shock_idx}')} ({shock_cfg.get('description', '')})")
+
+            irfs = irfs_by_shock[shock_idx]
+            if not isinstance(irfs, (list, np.ndarray)):
+                irfs = [irfs]
+            if sector_idx >= len(irfs):
+                print(f"Sector index {sector_idx} out of range (max: {len(irfs) - 1})")
+                return
+
+            irf_data = irfs[sector_idx]
+            loglin = irf_data.get("first_order", irf_data.get("IRSFirstOrder"))
+            determ = irf_data.get("perfect_foresight", irf_data.get("IRSPerfectForesight"))
+            if determ is None:
+                determ = irf_data.get("IRSDeterm")
+
+            if loglin is None:
+                print("No first_order/IRSFirstOrder data found")
+                return
+
+            _print_ir_analysis(
+                np.array(loglin),
+                np.array(determ) if determ is not None else None,
+                irf_data.get("sector_idx", sector_idx),
+            )
+            return
+
+        # Nested structure path (backward compatibility)
+        by_shock = md_irs.get("by_shock", [])
         if shock_idx >= len(by_shock):
             print(f"Shock index {shock_idx} out of range (max: {len(by_shock) - 1})")
             return
 
         shock_result = by_shock[shock_idx]
         shock_cfg = md_irs.get("shock_configs", [])[shock_idx]
-
-        print(f"\n=== New Format IR Structure ===")
         print(f"Shock: {shock_cfg.get('label', 'unknown')} ({shock_cfg.get('description', '')})")
 
         irfs = shock_result.get("IRFs", [])
@@ -657,11 +813,14 @@ def inspect_matlab_ir_structure(
         _print_ir_analysis(loglin, determ, sector_idx + 1)
 
 
-def _print_ir_analysis(loglin: np.ndarray, determ: np.ndarray, sector_id: int) -> None:
+def _print_ir_analysis(loglin: np.ndarray, determ: Optional[np.ndarray], sector_id: int) -> None:
     """Helper to print IR array analysis."""
     print(f"Sector ID: {sector_id}")
     print(f"IRSLoglin shape: {loglin.shape} (rows=variables, cols=time periods)")
-    print(f"IRSDeterm shape: {determ.shape}")
+    if determ is not None:
+        print(f"IRSDeterm shape: {determ.shape}")
+    else:
+        print("IRSDeterm shape: None")
 
     print(f"\n{'Row':<5} {'Initial':<12} {'Peak':<12} {'Final':<12} {'Monotonic?':<10} Notes")
     print("-" * 70)

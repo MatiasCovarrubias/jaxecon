@@ -15,6 +15,7 @@ from scipy.stats import kurtosis, skew
 
 _CALIBRATION_ROWS = [
     ("$\\sigma(Y_{\\text{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
+    ("$\\sigma(C_{\\text{agg}})$", "sigma_C_agg", "sigma_C_agg"),
     ("$\\sigma(I_{\\text{agg}})$", "sigma_I_agg", "sigma_I_agg"),
     ("$\\sigma(L_{\\text{hc,agg}})$", "sigma_L_hc_agg", "sigma_L_agg"),
     ("$\\sigma(\\text{Domar})$ avg", "sigma_Domar_avg", "sigma_Domar_avg"),
@@ -26,6 +27,7 @@ _CALIBRATION_ROWS = [
 
 _CALIBRATION_CONSOLE_LABELS = [
     "σ(Y_agg)",
+    "σ(C_agg)",
     "σ(I_agg)",
     "σ(L_hc_agg)",
     "σ(Domar)avg",
@@ -35,7 +37,7 @@ _CALIBRATION_CONSOLE_LABELS = [
     "σ(I) inv-wgt",
 ]
 
-_CALIBRATION_SECTION_BREAKS = [0, 4, 6, 8]
+_CALIBRATION_SECTION_BREAKS = [0, 5, 7, 9]
 _CALIBRATION_SECTION_TITLES = [
     "",
     "── Sectoral volatilities (VA-weighted) ──",
@@ -172,8 +174,7 @@ def _generate_calibration_latex_table(rows: list) -> str:
     latex_code += r"\\" + "\n"
     latex_code += (
         r"\textit{Note: Volatilities are standard deviations of HP-filtered log series. "
-        r"Model: first-order (log-linear) solution. Data: empirical targets from calibration.}"
-        + "\n"
+        r"Model: first-order (log-linear) solution. Data: empirical targets from calibration.}" + "\n"
     )
     return latex_code
 
@@ -291,14 +292,17 @@ def _generate_console_table(stats_data: Dict[str, Dict[str, Dict[str, float]]], 
     return "\n".join(output)
 
 
-def _generate_variable_organized_latex_table(stats_data: Dict[str, Dict[str, Dict[str, float]]], experiment_names: list) -> str:
+def _generate_variable_organized_latex_table(
+    stats_data: Dict[str, Dict[str, Dict[str, float]]], experiment_names: list
+) -> str:
     """Generate LaTeX table organized by variable with experiments as rows within each variable section."""
     n_experiments = len(experiment_names)
 
     latex_code = (
         r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
-        r"\textbf{Method} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\" + "\n"
+        r"\textbf{Method} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\"
+        + "\n"
         r"\midrule" + "\n"
     )
 
@@ -632,9 +636,6 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
-    latex_code += (
-        r"\textit{Note: Values show percentage deviations from deterministic steady state.}"
-        + "\n"
-    )
+    latex_code += r"\textit{Note: Values show percentage deviations from deterministic steady state.}" + "\n"
 
     return latex_code

@@ -26,7 +26,7 @@ function [peak_value, peak_period, half_life] = calculatePeaksAndHalfLives(ir_se
     half_life = NaN;
     for t = peak_idx:length(ir_series)
         if abs(ir_series(t)) <= half_peak
-            half_life = t - 1;  % Periods from start (0-indexed)
+            half_life = t - peak_idx;
             break;
         end
     end

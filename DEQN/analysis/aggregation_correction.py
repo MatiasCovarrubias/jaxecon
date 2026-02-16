@@ -1,29 +1,17 @@
 """
-Aggregation correction utilities for comparing log-linear and nonlinear simulations.
+Aggregation utilities for comparing log-linear and nonlinear simulations.
 
-Market aggregates (Y, K, I, M) are price-weighted: e.g. Yagg = sum_j Y_j * P_j.
-When processing Dynare simulation data we use the same aggregation as the full model:
-- Take disaggregated sectoral series from ModelData_simulation (log deviations from SS).
-- Convert to levels: X_j(t) = X_j_ss * exp(log_dev_j(t)).
-- Aggregate with ergodic price weights: Yagg(t) = sum_j Y_j(t) * P_ergodic_j.
-- Define aggregate SS by aggregating disaggregated SS with the same prices:
-  Yagg_ss = sum_j Y_j_ss * P_ergodic_j.
-- Return log deviations: log(Yagg(t)) - log(Yagg_ss).
+Current aggregate definitions used for moments/IRs:
+- Consumption expenditure: C_exp(t) = sum_j P_j(t) * C_j(t)
+- Investment expenditure: I_exp(t) = sum_j P_j(t) * I_j^{out}(t)
+- GDP expenditure: GDP_exp(t) = sum_j P_j(t) * [Q_j(t) - M_j^{out}(t)]
 
-Preference aggregates (C, L) use CES aggregators and are not price-weighted; we use
-the simulation's cagg/lagg rows directly (already log deviations from SS).
+All are returned as log deviations from deterministic steady state:
+    log(X_t) - log(X_ss)
 
-The nonlinear model uses ergodic (mean) prices from its own simulation, so:
-- MATLAB/Dynare SS: Yagg_ss = Y_ss @ P_ss (steady-state prices)
-- Nonlinear reference: Yagg_ss_ergodic = Y_ss @ P_ergodic (ergodic prices)
-
-Recenter formula for market aggregates (so all methods use the same reference):
-    x_logdev_corrected = x_logdev + log(SS_old) - log(SS_new)
-
-Cagg and Lagg don't need this correction (quantity-only).
-
-For log-linear solutions, log(X/X_ss) ~ N(0, σ²); we can generate synthetic samples
-from theoretical statistics.
+Utility aggregate consumption Cagg is still available as a separate object
+for welfare purposes, but it is not used as the main aggregate consumption
+series for moments/IR comparisons.
 """
 
 import jax.numpy as jnp
@@ -39,17 +27,11 @@ def compute_ergodic_steady_state(
     n_sectors: int,
 ) -> dict:
     """
-    Compute "proper" steady state aggregates using ergodic price weights.
+    Compute steady-state auxiliary aggregates/corrections.
 
-    The MATLAB steady state computes aggregates as:
-        Yagg_ss = P_ss @ Y_ss
-        Iagg_ss = Pk_ss @ I_ss
-        Magg_ss = Pm_ss @ M_ss
-        Kagg_ss = Pk_ss @ K_ss
-
-    This function recomputes them using ergodic prices:
-        Yagg_ss_ergodic = P_ergodic @ Y_ss
-        etc.
+    Expenditure aggregates (C_exp, I_exp, GDP_exp) are now computed using
+    current prices and deterministic steady-state references directly in
+    model/analysis pipelines, so no recentering correction is needed for them.
 
     Args:
         policies_ss: Steady state policies in log (from MATLAB)
@@ -67,7 +49,7 @@ def compute_ergodic_steady_state(
     # Extract steady state quantities in levels
     policies_ss_levels = jnp.exp(policies_ss)
 
-    # Sectoral variables at SS
+    # Sectoral variables at SS (used for diagnostics/corrections that remain)
     Y_ss = policies_ss_levels[10 * n : 11 * n]
     I_ss = policies_ss_levels[6 * n : 7 * n]
     M_ss = policies_ss_levels[4 * n : 5 * n]
@@ -78,13 +60,13 @@ def compute_ergodic_steady_state(
     Pk_ss = policies_ss_levels[2 * n : 3 * n]
     Pm_ss = policies_ss_levels[3 * n : 4 * n]
 
-    # Old steady state aggregates (MATLAB definition)
+    # Old steady state aggregates (legacy weighted definitions)
     Yagg_ss_old = Y_ss @ P_ss
     Iagg_ss_old = I_ss @ Pk_ss
     Magg_ss_old = M_ss @ Pm_ss
     Kagg_ss_old = K_ss @ Pk_ss
 
-    # New steady state aggregates (ergodic price definition)
+    # New steady state aggregates (ergodic-price weighted diagnostics)
     Yagg_ss_new = Y_ss @ P_ergodic
     Iagg_ss_new = I_ss @ Pk_ergodic
     Magg_ss_new = M_ss @ Pm_ergodic
@@ -137,10 +119,10 @@ def recenter_analysis_variables(
     """
     corrected = {}
 
-    # Map analysis variable names to their corrections
+    # Only keep recentering for legacy/diagnostic aggregates.
+    # Main expenditure aggregates (Agg. Consumption / Agg. Investment / Agg. Output)
+    # should not be shifted here.
     correction_map = {
-        "Agg. Output": "Yagg_correction",
-        "Agg. Investment": "Iagg_correction",
         "Agg. Intermediates": "Magg_correction",
         "Agg. Capital": "Kagg_correction",
     }
@@ -202,19 +184,19 @@ def process_simulation_with_consistent_aggregation(
     source_label: str = "simulation",
 ) -> dict:
     """
-    Process Dynare simulation with aggregation consistent with the full nonlinear model.
+    Process Dynare simulation using expenditure-based aggregate definitions.
 
     Simulation data is stored as log deviations from steady state:
         simul[i, t] = log(X_i(t)) - log(X_i_ss).
 
-    For market aggregates (Y, K, I, M) we:
-    1. Recover sectoral levels: X_j(t) = X_j_ss * exp(simul[j, t])
-    2. Aggregate using the same price weights as the nonlinear model (ergodic prices)
-    3. Compute aggregate SS by aggregating disaggregated SS with the same prices
-    4. Return log deviations: log(aggregate(t)) - log(aggregate_ss)
+    Main aggregates:
+    - C_exp(t)   = sum_j P_j(t) * C_j(t)
+    - I_exp(t)   = sum_j P_j(t) * I_j^{out}(t)
+    - GDP_exp(t) = sum_j P_j(t) * [Q_j(t) - M_j^{out}(t)]
+    and their log deviations from deterministic SS.
 
-    For preference aggregates (C, L) we use the simulation's cagg/lagg rows directly,
-    since they are already log deviations from SS and do not depend on price aggregation.
+    Utility aggregate consumption Cagg and CES labor aggregate Lagg are kept as
+    separate diagnostic series.
 
     Args:
         simul_data: (n_vars, T) log deviations from SS (ModelData_simulation full_simul)
@@ -233,8 +215,16 @@ def process_simulation_with_consistent_aggregation(
     n = n_sectors
     idx = _get_variable_indices(n)
 
-    if simul_data.shape[0] < simul_data.shape[1]:
+    expected_n_vars = 13 * n + 5
+    if simul_data.shape[0] == expected_n_vars:
+        pass
+    elif simul_data.shape[1] == expected_n_vars:
         simul_data = simul_data.T
+    else:
+        raise ValueError(
+            f"{source_label}: unexpected simulation shape {simul_data.shape}. "
+            f"Expected one axis to equal n_vars={expected_n_vars}."
+        )
     n_periods = simul_data.shape[1]
     if burn_in >= n_periods:
         burn_in = n_periods // 10
@@ -247,35 +237,54 @@ def process_simulation_with_consistent_aggregation(
     M_ss = policies_ss_levels[4 * n : 5 * n]
 
     log_dev_k = simul[idx["k"][0] : idx["k"][1], :]
-    log_dev_y = simul[idx["y"][0] : idx["y"][1], :]
-    log_dev_i = simul[idx["i"][0] : idx["i"][1], :]
+    log_dev_c = simul[idx["c"][0] : idx["c"][1], :]
+    log_dev_iout = simul[idx["iout"][0] : idx["iout"][1], :]
+    log_dev_q = simul[idx["q"][0] : idx["q"][1], :]
+    log_dev_mout = simul[idx["mout"][0] : idx["mout"][1], :]
+    log_dev_p = simul[idx["p"][0] : idx["p"][1], :]
     log_dev_m = simul[idx["m"][0] : idx["m"][1], :]
 
     K_levels = K_ss[:, None] * jnp.exp(log_dev_k)
-    Y_levels = Y_ss[:, None] * jnp.exp(log_dev_y)
-    I_levels = I_ss[:, None] * jnp.exp(log_dev_i)
+    C_ss = policies_ss_levels[0:n]
+    Iout_ss = policies_ss_levels[7 * n : 8 * n]
+    Q_ss = policies_ss_levels[9 * n : 10 * n]
+    Mout_ss = policies_ss_levels[5 * n : 6 * n]
+    P_ss = policies_ss_levels[8 * n : 9 * n]
+
+    C_levels = C_ss[:, None] * jnp.exp(log_dev_c)
+    Iout_levels = Iout_ss[:, None] * jnp.exp(log_dev_iout)
+    Q_levels = Q_ss[:, None] * jnp.exp(log_dev_q)
+    Mout_levels = Mout_ss[:, None] * jnp.exp(log_dev_mout)
+    P_levels = P_ss[:, None] * jnp.exp(log_dev_p)
+
     M_levels = M_ss[:, None] * jnp.exp(log_dev_m)
 
     Kagg = K_levels.T @ Pk_ergodic
-    Yagg = Y_levels.T @ P_ergodic
-    Iagg = I_levels.T @ Pk_ergodic
+    Cagg_exp = jnp.sum(P_levels * C_levels, axis=0)
+    Iagg_exp = jnp.sum(P_levels * Iout_levels, axis=0)
+    GDPagg_exp = jnp.sum(P_levels * (Q_levels - Mout_levels), axis=0)
     Magg = M_levels.T @ Pm_ergodic
 
     Kagg_ss = K_ss @ Pk_ergodic
-    Yagg_ss = Y_ss @ P_ergodic
-    Iagg_ss = I_ss @ Pk_ergodic
+    Cagg_exp_ss = jnp.sum(P_ss * C_ss)
+    Iagg_exp_ss = jnp.sum(P_ss * Iout_ss)
+    GDPagg_exp_ss = jnp.sum(P_ss * (Q_ss - Mout_ss))
     Magg_ss = M_ss @ Pm_ergodic
 
     cagg_logdev = jnp.ravel(simul[idx["cagg"], :])
     lagg_logdev = jnp.ravel(simul[idx["lagg"], :])
 
+    epsilon = jnp.array(1e-12)
+
     result = {
-        "Agg. Consumption": cagg_logdev,
+        "Agg. Consumption": jnp.log(jnp.maximum(Cagg_exp, epsilon)) - jnp.log(jnp.maximum(Cagg_exp_ss, epsilon)),
+        "Agg. Consumption (Utility)": cagg_logdev,
         "Agg. Labor": lagg_logdev,
         "Agg. Capital": jnp.log(Kagg) - jnp.log(Kagg_ss),
-        "Agg. Output": jnp.log(Yagg) - jnp.log(Yagg_ss),
+        "Agg. Output": jnp.log(jnp.maximum(GDPagg_exp, epsilon)) - jnp.log(jnp.maximum(GDPagg_exp_ss, epsilon)),
+        "Agg. GDP": jnp.log(jnp.maximum(GDPagg_exp, epsilon)) - jnp.log(jnp.maximum(GDPagg_exp_ss, epsilon)),
         "Agg. Intermediates": jnp.log(Magg) - jnp.log(Magg_ss),
-        "Agg. Investment": jnp.log(Iagg) - jnp.log(Iagg_ss),
+        "Agg. Investment": jnp.log(jnp.maximum(Iagg_exp, epsilon)) - jnp.log(jnp.maximum(Iagg_exp_ss, epsilon)),
     }
 
     return result

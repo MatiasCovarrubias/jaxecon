@@ -54,8 +54,8 @@ function labels = SectorLabel(indices)
     };
     
     % Validate indices
-    if any(indices < 1) || any(indices > 37)
-        error('SectorLabel:InvalidIndex', 'Sector indices must be between 1 and 37');
+    if any(indices < 1) || any(indices > numel(sector_names))
+        error('SectorLabel:InvalidIndex', 'Sector indices must be between 1 and %d', numel(sector_names));
     end
     
     raw_labels = sector_names(indices);

@@ -1,5 +1,5 @@
 load ModStruct_temp.mat
-@#define n_sectors = 37
+@#include "model_config.mod"
 var 
     @#for j in 1:n_sectors
         k_@{j}

@@ -824,7 +824,7 @@ def plot_sector_ir_by_shock_size(
     sector_label: str,
     variable_to_plot: str = "Agg. Consumption",
     shock_sizes: list = [5, 10, 20],
-    figsize: Tuple[float, float] = (12, 10),
+    figsize: Tuple[float, float] = (10, 15),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
@@ -1078,6 +1078,10 @@ def plot_sector_ir_by_shock_size(
         ax_pos.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax_neg.grid(True, alpha=0.3)
         ax_pos.grid(True, alpha=0.3)
+
+        # Keep panels close to square for better visual comparison across lines.
+        ax_neg.set_box_aspect(1)
+        ax_pos.set_box_aspect(1)
 
         ax_neg.set_ylim(-y_lim_abs, 0)
         ax_pos.set_ylim(0, y_lim_abs)

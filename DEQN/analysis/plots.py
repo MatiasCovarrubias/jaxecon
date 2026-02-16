@@ -824,7 +824,7 @@ def plot_sector_ir_by_shock_size(
     sector_label: str,
     variable_to_plot: str = "Agg. Consumption",
     shock_sizes: list = [5, 10, 20],
-    figsize: Tuple[float, float] = (7, 10),
+    figsize: Tuple[float, float] = (12, 10),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
@@ -832,8 +832,14 @@ def plot_sector_ir_by_shock_size(
     n_sectors: int = 37,
 ):
     """
-    Create a figure with two panels per shock size (negative left, positive right).
-    Includes both GIRs (averaged over ergodic distribution) and IRs from stochastic steady state.
+    Create a figure with one row per shock size and two columns:
+    - left: negative-shock IRs
+    - right: positive-shock IRs
+
+    For each row (shock size), y-axis scaling is:
+    - independent across rows (to maximize visibility per shock size)
+    - symmetric in absolute value across left/right panels (for direct visual comparison)
+    - restricted to the relevant quadrant (negative panel <= 0, positive panel >= 0)
 
     Parameters:
     -----------
@@ -871,9 +877,7 @@ def plot_sector_ir_by_shock_size(
     from DEQN.analysis.matlab_irs import get_matlab_ir_for_analysis_variable
 
     n_sizes = len(shock_sizes)
-    fig, axes = plt.subplots(n_sizes, 2, figsize=figsize, dpi=display_dpi, sharex=True, sharey=True)
-    if n_sizes == 1:
-        axes = np.array([axes])
+    fig, axes = plt.subplots(n_sizes, 2, figsize=figsize, dpi=display_dpi, sharex=True, squeeze=False)
 
     experiment_names = list(gir_data.keys()) if gir_data else []
     first_exp_data = gir_data[experiment_names[0]] if experiment_names else {}
@@ -899,7 +903,6 @@ def plot_sector_ir_by_shock_size(
     for j, shock_size in enumerate(shock_sizes):
         ax_neg = axes[j, 0]
         ax_pos = axes[j, 1]
-        row_series_values = []
 
         pos_key = f"pos_{shock_size}"
         neg_key = f"neg_{shock_size}"
@@ -907,6 +910,29 @@ def plot_sector_ir_by_shock_size(
         neg_stochss_key = f"neg_{shock_size}_stochss"
 
         matlab_irs = get_matlab_ir_for_analysis_variable(matlab_ir_data, sector_idx, variable_to_plot, max_periods)
+        row_abs_max = 0.0
+
+        def _plot_line(ax, series, *, label=None, color=None, linewidth=1.5, linestyle="-", alpha=0.8):
+            nonlocal row_abs_max
+            if series is None:
+                return
+            arr = np.asarray(series)
+            if arr.size == 0:
+                return
+            t = np.arange(min(len(arr), max_periods))
+            y = arr[:max_periods]
+            ax.plot(
+                t,
+                y,
+                color=color,
+                linewidth=linewidth,
+                linestyle=linestyle,
+                alpha=alpha,
+                label=label,
+            )
+            finite = np.isfinite(y)
+            if np.any(finite):
+                row_abs_max = max(row_abs_max, float(np.max(np.abs(y[finite]))))
 
         if matlab_irs:
             pos_keys = [pos_key] if pos_key in matlab_irs else [k for k in matlab_irs if k.startswith("pos_")]
@@ -917,9 +943,8 @@ def plot_sector_ir_by_shock_size(
 
             for pk in pos_keys:
                 pos_loglin = matlab_irs[pk]["loglin"][:max_periods] * 100
-                row_series_values.append(pos_loglin)
-                ax_pos.plot(
-                    np.arange(len(pos_loglin)),
+                _plot_line(
+                    ax_pos,
                     pos_loglin,
                     color=colors[4],
                     linewidth=1.5,
@@ -930,9 +955,8 @@ def plot_sector_ir_by_shock_size(
                 pos_determ = matlab_irs[pk].get("determ")
                 if pos_determ is not None:
                     pos_determ = pos_determ[:max_periods] * 100
-                    row_series_values.append(pos_determ)
-                    ax_pos.plot(
-                        np.arange(len(pos_determ)),
+                    _plot_line(
+                        ax_pos,
                         pos_determ,
                         color=colors[2],
                         linewidth=1.5,
@@ -942,9 +966,8 @@ def plot_sector_ir_by_shock_size(
                     )
             for nk in neg_keys:
                 neg_loglin = matlab_irs[nk]["loglin"][:max_periods] * 100
-                row_series_values.append(neg_loglin)
-                ax_neg.plot(
-                    np.arange(len(neg_loglin)),
+                _plot_line(
+                    ax_neg,
                     neg_loglin,
                     color=colors[4],
                     linewidth=1.5,
@@ -954,9 +977,8 @@ def plot_sector_ir_by_shock_size(
                 neg_determ = matlab_irs[nk].get("determ")
                 if neg_determ is not None:
                     neg_determ = neg_determ[:max_periods] * 100
-                    row_series_values.append(neg_determ)
-                    ax_neg.plot(
-                        np.arange(len(neg_determ)),
+                    _plot_line(
+                        ax_neg,
                         neg_determ,
                         color=colors[2],
                         linewidth=1.5,
@@ -966,9 +988,9 @@ def plot_sector_ir_by_shock_size(
 
             for ok in other_keys:
                 generic_loglin = matlab_irs[ok]["loglin"][:max_periods] * 100
-                row_series_values.append(generic_loglin)
-                ax_pos.plot(
-                    np.arange(len(generic_loglin)),
+                target_ax = ax_pos if ok.startswith("pos_") else ax_neg if ok.startswith("neg_") else ax_pos
+                _plot_line(
+                    target_ax,
                     generic_loglin,
                     color=colors[4],
                     linewidth=1.5,
@@ -976,36 +998,17 @@ def plot_sector_ir_by_shock_size(
                     alpha=0.8,
                     label=f"Loglinear ({ok})" if j == 0 else None,
                 )
-                # Also draw on negative panel in case the source is untagged by sign.
-                ax_neg.plot(
-                    np.arange(len(generic_loglin)),
-                    generic_loglin,
-                    color=colors[4],
-                    linewidth=1.5,
-                    linestyle="--",
-                    alpha=0.8,
-                )
-
                 generic_determ = matlab_irs[ok].get("determ")
                 if generic_determ is not None:
                     generic_determ = generic_determ[:max_periods] * 100
-                    row_series_values.append(generic_determ)
-                    ax_pos.plot(
-                        np.arange(len(generic_determ)),
+                    _plot_line(
+                        target_ax,
                         generic_determ,
                         color=colors[2],
                         linewidth=1.5,
                         linestyle="-.",
                         alpha=0.8,
                         label=f"Perfect Foresight ({ok})" if j == 0 else None,
-                    )
-                    ax_neg.plot(
-                        np.arange(len(generic_determ)),
-                        generic_determ,
-                        color=colors[2],
-                        linewidth=1.5,
-                        linestyle="-.",
-                        alpha=0.8,
                     )
         elif j == 0:
             print(f"      Warning: no MATLAB IRs found for sector {sector_idx + 1}, variable '{variable_to_plot}'")
@@ -1018,10 +1021,9 @@ def plot_sector_ir_by_shock_size(
                     gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_pos:
                         response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
-                        row_series_values.append(response_pos)
                         label = f"GIR ({exp_name})" if j == 0 else None
-                        ax_pos.plot(
-                            time_periods[: len(response_pos)],
+                        _plot_line(
+                            ax_pos,
                             response_pos,
                             color=colors[k % len(colors)],
                             linewidth=2.5,
@@ -1033,9 +1035,8 @@ def plot_sector_ir_by_shock_size(
                     gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg:
                         response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
-                        row_series_values.append(response_neg)
-                        ax_neg.plot(
-                            time_periods[: len(response_neg)],
+                        _plot_line(
+                            ax_neg,
                             response_neg,
                             color=colors[k % len(colors)],
                             linewidth=2.5,
@@ -1047,10 +1048,9 @@ def plot_sector_ir_by_shock_size(
                     gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_pos_stochss:
                         response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
-                        row_series_values.append(response_pos_stochss)
                         label_stochss = f"IR_stoch_ss ({exp_name})" if j == 0 else None
-                        ax_pos.plot(
-                            time_periods[: len(response_pos_stochss)],
+                        _plot_line(
+                            ax_pos,
                             response_pos_stochss,
                             color=colors[k % len(colors)],
                             linewidth=2.5,
@@ -1062,45 +1062,36 @@ def plot_sector_ir_by_shock_size(
                     gir_vars_neg_stochss = state_gir_data[neg_stochss_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg_stochss:
                         response_neg_stochss = gir_vars_neg_stochss[variable_to_plot][:max_periods] * 100
-                        row_series_values.append(response_neg_stochss)
-                        ax_neg.plot(
-                            time_periods[: len(response_neg_stochss)],
+                        _plot_line(
+                            ax_neg,
                             response_neg_stochss,
                             color=colors[k % len(colors)],
                             linewidth=2.5,
                             alpha=0.9,
                         )
 
+        if row_abs_max <= 0 or not np.isfinite(row_abs_max):
+            row_abs_max = 0.1
+        y_lim_abs = row_abs_max * 1.08
+
         ax_neg.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax_pos.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax_neg.grid(True, alpha=0.3)
         ax_pos.grid(True, alpha=0.3)
 
-        ax_neg.set_ylabel(f"{shock_size}% shock", fontweight="bold", fontsize=MEDIUM_SIZE)
+        ax_neg.set_ylim(-y_lim_abs, 0)
+        ax_pos.set_ylim(0, y_lim_abs)
+
+        ax_neg.set_ylabel(f"{shock_size}% shock\n(% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
         ax_neg.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
         ax_pos.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
         ax_neg.set_xlim(0, max_periods - 1)
         ax_pos.set_xlim(0, max_periods - 1)
 
-        if j == 0:
-            ax_neg.set_title("Negative IR", fontweight="bold", fontsize=MEDIUM_SIZE)
-            ax_pos.set_title("Positive IR", fontweight="bold", fontsize=MEDIUM_SIZE)
-
-        # Shared y-limits per shock-size row (left/right pair).
-        if row_series_values:
-            y_min = min(float(np.min(s)) for s in row_series_values)
-            y_max = max(float(np.max(s)) for s in row_series_values)
-            if np.isfinite(y_min) and np.isfinite(y_max):
-                if y_max > y_min:
-                    pad = 0.05 * (y_max - y_min)
-                else:
-                    pad = max(0.1, 0.05 * abs(y_max))
-                row_ylim = (y_min - pad, y_max + pad)
-                ax_neg.set_ylim(row_ylim)
-                ax_pos.set_ylim(row_ylim)
-
     axes[-1, 0].set_xlabel("Periods", fontsize=SMALL_SIZE)
     axes[-1, 1].set_xlabel("Periods", fontsize=SMALL_SIZE)
+    axes[0, 0].set_title("Negative shock IR", fontweight="bold", fontsize=MEDIUM_SIZE)
+    axes[0, 1].set_title("Positive shock IR", fontweight="bold", fontsize=MEDIUM_SIZE)
 
     fig.suptitle(
         f"{sector_label}: {variable_to_plot} (% change)",
@@ -1108,11 +1099,20 @@ def plot_sector_ir_by_shock_size(
         fontsize=LARGE_SIZE,
     )
 
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    if handles:
+    handles_neg, labels_neg = axes[0, 0].get_legend_handles_labels()
+    if handles_neg:
         axes[0, 0].legend(
-            handles,
-            labels,
+            handles_neg,
+            labels_neg,
+            loc="upper right",
+            fontsize=SMALL_SIZE - 1,
+            framealpha=0.9,
+        )
+    handles_pos, labels_pos = axes[0, 1].get_legend_handles_labels()
+    if handles_pos:
+        axes[0, 1].legend(
+            handles_pos,
+            labels_pos,
             loc="upper right",
             fontsize=SMALL_SIZE - 1,
             framealpha=0.9,

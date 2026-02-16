@@ -225,6 +225,17 @@ def process_simulation_with_consistent_aggregation(
             f"{source_label}: unexpected simulation shape {simul_data.shape}. "
             f"Expected one axis to equal n_vars={expected_n_vars}."
         )
+
+    # MATLAB/Dynare full_simul can be saved either as:
+    # - log deviations from SS, or
+    # - log levels.
+    # Auto-detect and convert log levels -> log deviations when needed.
+    ss_full = jnp.concatenate([state_ss, policies_ss])
+    dist_to_zero = jnp.mean(jnp.abs(simul_data[:, 0]))
+    dist_to_ss = jnp.mean(jnp.abs(simul_data[:, 0] - ss_full))
+    if dist_to_ss < dist_to_zero:
+        simul_data = simul_data - ss_full[:, None]
+
     n_periods = simul_data.shape[1]
     if burn_in >= n_periods:
         burn_in = n_periods // 10
@@ -428,7 +439,7 @@ def get_loglinear_distribution_params(theo_stats: dict) -> dict:
     return result
 
 
-def create_theoretical_descriptive_stats(theo_stats: dict, label: str = "Log-Linear (Theoretical)") -> dict:
+def create_theoretical_descriptive_stats(theo_stats: dict, label: str = "Log-Linear") -> dict:
     """
     Create pre-computed descriptive statistics from theoretical moments.
 

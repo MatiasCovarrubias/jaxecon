@@ -156,7 +156,7 @@ def plot_ergodic_histograms(
                 ax.plot(
                     x_smooth,
                     pdf_values,
-                    label=f"{exp_name} (theoretical)",
+                    label=exp_name,
                     color=plot_colors[i],
                     linewidth=2,
                     alpha=0.9,

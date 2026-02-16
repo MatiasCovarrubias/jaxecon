@@ -433,8 +433,7 @@ def main():
             n_nan = jnp.sum(jnp.isnan(var_values))
             if n_nan > 0:
                 print(f"    ⚠ WARNING: {var_name} has {n_nan} NaN values!", flush=True)
-
-        analysis_variables_data["First-Order (Dynare)"] = firstorder_analysis_vars
+        print("  ✓ Loaded First-Order (Dynare) for diagnostics only; using theoretical log-linear moments in tables.")
 
     # Initialize theoretical/precomputed stats for descriptive stats table
     theoretical_stats = {}
@@ -449,17 +448,17 @@ def main():
 
         # Create theoretical stats for descriptive table (no samples needed)
         loglin_theo_stats = create_theoretical_descriptive_stats(
-            theo_stats=theo_stats, label="Log-Linear (Theoretical)"
+            theo_stats=theo_stats, label="Log-Linear"
         )
         theoretical_stats.update(loglin_theo_stats)
 
         # Get theoretical distribution params for smooth PDF curves in histograms
         theo_dist_params = get_loglinear_distribution_params(theo_stats)
-        histogram_theo_params["Log-Linear (Theoretical)"] = theo_dist_params
+        histogram_theo_params["Log-Linear"] = theo_dist_params
 
         # Still need placeholder data for the plotting function to include this experiment
         # Create minimal placeholder (actual curve uses theo_dist_params)
-        analysis_variables_data["Log-Linear (Theoretical)"] = {
+        analysis_variables_data["Log-Linear"] = {
             var_name: jnp.zeros(10) for var_name in theo_dist_params.keys()
         }
 
@@ -472,38 +471,41 @@ def main():
     if pf_stats_key:
         pf_stats = stats[pf_stats_key]
         pf_model_stats = pf_stats.get("ModelStats") if isinstance(pf_stats, dict) else None
-        if pf_model_stats is not None:
-            print(f"  ✓ Using Statistics.{pf_stats_key} (+ ModelStats) for Perfect Foresight moments", flush=True)
+        if dynare_simul_pf is None:
+            if pf_model_stats is not None:
+                print(f"  ✓ Using Statistics.{pf_stats_key} (+ ModelStats) for Perfect Foresight moments", flush=True)
+            else:
+                print(f"  ✓ Using Statistics.{pf_stats_key} for Perfect Foresight moments", flush=True)
+
+            pf_theo_stats = create_perfect_foresight_descriptive_stats(
+                determ_stats=pf_stats,
+                label="Perfect Foresight",
+                n_sectors=n_sectors,
+                model_stats=pf_model_stats,
+                policies_ss=policies_ss,
+            )
+            theoretical_stats.update(pf_theo_stats)
+
+            # Print available stats prioritizing expenditure-based ModelStats.
+            if isinstance(pf_model_stats, dict):
+                c_sd = pf_model_stats.get("sigma_C_agg")
+                i_sd = pf_model_stats.get("sigma_I_agg")
+                y_sd = pf_model_stats.get("sigma_VA_agg")
+                if c_sd is not None:
+                    print(f"    Agg. Consumption (exp): σ={float(c_sd)*100:.4f}%", flush=True)
+                if i_sd is not None:
+                    print(f"    Agg. Investment (exp): σ={float(i_sd)*100:.4f}%", flush=True)
+                if y_sd is not None:
+                    print(f"    Agg. Output/GDP (exp): σ={float(y_sd)*100:.4f}%", flush=True)
+            elif "policies_std" in pf_stats:
+                # Fallback for old files without ModelStats
+                policies_std = pf_stats["policies_std"]
+                n = n_sectors
+                if len(policies_std) > 11 * n + 1:
+                    print(f"    Agg. Consumption (utility): σ={float(policies_std[11*n])*100:.4f}%", flush=True)
+                    print(f"    Agg. Labor: σ={float(policies_std[11*n+1])*100:.4f}%", flush=True)
         else:
-            print(f"  ✓ Using Statistics.{pf_stats_key} for Perfect Foresight moments", flush=True)
-
-        pf_theo_stats = create_perfect_foresight_descriptive_stats(
-            determ_stats=pf_stats,
-            label="Perfect Foresight",
-            n_sectors=n_sectors,
-            model_stats=pf_model_stats,
-            policies_ss=policies_ss,
-        )
-        theoretical_stats.update(pf_theo_stats)
-
-        # Print available stats prioritizing expenditure-based ModelStats.
-        if isinstance(pf_model_stats, dict):
-            c_sd = pf_model_stats.get("sigma_C_agg")
-            i_sd = pf_model_stats.get("sigma_I_agg")
-            y_sd = pf_model_stats.get("sigma_VA_agg")
-            if c_sd is not None:
-                print(f"    Agg. Consumption (exp): σ={float(c_sd)*100:.4f}%", flush=True)
-            if i_sd is not None:
-                print(f"    Agg. Investment (exp): σ={float(i_sd)*100:.4f}%", flush=True)
-            if y_sd is not None:
-                print(f"    Agg. Output/GDP (exp): σ={float(y_sd)*100:.4f}%", flush=True)
-        elif "policies_std" in pf_stats:
-            # Fallback for old files without ModelStats
-            policies_std = pf_stats["policies_std"]
-            n = n_sectors
-            if len(policies_std) > 11 * n + 1:
-                print(f"    Agg. Consumption (utility): σ={float(policies_std[11*n])*100:.4f}%", flush=True)
-                print(f"    Agg. Labor: σ={float(policies_std[11*n+1])*100:.4f}%", flush=True)
+            print("  ✓ Perfect Foresight moments will use Perfect Foresight (Dynare) simulation series.")
 
     if dynare_simul_pf is not None:
         pf_analysis_vars = process_simulation_with_consistent_aggregation(
@@ -515,10 +517,10 @@ def main():
             Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
             burn_in=min(config["burn_in_periods"], dynare_simul_pf.shape[1] // 10),
-            source_label="Perfect Foresight (Dynare)",
+            source_label="Perfect Foresight",
         )
 
-        analysis_variables_data["Perfect Foresight (Dynare)"] = pf_analysis_vars
+        analysis_variables_data["Perfect Foresight"] = pf_analysis_vars
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CALIBRATION TABLE (First-Order Model vs Empirical Targets)
@@ -647,11 +649,15 @@ def main():
         analysis_name=config["analysis_name"],
     )
 
-    # Generate histograms (filter out deterministic/perfect foresight solution - not suitable for histograms)
+    # Generate histograms:
+    # - keep model simulation distributions
+    # - keep theoretical log-linear distribution
+    # - exclude Dynare simulation-based distributions (they are redundant here)
     histogram_data = {
         k: v
         for k, v in analysis_variables_data.items()
-        if "Deterministic" not in k and "Perfect Foresight (Dynare)" not in k
+        if "Deterministic" not in k
+        and k != "Perfect Foresight"
     }
     plot_ergodic_histograms(
         analysis_variables_data=histogram_data,

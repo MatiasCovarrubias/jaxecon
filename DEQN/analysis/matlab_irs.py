@@ -243,16 +243,37 @@ def _process_flat_format_shock(md_irs: Dict, shock_idx: int) -> Dict[str, Any]:
     hl_pf = half_lives.get("perfect_foresight")
     amp_abs = amplifications.get("abs")
 
-    if peak_fo is not None:
-        processed["peak_values_loglin"] = np.array(peak_fo)[shock_idx, :]
-    if peak_pf is not None:
-        processed["peak_values_determ"] = np.array(peak_pf)[shock_idx, :]
-    if hl_fo is not None:
-        processed["half_lives_loglin"] = np.array(hl_fo)[shock_idx, :]
-    if hl_pf is not None:
-        processed["half_lives_determ"] = np.array(hl_pf)[shock_idx, :]
-    if amp_abs is not None:
-        processed["amplifications"] = np.array(amp_abs)[shock_idx, :]
+    def _extract_shock_row(data: Any, idx: int) -> Optional[np.ndarray]:
+        """Extract one shock slice robustly under simplify_cells singleton squeezing."""
+        if data is None:
+            return None
+        arr = np.asarray(data)
+        if arr.size == 0:
+            return None
+
+        # Scalar: single shock/single sector case.
+        if arr.ndim == 0:
+            return np.atleast_1d(arr.item())
+
+        # Vector: either [n_shocks] (single sector) or [n_sectors] (single shock).
+        if arr.ndim == 1:
+            if arr.size > idx and arr.size > 1:
+                return np.atleast_1d(arr[idx])
+            return np.atleast_1d(arr)
+
+        # Matrix/tensor: try shock dimension first (rows), then fallback to columns.
+        if arr.shape[0] > idx:
+            return np.atleast_1d(arr[idx, ...]).ravel()
+        if arr.shape[1] > idx:
+            return np.atleast_1d(arr[:, idx, ...]).ravel()
+
+        return np.atleast_1d(arr).ravel()
+
+    processed["peak_values_loglin"] = _extract_shock_row(peak_fo, shock_idx)
+    processed["peak_values_determ"] = _extract_shock_row(peak_pf, shock_idx)
+    processed["half_lives_loglin"] = _extract_shock_row(hl_fo, shock_idx)
+    processed["half_lives_determ"] = _extract_shock_row(hl_pf, shock_idx)
+    processed["amplifications"] = _extract_shock_row(amp_abs, shock_idx)
 
     irfs_by_shock = md_irs.get("irfs", [])
     if not isinstance(irfs_by_shock, (list, np.ndarray)) or shock_idx >= len(irfs_by_shock):

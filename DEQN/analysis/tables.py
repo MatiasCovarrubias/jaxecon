@@ -15,7 +15,7 @@ from scipy.stats import kurtosis, skew
 
 _CALIBRATION_ROWS = [
     ("$\\sigma(Y_{\\text{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
-    ("$\\sigma(C_{\\text{agg}})$", "sigma_C_agg", "sigma_C_agg"),
+    ("$\\sigma(C^{\\mathrm{exp}}_{\\text{agg}})$", "sigma_C_agg", "sigma_C_agg"),
     ("$\\sigma(I_{\\text{agg}})$", "sigma_I_agg", "sigma_I_agg"),
     ("$\\sigma(L_{\\text{hc,agg}})$", "sigma_L_hc_agg", "sigma_L_agg"),
     ("$\\sigma(\\text{Domar})$ avg", "sigma_Domar_avg", "sigma_Domar_avg"),
@@ -27,7 +27,7 @@ _CALIBRATION_ROWS = [
 
 _CALIBRATION_CONSOLE_LABELS = [
     "σ(Y_agg)",
-    "σ(C_agg)",
+    "σ(C_exp,agg)",
     "σ(I_agg)",
     "σ(L_hc_agg)",
     "σ(Domar)avg",
@@ -52,6 +52,18 @@ def _scalar_from_matlab_value(x: Any) -> Optional[float]:
     if arr.size == 0:
         return None
     return float(arr.ravel()[0])
+
+
+def _first_available_scalar(source: Optional[Dict[str, Any]], keys: list[str]) -> Optional[float]:
+    """Return first available scalar value from a list of candidate keys."""
+    if source is None:
+        return None
+    for key in keys:
+        if key in source:
+            val = _scalar_from_matlab_value(source[key])
+            if val is not None:
+                return val
+    return None
 
 
 def create_calibration_table(
@@ -80,14 +92,36 @@ def create_calibration_table(
     --------
     str : The LaTeX table code
     """
+    # Allow for small naming drifts in MATLAB structs while keeping stable table rows.
+    model_key_aliases = {
+        "sigma_VA_agg": ["sigma_VA_agg", "sigma_GDP_agg"],
+        "sigma_C_agg": ["sigma_C_agg", "sigma_C_exp_agg", "sigma_C_expenditure_agg"],
+        "sigma_I_agg": ["sigma_I_agg", "sigma_I_exp_agg", "sigma_I_expenditure_agg"],
+        "sigma_L_hc_agg": ["sigma_L_hc_agg", "sigma_L_headcount_agg", "sigma_L_agg"],
+        "sigma_Domar_avg": ["sigma_Domar_avg"],
+        "sigma_L_avg": ["sigma_L_avg"],
+        "sigma_I_avg": ["sigma_I_avg"],
+        "sigma_L_avg_empweighted": ["sigma_L_avg_empweighted"],
+        "sigma_I_avg_invweighted": ["sigma_I_avg_invweighted"],
+    }
+    data_key_aliases = {
+        "sigma_VA_agg": ["sigma_VA_agg", "sigma_GDP_agg"],
+        "sigma_C_agg": ["sigma_C_agg", "sigma_C_exp_agg", "sigma_C_expenditure_agg"],
+        "sigma_I_agg": ["sigma_I_agg", "sigma_I_exp_agg", "sigma_I_expenditure_agg"],
+        "sigma_L_agg": ["sigma_L_agg", "sigma_L_hc_agg", "sigma_L_headcount_agg"],
+        "sigma_Domar_avg": ["sigma_Domar_avg"],
+        "sigma_L_avg": ["sigma_L_avg"],
+        "sigma_I_avg": ["sigma_I_avg"],
+        "sigma_L_avg_empweighted": ["sigma_L_avg_empweighted"],
+        "sigma_I_avg_invweighted": ["sigma_I_avg_invweighted"],
+    }
+
     rows = []
     for row_label, model_key, data_key in _CALIBRATION_ROWS:
-        model_val = None
-        if first_order_model_stats is not None and model_key in first_order_model_stats:
-            model_val = _scalar_from_matlab_value(first_order_model_stats[model_key])
-        data_val = None
-        if data_key in empirical_targets:
-            data_val = _scalar_from_matlab_value(empirical_targets[data_key])
+        model_val = _first_available_scalar(
+            first_order_model_stats, model_key_aliases.get(model_key, [model_key])
+        )
+        data_val = _first_available_scalar(empirical_targets, data_key_aliases.get(data_key, [data_key]))
         rows.append((row_label, model_val, data_val))
 
     latex_code = _generate_calibration_latex_table(rows)

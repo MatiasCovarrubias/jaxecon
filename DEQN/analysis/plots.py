@@ -897,6 +897,10 @@ def plot_sector_ir_by_shock_size(
         if matlab_irs:
             pos_keys = [pos_key] if pos_key in matlab_irs else [k for k in matlab_irs if k.startswith("pos_")]
             neg_keys = [neg_key] if neg_key in matlab_irs else [k for k in matlab_irs if k.startswith("neg_")]
+            other_keys = []
+            if not pos_keys and not neg_keys:
+                other_keys = list(matlab_irs.keys())
+
             for pk in pos_keys:
                 pos_loglin = matlab_irs[pk]["loglin"][:max_periods] * 100
                 ax.plot(
@@ -941,6 +945,34 @@ def plot_sector_ir_by_shock_size(
                         linestyle="-.",
                         alpha=0.8,
                     )
+
+            for ok in other_keys:
+                generic_loglin = matlab_irs[ok]["loglin"][:max_periods] * 100
+                ax.plot(
+                    np.arange(len(generic_loglin)),
+                    generic_loglin,
+                    color=colors[4],
+                    linewidth=1.5,
+                    linestyle="--",
+                    alpha=0.8,
+                    label=f"Loglinear ({ok})" if j == 0 else None,
+                )
+                generic_determ = matlab_irs[ok].get("determ")
+                if generic_determ is not None:
+                    generic_determ = generic_determ[:max_periods] * 100
+                    ax.plot(
+                        np.arange(len(generic_determ)),
+                        generic_determ,
+                        color=colors[2],
+                        linewidth=1.5,
+                        linestyle="-.",
+                        alpha=0.8,
+                        label=f"Perfect Foresight ({ok})" if j == 0 else None,
+                    )
+        elif j == 0:
+            print(
+                f"      Warning: no MATLAB IRs found for sector {sector_idx + 1}, variable '{variable_to_plot}'"
+            )
 
         for k, exp_name in enumerate(experiment_names):
             if state_name and state_name in gir_data[exp_name]:

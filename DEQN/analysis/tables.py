@@ -673,3 +673,158 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
     latex_code += r"\textit{Note: Values show percentage deviations from deterministic steady state.}" + "\n"
 
     return latex_code
+
+
+def create_stochastic_ss_aggregates_table(
+    stochastic_ss_data: Dict[str, Dict[str, float]],
+    save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
+    methods_to_include: Optional[list[str]] = None,
+) -> str:
+    """
+    Create a compact stochastic steady-state table for aggregates C, I, GDP, K.
+
+    Values are reported in percentage deviations from deterministic steady state.
+    """
+    aggregate_order = [
+        ("Agg. Consumption", "C"),
+        ("Agg. Investment", "I"),
+        ("Agg. GDP", "GDP"),
+        ("Agg. Capital", "K"),
+    ]
+
+    all_methods = list(stochastic_ss_data.keys())
+    if methods_to_include:
+        method_names = [m for m in methods_to_include if m in stochastic_ss_data]
+    else:
+        method_names = all_methods
+
+    n_methods = len(method_names)
+    latex_code = (
+        f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_methods}}}{{X}}}}\n"
+        + r"\toprule"
+        + "\n"
+        + r"\textbf{Aggregate}"
+    )
+    for method in method_names:
+        method_display = method.replace("_", r"\_")
+        latex_code += f" & \\textbf{{{method_display}}}"
+    latex_code += r" \\" + "\n" + r"\midrule" + "\n"
+
+    for var_key, var_short in aggregate_order:
+        latex_code += var_short
+        for method in method_names:
+            value = stochastic_ss_data.get(method, {}).get(var_key)
+            if value is None:
+                latex_code += " & —"
+            else:
+                latex_code += f" & {float(value) * 100:.3f}"
+        latex_code += r" \\" + "\n"
+
+    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    latex_code += r"\\" + "\n"
+    latex_code += r"\textit{Note: Values are percentage deviations from deterministic steady state.}" + "\n"
+
+    if save_path:
+        if analysis_name:
+            save_dir = os.path.dirname(save_path)
+            ext = os.path.splitext(os.path.basename(save_path))[1] or ".tex"
+            new_filename = f"stochastic_ss_aggregates_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+        with open(final_save_path, "w") as file:
+            file.write(latex_code)
+
+    return latex_code
+
+
+def create_ergodic_aggregate_stats_table(
+    analysis_variables_data: Dict[str, Any],
+    save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
+    methods_to_include: Optional[list[str]] = None,
+) -> str:
+    """
+    Create ergodic descriptive statistics table (Mean, Sd, Skewness, Excess Kurtosis)
+    for aggregates C, I, GDP, K.
+    """
+    aggregate_order = [
+        ("Agg. Consumption", "C"),
+        ("Agg. Investment", "I"),
+        ("Agg. GDP", "GDP"),
+        ("Agg. Capital", "K"),
+    ]
+    stat_labels = ["Mean", "Sd", "Skewness", "Excess Kurtosis"]
+
+    all_methods = list(analysis_variables_data.keys())
+    if methods_to_include:
+        method_names = [m for m in methods_to_include if m in analysis_variables_data]
+    else:
+        method_names = all_methods
+
+    n_methods = len(method_names)
+    latex_code = (
+        f"\\begin{{tabularx}}{{\\textwidth}}{{ll *{{{n_methods}}}{{X}}}}\n"
+        + r"\toprule"
+        + "\n"
+        + r"\textbf{Aggregate} & \textbf{Statistic}"
+    )
+    for method in method_names:
+        method_display = method.replace("_", r"\_")
+        latex_code += f" & \\textbf{{{method_display}}}"
+    latex_code += r" \\" + "\n" + r"\midrule" + "\n"
+
+    for var_key, var_short in aggregate_order:
+        for idx, stat_name in enumerate(stat_labels):
+            if idx == 0:
+                latex_code += var_short
+            else:
+                latex_code += " "
+            latex_code += f" & {stat_name}"
+
+            for method in method_names:
+                values = analysis_variables_data.get(method, {}).get(var_key)
+                if values is None:
+                    latex_code += " & —"
+                    continue
+
+                values_np = np.asarray(values, dtype=float)
+                if values_np.size == 0:
+                    latex_code += " & —"
+                    continue
+
+                if stat_name == "Mean":
+                    stat_value = float(np.mean(values_np) * 100)
+                elif stat_name == "Sd":
+                    stat_value = float(np.std(values_np) * 100)
+                elif stat_name == "Skewness":
+                    stat_value = float(skew(values_np))
+                else:
+                    stat_value = float(kurtosis(values_np))
+
+                latex_code += f" & {stat_value:.3f}"
+
+            latex_code += r" \\" + "\n"
+
+        latex_code += r"\addlinespace[0.35em]" + "\n"
+
+    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    latex_code += r"\\" + "\n"
+    latex_code += (
+        r"\textit{Note: Mean and Sd are in percentage deviations from deterministic steady state.}"
+        + "\n"
+    )
+
+    if save_path:
+        if analysis_name:
+            save_dir = os.path.dirname(save_path)
+            ext = os.path.splitext(os.path.basename(save_path))[1] or ".tex"
+            new_filename = f"ergodic_aggregate_stats_{analysis_name}{ext}"
+            final_save_path = os.path.join(save_dir, new_filename)
+        else:
+            final_save_path = save_path
+        with open(final_save_path, "w") as file:
+            file.write(latex_code)
+
+    return latex_code

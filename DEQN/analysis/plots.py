@@ -830,6 +830,8 @@ def plot_sector_ir_by_shock_size(
     display_dpi: int = 100,
     max_periods: int = 80,
     n_sectors: int = 37,
+    benchmark_method: str = "PerfectForesight",
+    response_source: str = "IR_stoch_ss",
 ):
     """
     Create a figure with one row per shock size and two columns:
@@ -875,6 +877,19 @@ def plot_sector_ir_by_shock_size(
     fig, axes : matplotlib figure and axes array
     """
     from DEQN.analysis.matlab_irs import get_matlab_ir_for_analysis_variable
+
+    benchmark_key_map = {
+        "FirstOrder": "first_order",
+        "SecondOrder": "second_order",
+        "PerfectForesight": "perfect_foresight",
+    }
+    benchmark_label_map = {
+        "FirstOrder": "First Order",
+        "SecondOrder": "Second Order",
+        "PerfectForesight": "Perfect Foresight",
+    }
+    benchmark_series_key = benchmark_key_map.get(benchmark_method, "perfect_foresight")
+    benchmark_label = benchmark_label_map.get(benchmark_method, benchmark_method)
 
     n_sizes = len(shock_sizes)
     fig, axes = plt.subplots(n_sizes, 2, figsize=figsize, dpi=display_dpi, sharex=True, squeeze=False)
@@ -942,44 +957,44 @@ def plot_sector_ir_by_shock_size(
                 other_keys = list(matlab_irs.keys())
 
             for pk in pos_keys:
-                pos_loglin = matlab_irs[pk]["loglin"][:max_periods] * 100
+                pos_first_order = matlab_irs[pk]["first_order"][:max_periods] * 100
                 _plot_line(
                     ax_pos,
-                    pos_loglin,
+                    pos_first_order,
                     color=colors[4],
                     linewidth=1.5,
                     linestyle="--",
                     alpha=0.8,
-                    label="Loglinear" if j == 0 else None,
+                    label="First Order" if j == 0 else None,
                 )
-                pos_determ = matlab_irs[pk].get("determ")
-                if pos_determ is not None:
-                    pos_determ = pos_determ[:max_periods] * 100
+                pos_benchmark = matlab_irs[pk].get(benchmark_series_key)
+                if pos_benchmark is not None:
+                    pos_benchmark = pos_benchmark[:max_periods] * 100
                     _plot_line(
                         ax_pos,
-                        pos_determ,
+                        pos_benchmark,
                         color=colors[2],
                         linewidth=1.5,
                         linestyle="-.",
                         alpha=0.8,
-                        label="Perfect Foresight" if j == 0 else None,
+                        label=benchmark_label if j == 0 else None,
                     )
             for nk in neg_keys:
-                neg_loglin = matlab_irs[nk]["loglin"][:max_periods] * 100
+                neg_first_order = matlab_irs[nk]["first_order"][:max_periods] * 100
                 _plot_line(
                     ax_neg,
-                    neg_loglin,
+                    neg_first_order,
                     color=colors[4],
                     linewidth=1.5,
                     linestyle="--",
                     alpha=0.8,
                 )
-                neg_determ = matlab_irs[nk].get("determ")
-                if neg_determ is not None:
-                    neg_determ = neg_determ[:max_periods] * 100
+                neg_benchmark = matlab_irs[nk].get(benchmark_series_key)
+                if neg_benchmark is not None:
+                    neg_benchmark = neg_benchmark[:max_periods] * 100
                     _plot_line(
                         ax_neg,
-                        neg_determ,
+                        neg_benchmark,
                         color=colors[2],
                         linewidth=1.5,
                         linestyle="-.",
@@ -987,28 +1002,28 @@ def plot_sector_ir_by_shock_size(
                     )
 
             for ok in other_keys:
-                generic_loglin = matlab_irs[ok]["loglin"][:max_periods] * 100
+                generic_first_order = matlab_irs[ok]["first_order"][:max_periods] * 100
                 target_ax = ax_pos if ok.startswith("pos_") else ax_neg if ok.startswith("neg_") else ax_pos
                 _plot_line(
                     target_ax,
-                    generic_loglin,
+                    generic_first_order,
                     color=colors[4],
                     linewidth=1.5,
                     linestyle="--",
                     alpha=0.8,
-                    label=f"Loglinear ({ok})" if j == 0 else None,
+                    label=f"First Order ({ok})" if j == 0 else None,
                 )
-                generic_determ = matlab_irs[ok].get("determ")
-                if generic_determ is not None:
-                    generic_determ = generic_determ[:max_periods] * 100
+                generic_benchmark = matlab_irs[ok].get(benchmark_series_key)
+                if generic_benchmark is not None:
+                    generic_benchmark = generic_benchmark[:max_periods] * 100
                     _plot_line(
                         target_ax,
-                        generic_determ,
+                        generic_benchmark,
                         color=colors[2],
                         linewidth=1.5,
                         linestyle="-.",
                         alpha=0.8,
-                        label=f"Perfect Foresight ({ok})" if j == 0 else None,
+                        label=f"{benchmark_label} ({ok})" if j == 0 else None,
                     )
         elif j == 0:
             print(f"      Warning: no MATLAB IRs found for sector {sector_idx + 1}, variable '{variable_to_plot}'")
@@ -1017,7 +1032,7 @@ def plot_sector_ir_by_shock_size(
             if state_name and state_name in gir_data[exp_name]:
                 state_gir_data = gir_data[exp_name][state_name]
 
-                if pos_key in state_gir_data:
+                if response_source in ["GIR", "both"] and pos_key in state_gir_data:
                     gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_pos:
                         response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
@@ -1031,7 +1046,7 @@ def plot_sector_ir_by_shock_size(
                             label=label,
                         )
 
-                if neg_key in state_gir_data:
+                if response_source in ["GIR", "both"] and neg_key in state_gir_data:
                     gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg:
                         response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
@@ -1044,7 +1059,7 @@ def plot_sector_ir_by_shock_size(
                         )
 
                 # Plot IR from stochastic steady state (primary IR method)
-                if pos_stochss_key in state_gir_data:
+                if response_source in ["IR_stoch_ss", "both"] and pos_stochss_key in state_gir_data:
                     gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_pos_stochss:
                         response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
@@ -1058,7 +1073,7 @@ def plot_sector_ir_by_shock_size(
                             label=label_stochss,
                         )
 
-                if neg_stochss_key in state_gir_data:
+                if response_source in ["IR_stoch_ss", "both"] and neg_stochss_key in state_gir_data:
                     gir_vars_neg_stochss = state_gir_data[neg_stochss_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg_stochss:
                         response_neg_stochss = gir_vars_neg_stochss[variable_to_plot][:max_periods] * 100

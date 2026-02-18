@@ -296,17 +296,22 @@ def _process_flat_format_shock(md_irs: Dict, shock_idx: int) -> Dict[str, Any]:
             sector_idx = int(sector_idx.item())
         sector_idx = int(sector_idx) - 1
 
-        irs_loglin = irf_data.get("first_order", irf_data.get("IRSFirstOrder"))
-        irs_determ = irf_data.get("perfect_foresight", irf_data.get("IRSPerfectForesight"))
-        if irs_determ is None:
-            irs_determ = irf_data.get("IRSPF", irf_data.get("IRSDeterm"))
+        irs_first_order = irf_data.get("first_order", irf_data.get("IRSFirstOrder"))
+        irs_second_order = irf_data.get("second_order", irf_data.get("IRSSecondOrder"))
+        irs_pf = irf_data.get("perfect_foresight", irf_data.get("IRSPerfectForesight"))
+        if irs_pf is None:
+            irs_pf = irf_data.get("IRSPF", irf_data.get("IRSDeterm"))
 
-        if irs_loglin is None:
+        if irs_first_order is None:
             continue
 
         processed["sectors"][sector_idx] = {
-            "IRSLoglin": np.array(irs_loglin),
-            "IRSDeterm": np.array(irs_determ) if irs_determ is not None else None,
+            "IRSFirstOrder": np.array(irs_first_order),
+            "IRSSecondOrder": np.array(irs_second_order) if irs_second_order is not None else None,
+            "IRSPerfectForesight": np.array(irs_pf) if irs_pf is not None else None,
+            # Backward-compatible keys.
+            "IRSLoglin": np.array(irs_first_order),
+            "IRSDeterm": np.array(irs_pf) if irs_pf is not None else None,
         }
 
     return processed
@@ -367,21 +372,27 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
             sector_idx = int(sector_idx.item())
         sector_idx = int(sector_idx) - 1  # MATLAB 1-based -> Python 0-based
 
-        irs_loglin = irf_data.get("IRSFirstOrder")
-        if irs_loglin is None:
-            irs_loglin = irf_data.get("IRSLoglin")
-        irs_determ = irf_data.get("IRSPerfectForesight")
-        if irs_determ is None:
-            irs_determ = irf_data.get("IRSPF")
-        if irs_determ is None:
-            irs_determ = irf_data.get("IRSDeterm")
+        irs_first_order = irf_data.get("IRSFirstOrder")
+        if irs_first_order is None:
+            irs_first_order = irf_data.get("IRSLoglin")
+        irs_second_order = irf_data.get("IRSSecondOrder")
+        irs_pf = irf_data.get("IRSPerfectForesight")
+        if irs_pf is None:
+            irs_pf = irf_data.get("IRSPF")
+        if irs_pf is None:
+            irs_pf = irf_data.get("IRSDeterm")
 
-        if irs_loglin is not None:
-            arr_loglin = np.array(irs_loglin)
-            arr_determ = np.array(irs_determ) if irs_determ is not None else None
+        if irs_first_order is not None:
+            arr_first = np.array(irs_first_order)
+            arr_second = np.array(irs_second_order) if irs_second_order is not None else None
+            arr_pf = np.array(irs_pf) if irs_pf is not None else None
             processed["sectors"][sector_idx] = {
-                "IRSLoglin": arr_loglin,
-                "IRSDeterm": arr_determ,
+                "IRSFirstOrder": arr_first,
+                "IRSSecondOrder": arr_second,
+                "IRSPerfectForesight": arr_pf,
+                # Backward-compatible keys.
+                "IRSLoglin": arr_first,
+                "IRSDeterm": arr_pf,
             }
 
     return processed
@@ -465,6 +476,9 @@ def _process_legacy_ir_data(mat_data: Dict) -> Dict[str, Any]:
         sector_idx = int(sector_key.split("_")[1]) - 1
 
         processed["sectors"][sector_idx] = {
+            "IRSFirstOrder": np.array(sector_data["IRSLoglin"]),
+            "IRSSecondOrder": None,
+            "IRSPerfectForesight": np.array(sector_data["IRSDeterm"]),
             "IRSLoglin": np.array(sector_data["IRSLoglin"]),
             "IRSDeterm": np.array(sector_data["IRSDeterm"]),
         }
@@ -515,25 +529,39 @@ def get_sector_irs(
 
         sector_data = data["sectors"][sector_idx]
 
-        loglin_raw = sector_data["IRSLoglin"][variable_idx, :]
+        first_raw = sector_data["IRSFirstOrder"][variable_idx, :]
         if skip_initial:
-            loglin = loglin_raw[1 : max_periods + 1]
+            first_order = first_raw[1 : max_periods + 1]
         else:
-            loglin = loglin_raw[:max_periods]
+            first_order = first_raw[:max_periods]
 
-        irs_determ = sector_data.get("IRSDeterm")
-        if irs_determ is not None:
-            determ_raw = irs_determ[variable_idx, :]
+        irs_second = sector_data.get("IRSSecondOrder")
+        if irs_second is not None:
+            second_raw = irs_second[variable_idx, :]
             if skip_initial:
-                determ = determ_raw[1 : max_periods + 1]
+                second_order = second_raw[1 : max_periods + 1]
             else:
-                determ = determ_raw[:max_periods]
+                second_order = second_raw[:max_periods]
         else:
-            determ = None
+            second_order = None
+
+        irs_pf = sector_data.get("IRSPerfectForesight")
+        if irs_pf is not None:
+            pf_raw = irs_pf[variable_idx, :]
+            if skip_initial:
+                perfect_foresight = pf_raw[1 : max_periods + 1]
+            else:
+                perfect_foresight = pf_raw[:max_periods]
+        else:
+            perfect_foresight = None
 
         result[key] = {
-            "loglin": loglin,
-            "determ": determ,
+            "first_order": first_order,
+            "second_order": second_order,
+            "perfect_foresight": perfect_foresight,
+            # Backward-compatible aliases.
+            "loglin": first_order,
+            "determ": perfect_foresight,
         }
 
     return result

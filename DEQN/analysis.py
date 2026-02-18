@@ -100,6 +100,8 @@ from DEQN.analysis.tables import (  # noqa: E402
     create_calibration_table,
     create_comparative_stats_table,
     create_descriptive_stats_table,
+    create_ergodic_aggregate_stats_table,
+    create_stochastic_ss_aggregates_table,
     create_stochastic_ss_table,
     create_welfare_table,
 )
@@ -153,15 +155,26 @@ config = {
     # IR method(s): choose any of ["GIR", "IR_stoch_ss"].
     # - GIR: average over ergodic draws
     # - IR_stoch_ss: single IR from stochastic steady state
-    "ir_methods": ["GIR", "IR_stoch_ss"],
+    "ir_methods": ["IR_stoch_ss"],
+    # MATLAB benchmark used in IR figures. Options:
+    # "FirstOrder", "SecondOrder", "PerfectForesight"
+    "ir_benchmark_method": "PerfectForesight",
     # Combined IR analysis configuration
     # Sectors to analyze: specify sector indices (0-based).
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0, 2, 19, 23],
-    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. Output"],
+    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
     "ir_shock_sizes": [20],
     "ir_max_periods": 80,
+    # Aggregate reporting controls
+    "aggregate_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
+    # Methods included in aggregate ergodic tables/histograms.
+    # Use None to include all available methods.
+    "ergodic_methods_to_include": None,
+    # Methods included in stochastic-SS aggregate table.
+    # Use None to include all analyzed experiments.
+    "stochss_methods_to_include": None,
     # JAX configuration
     "double_precision": True,
 }
@@ -247,7 +260,9 @@ def main():
 
     # Load simulation data (optional - for Dynare comparison)
     dynare_simul_1storder = None
+    dynare_simul_so = None
     dynare_simul_pf = None
+    dynare_simul_mit = None
 
     if model_data_simulation_file is not None:
         simul_path = os.path.join(model_dir, model_data_simulation_file)
@@ -267,6 +282,13 @@ def main():
                 dynare_simul_pf = jnp.array(simul["PerfectForesight"]["full_simul"], dtype=precision)
             elif "Determ" in simul and "full_simul" in simul["Determ"]:
                 dynare_simul_pf = jnp.array(simul["Determ"]["full_simul"], dtype=precision)
+
+            # Second-order simulation
+            if "SecondOrder" in simul and "full_simul" in simul["SecondOrder"]:
+                dynare_simul_so = jnp.array(simul["SecondOrder"]["full_simul"], dtype=precision)
+            # MIT shocks simulation
+            if "MITShocks" in simul and "full_simul" in simul["MITShocks"]:
+                dynare_simul_mit = jnp.array(simul["MITShocks"]["full_simul"], dtype=precision)
         else:
             print(f"  ⚠ Simulation file not found: {model_data_simulation_file} (skipping)")
 
@@ -301,6 +323,55 @@ def main():
     ir_sectors = config.get("ir_sectors_to_plot", [0])
     states_to_shock = [n_sectors + sector_idx for sector_idx in ir_sectors]
     config["states_to_shock"] = states_to_shock
+
+    # Keep welfare baseline available for all methods.
+    welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
+
+    def _normalize_dynare_full_simul(simul_data, state_ss_vec, policies_ss_vec):
+        """Return simulation in log deviations with shape (n_vars, T)."""
+        expected_n_vars = state_ss_vec.shape[0] + policies_ss_vec.shape[0]
+        if simul_data.shape[0] == expected_n_vars:
+            simul_matrix = simul_data
+        elif simul_data.shape[1] == expected_n_vars:
+            simul_matrix = simul_data.T
+        else:
+            raise ValueError(
+                f"Unexpected Dynare simulation shape {simul_data.shape}; expected one axis = {expected_n_vars}."
+            )
+
+        ss_full = jnp.concatenate([state_ss_vec, policies_ss_vec])
+        dist_to_zero = jnp.mean(jnp.abs(simul_matrix[:, 0]))
+        dist_to_ss = jnp.mean(jnp.abs(simul_matrix[:, 0] - ss_full))
+        if dist_to_ss < dist_to_zero:
+            simul_matrix = simul_matrix - ss_full[:, None]
+        return simul_matrix
+
+    def _welfare_cost_from_dynare_simul(simul_data, method_name):
+        """Compute consumption-equivalent welfare cost from Dynare full_simul."""
+        if simul_data is None:
+            return None
+        simul_matrix = _normalize_dynare_full_simul(simul_data, state_ss, policies_ss)
+        n_periods = simul_matrix.shape[1]
+        burn_in = min(config["burn_in_periods"], max(0, n_periods // 10))
+        if burn_in >= n_periods:
+            burn_in = 0
+        policies_logdev = simul_matrix[2 * n_sectors :, burn_in:].T
+
+        if policies_logdev.shape[0] <= config["welfare_traject_length"]:
+            print(
+                f"  ⚠ Skipping welfare for {method_name}: not enough periods ({policies_logdev.shape[0]}) "
+                f"for welfare_traject_length={config['welfare_traject_length']}"
+            )
+            return None
+
+        method_seed = sum(ord(c) for c in method_name)
+        welfare = welfare_fn(
+            jax.vmap(econ_model.utility_from_policies)(policies_logdev),
+            welfare_ss,
+            random.PRNGKey(config["welfare_seed"] + method_seed),
+        )
+        Vc = econ_model.consumption_equivalent(welfare)
+        return -Vc * 100
 
     # Create analysis functions
     simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config))
@@ -356,7 +427,6 @@ def main():
 
         simul_utilities = jax.vmap(econ_model.utility_from_policies)(simul_policies)
 
-        welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
         welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config["welfare_seed"]))
 
         Vc = econ_model.consumption_equivalent(welfare)
@@ -392,6 +462,19 @@ def main():
 
         gir_results = gir_fn(simul_obs, train_state, simul_policies, stoch_ss_obs)
         gir_data[experiment_label] = gir_results
+
+    # Add welfare costs from Dynare simulation methods (if available).
+    dynare_welfare_inputs = {
+        "FirstOrder": dynare_simul_1storder,
+        "SecondOrder": dynare_simul_so,
+        "PerfectForesight": dynare_simul_pf,
+        "MITShocks": dynare_simul_mit,
+    }
+    for method_name, simul_data in dynare_welfare_inputs.items():
+        welfare_cost = _welfare_cost_from_dynare_simul(simul_data, method_name)
+        if welfare_cost is not None:
+            welfare_costs[method_name] = welfare_cost
+            print(f"    Welfare cost ({method_name}): {float(welfare_cost):.4f}%")
 
     # Compute ergodic prices and steady state corrections
     first_experiment_label = list(analysis_variables_data.keys())[0]
@@ -435,6 +518,21 @@ def main():
                 print(f"    ⚠ WARNING: {var_name} has {n_nan} NaN values!", flush=True)
         print("  ✓ Loaded First-Order (Dynare) for diagnostics only; using theoretical log-linear moments in tables.")
 
+    if dynare_simul_so is not None:
+        secondorder_analysis_vars = process_simulation_with_consistent_aggregation(
+            simul_data=dynare_simul_so,
+            policies_ss=policies_ss,
+            state_ss=state_ss,
+            P_ergodic=P_ergodic,
+            Pk_ergodic=Pk_ergodic,
+            Pm_ergodic=Pm_ergodic,
+            n_sectors=n_sectors,
+            burn_in=config["burn_in_periods"],
+            source_label="Second-Order",
+        )
+        analysis_variables_data["Second-Order"] = secondorder_analysis_vars
+        print("  ✓ Loaded Second-Order simulation series.")
+
     # Initialize theoretical/precomputed stats for descriptive stats table
     theoretical_stats = {}
 
@@ -447,9 +545,7 @@ def main():
         print("  ✓ Using TheoStats for Log-Linear moments (mean=0, skew=0, kurt=0)", flush=True)
 
         # Create theoretical stats for descriptive table (no samples needed)
-        loglin_theo_stats = create_theoretical_descriptive_stats(
-            theo_stats=theo_stats, label="Log-Linear"
-        )
+        loglin_theo_stats = create_theoretical_descriptive_stats(theo_stats=theo_stats, label="Log-Linear")
         theoretical_stats.update(loglin_theo_stats)
 
         # Get theoretical distribution params for smooth PDF curves in histograms
@@ -458,9 +554,7 @@ def main():
 
         # Still need placeholder data for the plotting function to include this experiment
         # Create minimal placeholder (actual curve uses theo_dist_params)
-        analysis_variables_data["Log-Linear"] = {
-            var_name: jnp.zeros(10) for var_name in theo_dist_params.keys()
-        }
+        analysis_variables_data["Log-Linear"] = {var_name: jnp.zeros(10) for var_name in theo_dist_params.keys()}
 
         # Print theoretical statistics
         for var_name, params_dict in theo_dist_params.items():
@@ -560,6 +654,15 @@ def main():
     ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
     shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
     max_periods = config.get("ir_max_periods", 80)
+    configured_ir_methods = config.get("ir_methods", ["IR_stoch_ss"])
+    if isinstance(configured_ir_methods, str):
+        configured_ir_methods = [configured_ir_methods]
+    if "GIR" in configured_ir_methods and "IR_stoch_ss" in configured_ir_methods:
+        ir_response_source = "both"
+    elif "GIR" in configured_ir_methods:
+        ir_response_source = "GIR"
+    else:
+        ir_response_source = "IR_stoch_ss"
 
     for sector_idx in sectors_to_plot:
         sector_label = (
@@ -578,6 +681,8 @@ def main():
                 analysis_name=config["analysis_name"],
                 max_periods=max_periods,
                 n_sectors=n_sectors,
+                benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
+                response_source=ir_response_source,
             )
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -624,6 +729,24 @@ def main():
         theoretical_stats=theoretical_stats if theoretical_stats else None,
     )
 
+    # Aggregate-only ergodic descriptive statistics (C, I, GDP, K)
+    aggregate_vars = config.get(
+        "aggregate_variables", ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"]
+    )
+    methods_for_ergodic = config.get("ergodic_methods_to_include")
+    aggregate_ergodic_data = {}
+    for method_name, variables in analysis_variables_data.items():
+        filtered = {k: v for k, v in variables.items() if k in aggregate_vars}
+        if filtered:
+            aggregate_ergodic_data[method_name] = filtered
+
+    create_ergodic_aggregate_stats_table(
+        analysis_variables_data=aggregate_ergodic_data,
+        save_path=os.path.join(simulation_dir, "ergodic_aggregate_stats_table.tex"),
+        analysis_name=config["analysis_name"],
+        methods_to_include=methods_for_ergodic,
+    )
+
     if len(analysis_variables_data) > 1:
         create_comparative_stats_table(
             analysis_variables_data=analysis_variables_data,
@@ -649,6 +772,13 @@ def main():
         analysis_name=config["analysis_name"],
     )
 
+    create_stochastic_ss_aggregates_table(
+        stochastic_ss_data=stochastic_ss_data,
+        save_path=os.path.join(analysis_dir, "stochastic_ss_aggregates_table.tex"),
+        analysis_name=config["analysis_name"],
+        methods_to_include=config.get("stochss_methods_to_include"),
+    )
+
     # Generate histograms:
     # - keep model simulation distributions
     # - keep theoretical log-linear distribution
@@ -656,9 +786,15 @@ def main():
     histogram_data = {
         k: v
         for k, v in analysis_variables_data.items()
-        if "Deterministic" not in k
-        and k != "Perfect Foresight"
+        if "Deterministic" not in k and k != "Perfect Foresight"
     }
+    if methods_for_ergodic:
+        histogram_data = {k: v for k, v in histogram_data.items() if k in methods_for_ergodic}
+    histogram_data = {
+        k: {var: arr for var, arr in v.items() if var in aggregate_vars}
+        for k, v in histogram_data.items()
+    }
+    histogram_data = {k: v for k, v in histogram_data.items() if v}
     plot_ergodic_histograms(
         analysis_variables_data=histogram_data,
         save_dir=simulation_dir,

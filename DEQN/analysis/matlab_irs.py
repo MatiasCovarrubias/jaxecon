@@ -523,21 +523,57 @@ def get_sector_irs(
     """
     result = {}
 
+    def _extract_series(ir_array: Any) -> Optional[np.ndarray]:
+        """
+        Extract one variable IR series robustly from MATLAB-loaded arrays.
+
+        Expected canonical shape is (n_variables, n_periods), but scipy's
+        simplify_cells can squeeze singleton dimensions into 1D vectors.
+        """
+        if ir_array is None:
+            return None
+
+        arr = np.asarray(ir_array)
+        if arr.size == 0:
+            return None
+
+        # Scalar edge case.
+        if arr.ndim == 0:
+            return np.atleast_1d(arr.item())
+
+        # Squeezed single-variable IR: treat as time series.
+        if arr.ndim == 1:
+            if variable_idx != 0:
+                return None
+            return arr
+
+        # Canonical orientation: [variables, time].
+        if arr.shape[0] > variable_idx:
+            return np.asarray(arr[variable_idx, ...]).ravel()
+
+        # Transposed orientation: [time, variables].
+        if arr.shape[1] > variable_idx:
+            return np.asarray(arr[:, variable_idx]).ravel()
+
+        return None
+
     for key, data in ir_data.items():
         if "sectors" not in data or sector_idx not in data["sectors"]:
             continue
 
         sector_data = data["sectors"][sector_idx]
 
-        first_raw = sector_data["IRSFirstOrder"][variable_idx, :]
+        first_raw = _extract_series(sector_data.get("IRSFirstOrder"))
+        if first_raw is None:
+            continue
         if skip_initial:
             first_order = first_raw[1 : max_periods + 1]
         else:
             first_order = first_raw[:max_periods]
 
         irs_second = sector_data.get("IRSSecondOrder")
-        if irs_second is not None:
-            second_raw = irs_second[variable_idx, :]
+        second_raw = _extract_series(irs_second)
+        if second_raw is not None:
             if skip_initial:
                 second_order = second_raw[1 : max_periods + 1]
             else:
@@ -546,8 +582,8 @@ def get_sector_irs(
             second_order = None
 
         irs_pf = sector_data.get("IRSPerfectForesight")
-        if irs_pf is not None:
-            pf_raw = irs_pf[variable_idx, :]
+        pf_raw = _extract_series(irs_pf)
+        if pf_raw is not None:
             if skip_initial:
                 perfect_foresight = pf_raw[1 : max_periods + 1]
             else:

@@ -110,7 +110,15 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         return state_counterfactual_logdev
 
     def simul_trajectory_analysis_variables(
-        econ_model, train_state, shocks, obs_init_logdev, P_weights, Pk_weights, Pm_weights, var_labels
+        econ_model,
+        train_state,
+        shocks,
+        obs_init_logdev,
+        P_weights,
+        Pk_weights,
+        Pm_weights,
+        var_labels,
+        sector_idx_for_extra=None,
     ):
         """
         Simulate full trajectory and return analysis variables at each step.
@@ -141,6 +149,16 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             analysis_vars_dict = econ_model.get_analysis_variables(
                 obs_logdev, policy_logdev, P_weights, Pk_weights, Pm_weights
             )
+            if sector_idx_for_extra is not None and 0 <= sector_idx_for_extra < econ_model.n_sectors:
+                n = econ_model.n_sectors
+                j = sector_idx_for_extra
+                # Sectoral IR variables for the shocked sector (all in log-deviation units).
+                analysis_vars_dict["Cj"] = policy_logdev[j]
+                analysis_vars_dict["Ioutj"] = policy_logdev[7 * n + j]
+                analysis_vars_dict["Yj"] = policy_logdev[10 * n + j]
+                analysis_vars_dict["Kj"] = obs_logdev[j]
+                analysis_vars_dict["Lj"] = policy_logdev[n + j]
+                analysis_vars_dict["Qj"] = policy_logdev[9 * n + j]
             analysis_vars_array = jnp.array([analysis_vars_dict[label] for label in var_labels])
             return next_obs_logdev, analysis_vars_array
 
@@ -153,6 +171,15 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         final_analysis_vars_dict = econ_model.get_analysis_variables(
             final_obs_logdev, final_policy_logdev, P_weights, Pk_weights, Pm_weights
         )
+        if sector_idx_for_extra is not None and 0 <= sector_idx_for_extra < econ_model.n_sectors:
+            n = econ_model.n_sectors
+            j = sector_idx_for_extra
+            final_analysis_vars_dict["Cj"] = final_policy_logdev[j]
+            final_analysis_vars_dict["Ioutj"] = final_policy_logdev[7 * n + j]
+            final_analysis_vars_dict["Yj"] = final_policy_logdev[10 * n + j]
+            final_analysis_vars_dict["Kj"] = final_obs_logdev[j]
+            final_analysis_vars_dict["Lj"] = final_policy_logdev[n + j]
+            final_analysis_vars_dict["Qj"] = final_policy_logdev[9 * n + j]
         final_analysis_vars_array = jnp.array([final_analysis_vars_dict[label] for label in var_labels])
 
         # Add final analysis variables to trajectory
@@ -188,9 +215,19 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             # Keep paths deterministic after the initial perturbation.
             zero_shocks = jnp.zeros((config["gir_trajectory_length"], econ_model.n_sectors))
 
+            sector_idx = state_idx - econ_model.n_sectors
+
             # Original trajectory analysis variables
             traj_analysis_vars_orig = simul_trajectory_analysis_variables(
-                econ_model, train_state, zero_shocks, obs_init_logdev, P_weights, Pk_weights, Pm_weights, var_labels
+                econ_model,
+                train_state,
+                zero_shocks,
+                obs_init_logdev,
+                P_weights,
+                Pk_weights,
+                Pm_weights,
+                var_labels,
+                sector_idx_for_extra=sector_idx,
             )
 
             # Create counterfactual initial state with specified shock sign
@@ -206,6 +243,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                 Pk_weights,
                 Pm_weights,
                 var_labels,
+                sector_idx_for_extra=sector_idx,
             )
 
             # Impulse response is difference
@@ -254,9 +292,19 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         # Generate zero shocks for the trajectory (no uncertainty after initial shock)
         zero_shocks = jnp.zeros((config["gir_trajectory_length"], econ_model.n_sectors))
 
+        sector_idx = state_idx - econ_model.n_sectors
+
         # Original trajectory (no shock)
         traj_analysis_vars_orig = simul_trajectory_analysis_variables(
-            econ_model, train_state, zero_shocks, initial_state_logdev, P_weights, Pk_weights, Pm_weights, var_labels
+            econ_model,
+            train_state,
+            zero_shocks,
+            initial_state_logdev,
+            P_weights,
+            Pk_weights,
+            Pm_weights,
+            var_labels,
+            sector_idx_for_extra=sector_idx,
         )
 
         # Create counterfactual initial state with specified shock
@@ -272,6 +320,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             Pk_weights,
             Pm_weights,
             var_labels,
+            sector_idx_for_extra=sector_idx,
         )
 
         # Impulse response is difference
@@ -317,6 +366,10 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             simul_obs[0], simul_policies_data[0], P_weights, Pk_weights, Pm_weights
         )
         var_labels = list(first_analysis_vars.keys())
+        extra_sectoral_labels = ["Cj", "Ioutj", "Yj", "Kj", "Lj", "Qj"]
+        for label in extra_sectoral_labels:
+            if label not in var_labels:
+                var_labels.append(label)
 
         # Determine which states to shock
         states_to_shock = config.get("states_to_shock", None)

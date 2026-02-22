@@ -16,6 +16,63 @@ import numpy as np
 import scipy.io as sio
 
 
+def _coerce_mat_struct(obj: Any) -> Any:
+    """
+    Convert MATLAB struct-like objects from scipy.io.loadmat into plain Python types.
+
+    Depending on scipy version and the exact .mat encoding, struct entries may arrive as
+    dicts, numpy structured scalars (np.void), object arrays, or mat_struct-like objects.
+    """
+    if isinstance(obj, dict):
+        return {k: _coerce_mat_struct(v) for k, v in obj.items()}
+
+    if isinstance(obj, np.void) and obj.dtype.names:
+        return {name: _coerce_mat_struct(obj[name]) for name in obj.dtype.names}
+
+    if isinstance(obj, np.ndarray):
+        if obj.dtype.names:
+            return [_coerce_mat_struct(v) for v in obj.ravel()]
+        if obj.dtype == object:
+            return [_coerce_mat_struct(v) for v in obj.ravel()]
+        return obj
+
+    # scipy mat_struct fallback for some scipy/matlab combinations.
+    field_names = getattr(obj, "_fieldnames", None)
+    if field_names:
+        return {name: _coerce_mat_struct(getattr(obj, name)) for name in field_names}
+
+    return obj
+
+
+def _as_struct_list(obj: Any) -> List[Dict[str, Any]]:
+    """
+    Normalize a MATLAB struct/struct-array into a list of dictionaries.
+    """
+    normalized = _coerce_mat_struct(obj)
+    if normalized is None:
+        return []
+    if isinstance(normalized, dict):
+        return [normalized]
+    if isinstance(normalized, list):
+        return [item for item in normalized if isinstance(item, dict)]
+    return []
+
+
+def _to_python_sector_idx(raw_sector_idx: Any) -> int:
+    """
+    Convert sector index to Python 0-based convention.
+
+    MATLAB objects typically store 1-based indices. Some preprocessed files may
+    already be 0-based. This helper handles both safely.
+    """
+    if isinstance(raw_sector_idx, np.ndarray):
+        raw_sector_idx = raw_sector_idx.item()
+    sector_idx = int(raw_sector_idx)
+    if sector_idx >= 1:
+        return sector_idx - 1
+    return sector_idx
+
+
 def load_matlab_irs(
     matlab_ir_dir: str,
     shock_sizes: List[int] = [5, 10, 20],
@@ -149,8 +206,8 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
 
     # Variant A: flat structure from current main.m
     if "irfs" in md_irs:
-        shocks = md_irs.get("shocks", [])
-        irfs_by_shock = md_irs.get("irfs", [])
+        shocks = _coerce_mat_struct(md_irs.get("shocks", []))
+        irfs_by_shock = _coerce_mat_struct(md_irs.get("irfs", []))
 
         if not isinstance(shocks, (list, np.ndarray)):
             shocks = [shocks]
@@ -161,9 +218,7 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
         print(f"    Found {n_shocks} shock configurations (flat format)")
 
         for i in range(n_shocks):
-            shock_cfg = shocks[i]
-            if isinstance(shock_cfg, np.ndarray) and shock_cfg.size > 0:
-                shock_cfg = shock_cfg.ravel()[0]
+            shock_cfg = _coerce_mat_struct(shocks[i])
             if not isinstance(shock_cfg, dict):
                 shock_cfg = {}
 
@@ -194,12 +249,10 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
     print(f"    Found {n_shocks} shock configurations (nested format)")
 
     for i in range(n_shocks):
-        shock_cfg = shock_configs[i]
-        if isinstance(shock_cfg, np.ndarray) and shock_cfg.size > 0:
-            shock_cfg = shock_cfg.ravel()[0]
+        shock_cfg = _coerce_mat_struct(shock_configs[i])
         if not isinstance(shock_cfg, dict):
             shock_cfg = {}
-        shock_result = by_shock[i]
+        shock_result = _coerce_mat_struct(by_shock[i])
 
         shock_value = shock_cfg.get("value", shock_cfg.get("Value", 0))
         shock_label = shock_cfg.get("label", shock_cfg.get("Label", f"shock_{i}"))
@@ -208,8 +261,6 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
         key = _parse_shock_label_to_key(shock_label, shock_value)
         print(f"    Processing: {shock_label} ({shock_desc}) → key={key}")
 
-        if isinstance(shock_result, np.ndarray) and shock_result.size > 0:
-            shock_result = shock_result.ravel()[0]
         if not isinstance(shock_result, dict):
             shock_result = {}
         processed = _process_new_format_shock(shock_result)
@@ -279,22 +330,17 @@ def _process_flat_format_shock(md_irs: Dict, shock_idx: int) -> Dict[str, Any]:
     if not isinstance(irfs_by_shock, (list, np.ndarray)) or shock_idx >= len(irfs_by_shock):
         return processed
 
-    irfs = irfs_by_shock[shock_idx]
-    if not isinstance(irfs, (list, np.ndarray)):
-        irfs = [irfs]
+    irfs = _as_struct_list(irfs_by_shock[shock_idx])
 
     for irf_data in irfs:
         if irf_data is None:
             continue
-        if isinstance(irf_data, np.ndarray) and irf_data.size > 0:
-            irf_data = irf_data.ravel()[0]
         if not isinstance(irf_data, dict):
             continue
 
-        sector_idx = irf_data.get("sector_idx", 0)
-        if isinstance(sector_idx, np.ndarray):
-            sector_idx = int(sector_idx.item())
-        sector_idx = int(sector_idx) - 1
+        sector_idx = _to_python_sector_idx(irf_data.get("sector_idx", 0))
+        if sector_idx < 0:
+            continue
 
         irs_first_order = irf_data.get("first_order", irf_data.get("IRSFirstOrder"))
         irs_second_order = irf_data.get("second_order", irf_data.get("IRSSecondOrder"))
@@ -355,22 +401,17 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
         processed["half_lives_determ"] = v if v is not None else stats.get("half_lives_pf")
 
     # IRF field names from process_sector_irs.m: IRSFirstOrder, IRSPerfectForesight (and optional IRSSecondOrder)
-    irfs = shock_result.get("IRFs", [])
-    if not isinstance(irfs, (list, np.ndarray)):
-        irfs = [irfs]
+    irfs = _as_struct_list(shock_result.get("IRFs", []))
 
     for irf_data in irfs:
         if irf_data is None:
             continue
-        if isinstance(irf_data, np.ndarray) and irf_data.size > 0:
-            irf_data = irf_data.ravel()[0]
         if not isinstance(irf_data, dict):
             continue
 
-        sector_idx = irf_data.get("sector_idx", 0)
-        if isinstance(sector_idx, np.ndarray):
-            sector_idx = int(sector_idx.item())
-        sector_idx = int(sector_idx) - 1  # MATLAB 1-based -> Python 0-based
+        sector_idx = _to_python_sector_idx(irf_data.get("sector_idx", 0))
+        if sector_idx < 0:
+            continue
 
         irs_first_order = irf_data.get("IRSFirstOrder")
         if irs_first_order is None:
@@ -699,6 +740,17 @@ ANALYSIS_TO_MATLAB_MAPPING = {
     "Agg. Output": "GDPexp",
     "Agg. GDP": "GDPexp",
     "Agg. Investment": "Iexp",
+    # Sectoral variables (for sectoral IR plots from MATLAB IR objects)
+    "Cj": "Cj",
+    "Pj": "Pj",
+    "Ioutj": "Ioutj",
+    "Moutj": "Moutj",
+    "Lj": "Lj",
+    "Ij": "Ij",
+    "Mj": "Mj",
+    "Yj": "Yj",
+    "Qj": "Qj",
+    "Kj": "Kj",
 }
 
 

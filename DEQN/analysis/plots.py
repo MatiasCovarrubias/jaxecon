@@ -841,7 +841,7 @@ def plot_sector_ir_by_shock_size(
     For each row (shock size), y-axis scaling is:
     - independent across rows (to maximize visibility per shock size)
     - symmetric in absolute value across left/right panels (for direct visual comparison)
-    - restricted to the relevant quadrant (negative panel <= 0, positive panel >= 0)
+    - allows sign changes in both panels (no quadrant restriction)
 
     Parameters:
     -----------
@@ -1026,7 +1026,17 @@ def plot_sector_ir_by_shock_size(
                         label=f"{benchmark_label} ({ok})" if j == 0 else None,
                     )
         elif j == 0:
-            print(f"      Warning: no MATLAB IRs found for sector {sector_idx + 1}, variable '{variable_to_plot}'")
+            available_sector_indices = sorted(
+                {
+                    sidx
+                    for shock_data in matlab_ir_data.values()
+                    for sidx in (shock_data.get("sectors", {}) or {}).keys()
+                }
+            )
+            print(
+                f"      Warning: no MATLAB IRs found for sector {sector_idx + 1}, variable '{variable_to_plot}'. "
+                f"Available sectors (python 0-based): {available_sector_indices}"
+            )
 
         for k, exp_name in enumerate(experiment_names):
             if state_name and state_name in gir_data[exp_name]:
@@ -1098,8 +1108,8 @@ def plot_sector_ir_by_shock_size(
         ax_neg.set_box_aspect(1)
         ax_pos.set_box_aspect(1)
 
-        ax_neg.set_ylim(-y_lim_abs, 0)
-        ax_pos.set_ylim(0, y_lim_abs)
+        ax_neg.set_ylim(-y_lim_abs, y_lim_abs)
+        ax_pos.set_ylim(-y_lim_abs, y_lim_abs)
 
         ax_neg.set_ylabel(f"{shock_size}% shock\n(% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
         ax_neg.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)

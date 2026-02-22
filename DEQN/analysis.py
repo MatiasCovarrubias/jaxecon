@@ -127,7 +127,7 @@ config = {
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
     "model_data_file": "ModelData_Frisch0dot75.mat",
     "model_data_irs_file": "ModelData_IRs_Frisch0dot75.mat",
-    "model_data_simulation_file": None,  # Set to None to skip MATLAB simulation comparison
+    "model_data_simulation_file": "ModelData_simulation.mat",
     # Experiments to analyze
     "experiments_to_analyze": {
         "Frisch0dot75": "Frisch0dot75",
@@ -155,7 +155,7 @@ config = {
     # IR method(s): choose any of ["GIR", "IR_stoch_ss"].
     # - GIR: average over ergodic draws
     # - IR_stoch_ss: single IR from stochastic steady state
-    "ir_methods": ["IR_stoch_ss"],
+    "ir_methods": ["GIR", "IR_stoch_ss"],
     # MATLAB benchmark used in IR figures. Options:
     # "FirstOrder", "SecondOrder", "PerfectForesight"
     "ir_benchmark_method": "PerfectForesight",
@@ -165,13 +165,17 @@ config = {
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0, 2, 19, 23],
     "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
-    "ir_shock_sizes": [20],
+    "sectoral_ir_variables_to_plot": ["Cj", "Ioutj", "Yj", "Kj", "Lj", "Qj"],
+    "ir_shock_sizes": [5, 10, 20],
     "ir_max_periods": 80,
     # Aggregate reporting controls
     "aggregate_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
-    # Methods included in aggregate ergodic tables/histograms.
-    # Use None to include all available methods.
+    # Benchmark methods included in ergodic exercises (descriptive table, aggregate stats, histograms).
+    # Nonlinear experiment methods are always included when always_include_nonlinear_methods=True.
+    # Canonical names: "Log-Linear", "SecondOrder", "PerfectForesight", "MITShocks".
+    # Alias supported: "FirstOrder" -> "Log-Linear".
     "ergodic_methods_to_include": None,
+    "always_include_nonlinear_methods": True,
     # Methods included in stochastic-SS aggregate table.
     # Use None to include all analyzed experiments.
     "stochss_methods_to_include": None,
@@ -530,7 +534,7 @@ def main():
             burn_in=config["burn_in_periods"],
             source_label="Second-Order",
         )
-        analysis_variables_data["Second-Order"] = secondorder_analysis_vars
+        analysis_variables_data["SecondOrder"] = secondorder_analysis_vars
         print("  ✓ Loaded Second-Order simulation series.")
 
     # Initialize theoretical/precomputed stats for descriptive stats table
@@ -573,7 +577,7 @@ def main():
 
             pf_theo_stats = create_perfect_foresight_descriptive_stats(
                 determ_stats=pf_stats,
-                label="Perfect Foresight",
+                label="PerfectForesight",
                 n_sectors=n_sectors,
                 model_stats=pf_model_stats,
                 policies_ss=policies_ss,
@@ -614,7 +618,22 @@ def main():
             source_label="Perfect Foresight",
         )
 
-        analysis_variables_data["Perfect Foresight"] = pf_analysis_vars
+        analysis_variables_data["PerfectForesight"] = pf_analysis_vars
+
+    if dynare_simul_mit is not None:
+        mit_analysis_vars = process_simulation_with_consistent_aggregation(
+            simul_data=dynare_simul_mit,
+            policies_ss=policies_ss,
+            state_ss=state_ss,
+            P_ergodic=P_ergodic,
+            Pk_ergodic=Pk_ergodic,
+            Pm_ergodic=Pm_ergodic,
+            n_sectors=n_sectors,
+            burn_in=0,  # MIT has no burn-in by construction.
+            source_label="MITShocks",
+        )
+        analysis_variables_data["MITShocks"] = mit_analysis_vars
+        print("  ✓ Loaded MITShocks simulation series.")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CALIBRATION TABLE (First-Order Model vs Empirical Targets)
@@ -641,7 +660,23 @@ def main():
         )
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # IMPULSE RESPONSES
+    # STOCHASTIC STEADY STATE
+    # ═══════════════════════════════════════════════════════════════════════════
+    create_stochastic_ss_aggregates_table(
+        stochastic_ss_data=stochastic_ss_data,
+        save_path=os.path.join(analysis_dir, "stochastic_ss_aggregates_table.tex"),
+        analysis_name=config["analysis_name"],
+        methods_to_include=config.get("stochss_methods_to_include"),
+    )
+
+    create_stochastic_ss_table(
+        stochastic_ss_data=stochastic_ss_data,
+        save_path=os.path.join(analysis_dir, "stochastic_ss_table.tex"),
+        analysis_name=config["analysis_name"],
+    )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # IMPULSE RESPONSES - AGGREGATES
     # ═══════════════════════════════════════════════════════════════════════════
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
     matlab_ir_data = load_matlab_irs(
@@ -652,6 +687,7 @@ def main():
 
     sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
     ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
+    sectoral_ir_variables = config.get("sectoral_ir_variables_to_plot", [])
     shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
     max_periods = config.get("ir_max_periods", 80)
     configured_ir_methods = config.get("ir_methods", ["IR_stoch_ss"])
@@ -686,7 +722,7 @@ def main():
             )
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # SECTORAL BARPLOTS (stochastic SS and mean ergodic distribution)
+    # SECTORAL VARIABLES - STOCHASTIC SS
     # ═══════════════════════════════════════════════════════════════════════════
     upstreamness_data = econ_model.upstreamness()
 
@@ -705,6 +741,131 @@ def main():
             except Exception as e:
                 print(f"    ✗ Failed to create stochastic SS {var_name} plot: {e}", flush=True)
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SECTORAL IMPULSE RESPONSES
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Uses the same plotting routine when sectoral variables are available/mapped.
+    for sector_idx in sectors_to_plot:
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+        )
+        for ir_variable in sectoral_ir_variables:
+            plot_sector_ir_by_shock_size(
+                gir_data=gir_data,
+                matlab_ir_data=matlab_ir_data,
+                sector_idx=sector_idx,
+                sector_label=sector_label,
+                variable_to_plot=ir_variable,
+                shock_sizes=shock_sizes,
+                save_dir=irs_dir,
+                analysis_name=config["analysis_name"],
+                max_periods=max_periods,
+                n_sectors=n_sectors,
+                benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
+                response_source=ir_response_source,
+            )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ERGODIC DISTRIBUTION MOMENTS
+    # ═══════════════════════════════════════════════════════════════════════════
+    method_aliases = {
+        "FirstOrder": "Log-Linear",
+        "LogLinear": "Log-Linear",
+        "Second-Order": "SecondOrder",
+        "Perfect Foresight": "PerfectForesight",
+        "MITShock": "MITShocks",
+    }
+
+    def _normalize_method_name(method_name: str) -> str:
+        return method_aliases.get(method_name, method_name)
+
+    available_methods = sorted(
+        {_normalize_method_name(k) for k in analysis_variables_data.keys()}
+        | {_normalize_method_name(k) for k in theoretical_stats.keys()}
+    )
+    print(f"  Available methods (canonical): {available_methods}")
+
+    benchmark_methods_cfg = config.get("ergodic_methods_to_include")
+    benchmark_methods = None
+    if benchmark_methods_cfg is not None:
+        if isinstance(benchmark_methods_cfg, str):
+            benchmark_methods_cfg = [benchmark_methods_cfg]
+        benchmark_methods = {_normalize_method_name(m) for m in benchmark_methods_cfg}
+
+    selected_methods = set(available_methods) if benchmark_methods is None else set(benchmark_methods)
+    if config.get("always_include_nonlinear_methods", True):
+        selected_methods.update(experiments_to_analyze.keys())
+
+    filtered_analysis_variables_data = {
+        _normalize_method_name(k): v
+        for k, v in analysis_variables_data.items()
+        if _normalize_method_name(k) in selected_methods
+    }
+    filtered_theoretical_stats = {
+        _normalize_method_name(k): v
+        for k, v in theoretical_stats.items()
+        if _normalize_method_name(k) in selected_methods
+    }
+
+    create_descriptive_stats_table(
+        analysis_variables_data=filtered_analysis_variables_data,
+        save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
+        analysis_name=config["analysis_name"],
+        theoretical_stats=filtered_theoretical_stats if filtered_theoretical_stats else None,
+    )
+
+    # Aggregate-only ergodic descriptive statistics (C, I, GDP, K)
+    aggregate_vars = config.get(
+        "aggregate_variables", ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"]
+    )
+    aggregate_ergodic_data = {}
+    for method_name, variables in filtered_analysis_variables_data.items():
+        filtered = {k: v for k, v in variables.items() if k in aggregate_vars}
+        if filtered:
+            aggregate_ergodic_data[method_name] = filtered
+
+    create_ergodic_aggregate_stats_table(
+        analysis_variables_data=aggregate_ergodic_data,
+        save_path=os.path.join(simulation_dir, "ergodic_aggregate_stats_table.tex"),
+        analysis_name=config["analysis_name"],
+        methods_to_include=list(selected_methods),
+    )
+
+    if len(filtered_analysis_variables_data) > 1:
+        create_comparative_stats_table(
+            analysis_variables_data=filtered_analysis_variables_data,
+            save_path=os.path.join(simulation_dir, "descriptive_stats_comparative.tex"),
+            analysis_name=config["analysis_name"],
+        )
+
+    # Generate histograms:
+    # - keep model simulation distributions
+    # - keep theoretical log-linear distribution
+    histogram_data = {
+        k: v
+        for k, v in filtered_analysis_variables_data.items()
+        if "Deterministic" not in k
+    }
+    histogram_data = {
+        k: {var: arr for var, arr in v.items() if var in aggregate_vars}
+        for k, v in histogram_data.items()
+    }
+    histogram_data = {k: v for k, v in histogram_data.items() if v}
+    filtered_histogram_theo_params = {
+        _normalize_method_name(k): v
+        for k, v in histogram_theo_params.items()
+        if _normalize_method_name(k) in selected_methods
+    }
+    plot_ergodic_histograms(
+        analysis_variables_data=histogram_data,
+        save_dir=simulation_dir,
+        analysis_name=config["analysis_name"],
+        theo_dist_params=filtered_histogram_theo_params if filtered_histogram_theo_params else None,
+    )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AVERAGE SECTORAL VARIABLES - ERGODIC DISTRIBUTION
+    # ═══════════════════════════════════════════════════════════════════════════
     if raw_simulation_data:
         for var_name in ["K", "L", "Y", "M", "Q"]:
             try:
@@ -720,86 +881,12 @@ def main():
                 print(f"    ✗ Failed to create ergodic {var_name} plot: {e}", flush=True)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # DESCRIPTIVE STATISTICS
-    # ═══════════════════════════════════════════════════════════════════════════
-    create_descriptive_stats_table(
-        analysis_variables_data=analysis_variables_data,
-        save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
-        analysis_name=config["analysis_name"],
-        theoretical_stats=theoretical_stats if theoretical_stats else None,
-    )
-
-    # Aggregate-only ergodic descriptive statistics (C, I, GDP, K)
-    aggregate_vars = config.get(
-        "aggregate_variables", ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"]
-    )
-    methods_for_ergodic = config.get("ergodic_methods_to_include")
-    aggregate_ergodic_data = {}
-    for method_name, variables in analysis_variables_data.items():
-        filtered = {k: v for k, v in variables.items() if k in aggregate_vars}
-        if filtered:
-            aggregate_ergodic_data[method_name] = filtered
-
-    create_ergodic_aggregate_stats_table(
-        analysis_variables_data=aggregate_ergodic_data,
-        save_path=os.path.join(simulation_dir, "ergodic_aggregate_stats_table.tex"),
-        analysis_name=config["analysis_name"],
-        methods_to_include=methods_for_ergodic,
-    )
-
-    if len(analysis_variables_data) > 1:
-        create_comparative_stats_table(
-            analysis_variables_data=analysis_variables_data,
-            save_path=os.path.join(simulation_dir, "descriptive_stats_comparative.tex"),
-            analysis_name=config["analysis_name"],
-        )
-
-    # ═══════════════════════════════════════════════════════════════════════════
     # WELFARE COSTS
     # ═══════════════════════════════════════════════════════════════════════════
     create_welfare_table(
         welfare_data=welfare_costs,
         save_path=os.path.join(analysis_dir, "welfare_table.tex"),
         analysis_name=config["analysis_name"],
-    )
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # STOCHASTIC STEADY STATE
-    # ═══════════════════════════════════════════════════════════════════════════
-    create_stochastic_ss_table(
-        stochastic_ss_data=stochastic_ss_data,
-        save_path=os.path.join(analysis_dir, "stochastic_ss_table.tex"),
-        analysis_name=config["analysis_name"],
-    )
-
-    create_stochastic_ss_aggregates_table(
-        stochastic_ss_data=stochastic_ss_data,
-        save_path=os.path.join(analysis_dir, "stochastic_ss_aggregates_table.tex"),
-        analysis_name=config["analysis_name"],
-        methods_to_include=config.get("stochss_methods_to_include"),
-    )
-
-    # Generate histograms:
-    # - keep model simulation distributions
-    # - keep theoretical log-linear distribution
-    # - exclude Dynare simulation-based distributions (they are redundant here)
-    histogram_data = {
-        k: v
-        for k, v in analysis_variables_data.items()
-        if "Deterministic" not in k and k != "Perfect Foresight"
-    }
-    if methods_for_ergodic:
-        histogram_data = {k: v for k, v in histogram_data.items() if k in methods_for_ergodic}
-    histogram_data = {
-        k: {var: arr for var, arr in v.items() if var in aggregate_vars}
-        for k, v in histogram_data.items()
-    }
-    histogram_data = {k: v for k, v in histogram_data.items() if v}
-    plot_ergodic_histograms(
-        analysis_variables_data=histogram_data,
-        save_dir=simulation_dir,
-        analysis_name=config["analysis_name"],
-        theo_dist_params=histogram_theo_params if histogram_theo_params else None,
     )
 
     # Model-specific plots

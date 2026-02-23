@@ -924,7 +924,17 @@ def plot_sector_ir_by_shock_size(
         pos_stochss_key = f"pos_{shock_size}_stochss"
         neg_stochss_key = f"neg_{shock_size}_stochss"
 
-        matlab_irs = get_matlab_ir_for_analysis_variable(matlab_ir_data, sector_idx, variable_to_plot, max_periods)
+        # For sectoral capital, keep MATLAB period-0 so the IR starts at 0 on impact
+        # (capital is predetermined). For other variables, skip initial period
+        # to align with GIR timing convention.
+        skip_initial_matlab = variable_to_plot != "Kj"
+        matlab_irs = get_matlab_ir_for_analysis_variable(
+            matlab_ir_data,
+            sector_idx,
+            variable_to_plot,
+            max_periods,
+            skip_initial=skip_initial_matlab,
+        )
         row_abs_max = 0.0
 
         def _plot_line(ax, series, *, label=None, color=None, linewidth=1.5, linestyle="-", alpha=0.8):
@@ -957,71 +967,42 @@ def plot_sector_ir_by_shock_size(
                 other_keys = list(matlab_irs.keys())
 
             for pk in pos_keys:
-                pos_first_order = matlab_irs[pk]["first_order"][:max_periods] * 100
-                _plot_line(
-                    ax_pos,
-                    pos_first_order,
-                    color=colors[4],
-                    linewidth=1.5,
-                    linestyle="--",
-                    alpha=0.8,
-                    label="First Order" if j == 0 else None,
-                )
                 pos_benchmark = matlab_irs[pk].get(benchmark_series_key)
                 if pos_benchmark is not None:
                     pos_benchmark = pos_benchmark[:max_periods] * 100
                     _plot_line(
                         ax_pos,
                         pos_benchmark,
-                        color=colors[2],
+                        color=colors[4],
                         linewidth=1.5,
-                        linestyle="-.",
+                        linestyle="--",
                         alpha=0.8,
                         label=benchmark_label if j == 0 else None,
                     )
             for nk in neg_keys:
-                neg_first_order = matlab_irs[nk]["first_order"][:max_periods] * 100
-                _plot_line(
-                    ax_neg,
-                    neg_first_order,
-                    color=colors[4],
-                    linewidth=1.5,
-                    linestyle="--",
-                    alpha=0.8,
-                )
                 neg_benchmark = matlab_irs[nk].get(benchmark_series_key)
                 if neg_benchmark is not None:
                     neg_benchmark = neg_benchmark[:max_periods] * 100
                     _plot_line(
                         ax_neg,
                         neg_benchmark,
-                        color=colors[2],
+                        color=colors[4],
                         linewidth=1.5,
-                        linestyle="-.",
+                        linestyle="--",
                         alpha=0.8,
                     )
 
             for ok in other_keys:
-                generic_first_order = matlab_irs[ok]["first_order"][:max_periods] * 100
                 target_ax = ax_pos if ok.startswith("pos_") else ax_neg if ok.startswith("neg_") else ax_pos
-                _plot_line(
-                    target_ax,
-                    generic_first_order,
-                    color=colors[4],
-                    linewidth=1.5,
-                    linestyle="--",
-                    alpha=0.8,
-                    label=f"First Order ({ok})" if j == 0 else None,
-                )
                 generic_benchmark = matlab_irs[ok].get(benchmark_series_key)
                 if generic_benchmark is not None:
                     generic_benchmark = generic_benchmark[:max_periods] * 100
                     _plot_line(
                         target_ax,
                         generic_benchmark,
-                        color=colors[2],
+                        color=colors[4],
                         linewidth=1.5,
-                        linestyle="-.",
+                        linestyle="--",
                         alpha=0.8,
                         label=f"{benchmark_label} ({ok})" if j == 0 else None,
                     )

@@ -164,7 +164,7 @@ config = {
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0, 2, 19, 23],
-    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
+    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP"],
     "sectoral_ir_variables_to_plot": ["Cj", "Ioutj", "Yj", "Kj", "Lj", "Qj"],
     "ir_shock_sizes": [5, 10, 20],
     "ir_max_periods": 80,
@@ -687,6 +687,18 @@ def main():
 
     sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
     ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
+    if isinstance(ir_variables, str):
+        ir_variables = [ir_variables]
+    # Aggregate capital IR benchmark is not supported from MATLAB IR payload.
+    unsupported_aggregate_ir_vars = {"Agg. Capital"}
+    filtered_ir_variables = [v for v in ir_variables if v not in unsupported_aggregate_ir_vars]
+    dropped_ir_variables = [v for v in ir_variables if v in unsupported_aggregate_ir_vars]
+    if dropped_ir_variables:
+        print(
+            "  Note: aggregate capital IR benchmark is not available; "
+            f"skipping {dropped_ir_variables} from ir_variables_to_plot."
+        )
+    ir_variables = filtered_ir_variables
     sectoral_ir_variables = config.get("sectoral_ir_variables_to_plot", [])
     shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
     max_periods = config.get("ir_max_periods", 80)

@@ -20,9 +20,8 @@ _CALIBRATION_TARGETED_ROWS = [
 
 _CALIBRATION_UNTARGETED_ROWS = [
     ("$\\sigma(Y_{\\text{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
-    ("$\\sigma(C^{\\mathrm{exp}}_{\\text{agg}})$", "sigma_C_agg", "sigma_C_agg"),
-    ("$\\sigma(I_{\\text{agg}})$", "sigma_I_agg", "sigma_I_agg"),
-    ("$\\sigma(L_{\\text{hc,agg}})$", "sigma_L_hc_agg", "sigma_L_agg"),
+    ("$\\sigma(C^{\\text{exp}_{\\text{agg}}})$", "sigma_C_agg", "sigma_C_agg"),
+    ("$\\sigma(I^{\\text{exp}_{\\text{agg}}})$", "sigma_I_agg", "sigma_I_agg"),
 ]
 
 _CALIBRATION_TARGETED_CONSOLE_LABELS = [
@@ -32,9 +31,8 @@ _CALIBRATION_TARGETED_CONSOLE_LABELS = [
 
 _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
     "σ(Y_agg)",
-    "σ(C_exp,agg)",
-    "σ(I_agg)",
-    "σ(L_hc_agg)",
+    "σ(C^exp_agg)",
+    "σ(I^exp_agg)",
 ]
 
 
@@ -141,13 +139,13 @@ def _generate_calibration_console_table(
     output = []
     output.append("")
     output.append("=" * line_len)
-    output.append(" " * ((line_len - 42) // 2) + "CALIBRATION TABLE (Model vs Data)")
+    output.append(" " * ((line_len - 42) // 2) + "calibration table (model vs data)")
     output.append("=" * line_len)
     if analysis_name:
         output.append(f"Experiment: {analysis_name}")
     output.append("-" * line_len)
     output.append("")
-    output.append("    TARGETED MOMENTS (Sectoral Volatilities)")
+    output.append("    targeted moments (sectoral volatilities)")
     output.append(f"    {'':18s} {'Model':>7s}   {'Data':>7s}")
     output.append("    " + "-" * 36)
 
@@ -157,7 +155,7 @@ def _generate_calibration_console_table(
         output.append(f"    {console_label:<18} {ms}   {ds}")
 
     output.append("")
-    output.append("    UNTARGETED MOMENTS (Aggregates)")
+    output.append("    untargeted moments (aggregates)")
     output.append(f"    {'':18s} {'Model':>7s}   {'Data':>7s}")
     output.append("    " + "-" * 36)
 
@@ -176,7 +174,7 @@ def _generate_calibration_latex_table(targeted_rows: list, untargeted_rows: list
     latex_code = (
         r"\begin{table}[htbp]" + "\n"
         r"\centering" + "\n"
-        r"\caption{Model Calibration: Targeted and Untargeted Moments}" + "\n"
+        r"\caption{Model calibration: targeted and untargeted moments}" + "\n"
         r"\label{tab:calibration}" + "\n"
         r"\begin{tabular}{l r r}" + "\n"
         r"\toprule" + "\n"
@@ -205,10 +203,22 @@ def _generate_calibration_latex_table(targeted_rows: list, untargeted_rows: list
         r"\begin{minipage}{0.85\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
-        r"\textit{Notes:} Volatilities are standard deviations of HP-filtered log series. "
-        r"$\bar{\sigma}(L_j)$ and $\bar{\sigma}(I_j)$ are employment-weighted and "
-        r"investment-weighted averages of sectoral volatilities, respectively. "
-        r"Model moments from the first-order (log-linear) solution." + "\n"
+        r"\textit{Notes:} All volatilities are standard deviations of HP-filtered ($\lambda=100$) log series. "
+        r"\textit{Targeted moments:} "
+        r"$\bar{\sigma}(L_j)$ is the employment-share-weighted average of sectoral employment volatilities; "
+        r"$\bar{\sigma}(I_j)$ is the investment-expenditure-share-weighted average of sectoral investment volatilities. "
+        r"Both use BEA annual data (1963--2018). "
+        r"\textit{Untargeted moments:} "
+        r"$\sigma(Y_{\text{agg}})$ is the volatility of aggregate GDP; "
+        r"$\sigma(C^{\text{exp}_{\text{agg}}})$ and $\sigma(I^{\text{exp}_{\text{agg}}})$ "
+        r"are the volatilities of aggregate consumption and investment. "
+        r"In the data, GDP and investment are Tornqvist chain-weighted aggregates of BEA sectoral series; "
+        r"consumption is NIPA real personal consumption expenditure. "
+        r"In the model, aggregates are fixed-price expenditure sums at steady-state prices: "
+        r"$\text{GDP}^{\bar{P}}_t = \sum_j \bar{P}_j(Q_{jt} - M^{\text{out}}_{jt})$, "
+        r"$C^{\bar{P}}_t = \sum_j \bar{P}_j C_{jt}$, and $I^{\bar{P}}_t = \sum_j \bar{P}_j I^{\text{out}}_{jt}$ "
+        r"(see Appendix~\ref{sec:app_aggregation}). "
+        r"Model moments are from the first-order (log-linear) perturbation solution." + "\n"
         r"\end{minipage}" + "\n"
     )
     latex_code += r"\end{table}" + "\n"

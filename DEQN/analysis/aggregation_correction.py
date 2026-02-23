@@ -2,9 +2,11 @@
 Aggregation utilities for comparing log-linear and nonlinear simulations.
 
 Current aggregate definitions used for moments/IRs:
-- Consumption expenditure: C_exp(t) = sum_j P_j(t) * C_j(t)
-- Investment expenditure: I_exp(t) = sum_j P_j(t) * I_j^{out}(t)
-- GDP expenditure: GDP_exp(t) = sum_j P_j(t) * [Q_j(t) - M_j^{out}(t)]
+- Consumption expenditure: C_exp(t) = sum_j P_j^{erg} * C_j(t)
+- Investment expenditure: I_exp(t) = sum_j P_j^{erg} * I_j^{out}(t)
+- GDP expenditure: GDP_exp(t) = sum_j P_j^{erg} * [Q_j(t) - M_j^{out}(t)]
+
+where P_j^{erg} are fixed ergodic-mean output prices from the nonlinear simulation.
 
 All are returned as log deviations from deterministic steady state:
     log(X_t) - log(X_ss)
@@ -122,10 +124,7 @@ def recenter_analysis_variables(
     # Only keep recentering for legacy/diagnostic aggregates.
     # Main expenditure aggregates (Agg. Consumption / Agg. Investment / Agg. Output)
     # should not be shifted here.
-    correction_map = {
-        "Agg. Intermediates": "Magg_correction",
-        "Agg. Capital": "Kagg_correction",
-    }
+    correction_map = {}
 
     for var_name, values in analysis_vars.items():
         if var_name in correction_map:
@@ -189,10 +188,10 @@ def process_simulation_with_consistent_aggregation(
     Simulation data is stored as log deviations from steady state:
         simul[i, t] = log(X_i(t)) - log(X_i_ss).
 
-    Main aggregates:
-    - C_exp(t)   = sum_j P_j(t) * C_j(t)
-    - I_exp(t)   = sum_j P_j(t) * I_j^{out}(t)
-    - GDP_exp(t) = sum_j P_j(t) * [Q_j(t) - M_j^{out}(t)]
+    Main aggregates use fixed ergodic-mean prices (matching DEQN aggregation):
+    - C_exp(t)   = sum_j P_j^{erg} * C_j(t)
+    - I_exp(t)   = sum_j P_j^{erg} * I_j^{out}(t)
+    - GDP_exp(t) = sum_j P_j^{erg} * [Q_j(t) - M_j^{out}(t)]
     and their log deviations from deterministic SS.
 
     Utility aggregate consumption Cagg and CES labor aggregate Lagg are kept as
@@ -252,7 +251,6 @@ def process_simulation_with_consistent_aggregation(
     log_dev_iout = simul[idx["iout"][0] : idx["iout"][1], :]
     log_dev_q = simul[idx["q"][0] : idx["q"][1], :]
     log_dev_mout = simul[idx["mout"][0] : idx["mout"][1], :]
-    log_dev_p = simul[idx["p"][0] : idx["p"][1], :]
     log_dev_m = simul[idx["m"][0] : idx["m"][1], :]
 
     K_levels = K_ss[:, None] * jnp.exp(log_dev_k)
@@ -266,14 +264,13 @@ def process_simulation_with_consistent_aggregation(
     Iout_levels = Iout_ss[:, None] * jnp.exp(log_dev_iout)
     Q_levels = Q_ss[:, None] * jnp.exp(log_dev_q)
     Mout_levels = Mout_ss[:, None] * jnp.exp(log_dev_mout)
-    P_levels = P_ss[:, None] * jnp.exp(log_dev_p)
 
     M_levels = M_ss[:, None] * jnp.exp(log_dev_m)
 
     Kagg = K_levels.T @ Pk_ergodic
-    Cagg_exp = jnp.sum(P_levels * C_levels, axis=0)
-    Iagg_exp = jnp.sum(P_levels * Iout_levels, axis=0)
-    GDPagg_exp = jnp.sum(P_levels * (Q_levels - Mout_levels), axis=0)
+    Cagg_exp = jnp.sum(P_ergodic[:, None] * C_levels, axis=0)
+    Iagg_exp = jnp.sum(P_ergodic[:, None] * Iout_levels, axis=0)
+    GDPagg_exp = jnp.sum(P_ergodic[:, None] * (Q_levels - Mout_levels), axis=0)
     Magg = M_levels.T @ Pm_ergodic
 
     Kagg_ss = K_ss @ Pk_ergodic

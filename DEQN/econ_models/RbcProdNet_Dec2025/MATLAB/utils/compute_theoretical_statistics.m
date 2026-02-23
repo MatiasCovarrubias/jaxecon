@@ -1,4 +1,4 @@
-function TheoStats = compute_theoretical_statistics(oo_, M_, policies_ss, n_sectors)
+function TheoStats = compute_theoretical_statistics(oo_, M_, policies_ss, n_sectors, endostates_ss)
 % COMPUTE_THEORETICAL_STATISTICS Extract theoretical moments from Dynare solution
 %
 % Computes theoretical variances for EXPENDITURE-BASED aggregates using
@@ -113,6 +113,7 @@ function TheoStats = compute_theoretical_statistics(oo_, M_, policies_ss, n_sect
     q_ss_idx = (idx.q(1):idx.q(2)) - idx.ss_offset;
     mout_ss_idx = (idx.mout(1):idx.mout(2)) - idx.ss_offset;
     l_ss_idx = (idx.l(1):idx.l(2)) - idx.ss_offset;
+    pk_ss_idx = (idx.pk(1):idx.pk(2)) - idx.ss_offset;
     
     p_ss = exp(policies_ss(p_ss_idx));  p_ss = p_ss(:);
     c_ss = exp(policies_ss(c_ss_idx));  c_ss = c_ss(:);
@@ -120,6 +121,8 @@ function TheoStats = compute_theoretical_statistics(oo_, M_, policies_ss, n_sect
     q_ss = exp(policies_ss(q_ss_idx));  q_ss = q_ss(:);
     mout_ss = exp(policies_ss(mout_ss_idx));  mout_ss = mout_ss(:);
     l_ss = exp(policies_ss(l_ss_idx));  l_ss = l_ss(:);
+    pk_ss = exp(policies_ss(pk_ss_idx));  pk_ss = pk_ss(:);
+    k_ss = exp(endostates_ss(1:n));  k_ss = k_ss(:);
     
     % Expenditure weights for consumption
     % log(C_constP) ≈ Σ_j ω_j^C × c̃_j where ω_j^C = (P̄_j × C_j^ss) / C_constP_ss
@@ -139,6 +142,10 @@ function TheoStats = compute_theoretical_statistics(oo_, M_, policies_ss, n_sect
     L_hc_ss = sum(l_ss);
     omega_L = l_ss / L_hc_ss;
     
+    % Capital weights (value-weighted: pk_ss × K_ss)
+    K_val_ss = sum(pk_ss .* k_ss);
+    omega_K = (pk_ss .* k_ss) / K_val_ss;
+    
     % Theoretical variances of expenditure-based aggregates
     % var(log C_constP) = ω_C' × Var(c̃) × ω_C
     sigma_C_agg = sqrt(omega_C' * Var_c * omega_C);
@@ -153,11 +160,16 @@ function TheoStats = compute_theoretical_statistics(oo_, M_, policies_ss, n_sect
     % Labor aggregate (headcount)
     sigma_L_agg = sqrt(omega_L' * Var_l * omega_L);
     
+    % Capital aggregate (k is the first n states in Sigma_x)
+    Var_k = Sigma_x(1:n, 1:n);
+    sigma_K_agg = sqrt(omega_K' * Var_k * omega_K);
+    
     % Store in output structure
     TheoStats.sigma_C_agg = sigma_C_agg;
     TheoStats.sigma_L_agg = sigma_L_agg;
     TheoStats.sigma_VA_agg = sigma_VA_agg;
     TheoStats.sigma_I_agg = sigma_I_agg;
+    TheoStats.sigma_K_agg = sigma_K_agg;
     
     % Legacy aggregates from Dynare (for comparison/diagnostics)
     if isfield(oo_, 'var') && ~isempty(oo_.var) && size(oo_.var, 1) >= 5
@@ -201,6 +213,7 @@ function TheoStats = compute_theoretical_statistics(oo_, M_, policies_ss, n_sect
     TheoStats.omega_I = omega_I;
     TheoStats.omega_Q = omega_Q;
     TheoStats.omega_Mout = omega_Mout;
+    TheoStats.omega_K = omega_K;
     
     % Store VA weights from steady state
     y_ss_idx = (idx.y(1):idx.y(2)) - idx.ss_offset;

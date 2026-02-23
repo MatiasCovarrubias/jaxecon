@@ -13,35 +13,28 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kurtosis, skew
 
-_CALIBRATION_ROWS = [
+_CALIBRATION_TARGETED_ROWS = [
+    ("$\\bar{\\sigma}(L_j)$", "sigma_L_avg_empweighted", "sigma_L_avg_empweighted"),
+    ("$\\bar{\\sigma}(I_j)$", "sigma_I_avg_invweighted", "sigma_I_avg_invweighted"),
+]
+
+_CALIBRATION_UNTARGETED_ROWS = [
     ("$\\sigma(Y_{\\text{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
     ("$\\sigma(C^{\\mathrm{exp}}_{\\text{agg}})$", "sigma_C_agg", "sigma_C_agg"),
     ("$\\sigma(I_{\\text{agg}})$", "sigma_I_agg", "sigma_I_agg"),
     ("$\\sigma(L_{\\text{hc,agg}})$", "sigma_L_hc_agg", "sigma_L_agg"),
-    ("$\\sigma(\\text{Domar})$ avg", "sigma_Domar_avg", "sigma_Domar_avg"),
-    ("$\\sigma(L)$ avg (VA-wgt)", "sigma_L_avg", "sigma_L_avg"),
-    ("$\\sigma(I)$ avg (VA-wgt)", "sigma_I_avg", "sigma_I_avg"),
-    ("$\\sigma(L)$ emp-wgt", "sigma_L_avg_empweighted", "sigma_L_avg_empweighted"),
-    ("$\\sigma(I)$ inv-wgt", "sigma_I_avg_invweighted", "sigma_I_avg_invweighted"),
 ]
 
-_CALIBRATION_CONSOLE_LABELS = [
+_CALIBRATION_TARGETED_CONSOLE_LABELS = [
+    "σ̄(Lⱼ)",
+    "σ̄(Iⱼ)",
+]
+
+_CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
     "σ(Y_agg)",
     "σ(C_exp,agg)",
     "σ(I_agg)",
     "σ(L_hc_agg)",
-    "σ(Domar)avg",
-    "σ(L) avg",
-    "σ(I) avg",
-    "σ(L) emp-wgt",
-    "σ(I) inv-wgt",
-]
-
-_CALIBRATION_SECTION_BREAKS = [0, 5, 7, 9]
-_CALIBRATION_SECTION_TITLES = [
-    "",
-    "── Sectoral volatilities (VA-weighted) ──",
-    "── Sectoral volatilities (own-variable weighted) ──",
 ]
 
 
@@ -73,9 +66,10 @@ def create_calibration_table(
     analysis_name: Optional[str] = None,
 ) -> str:
     """
-    Create a LaTeX table comparing first-order model moments to empirical targets
-    (model vs data calibration table). Uses the same row/field mapping as in
-    ModelData_README.md (Recovering the Model vs Data Summary Table).
+    Create a LaTeX table comparing first-order model moments to empirical targets.
+
+    Structure: targeted sectoral volatilities first, then untargeted aggregates.
+    No ratio column.
 
     Parameters:
     -----------
@@ -92,15 +86,11 @@ def create_calibration_table(
     --------
     str : The LaTeX table code
     """
-    # Allow for small naming drifts in MATLAB structs while keeping stable table rows.
     model_key_aliases = {
         "sigma_VA_agg": ["sigma_VA_agg", "sigma_GDP_agg"],
         "sigma_C_agg": ["sigma_C_agg", "sigma_C_exp_agg", "sigma_C_expenditure_agg"],
         "sigma_I_agg": ["sigma_I_agg", "sigma_I_exp_agg", "sigma_I_expenditure_agg"],
         "sigma_L_hc_agg": ["sigma_L_hc_agg", "sigma_L_headcount_agg", "sigma_L_agg"],
-        "sigma_Domar_avg": ["sigma_Domar_avg"],
-        "sigma_L_avg": ["sigma_L_avg"],
-        "sigma_I_avg": ["sigma_I_avg"],
         "sigma_L_avg_empweighted": ["sigma_L_avg_empweighted"],
         "sigma_I_avg_invweighted": ["sigma_I_avg_invweighted"],
     }
@@ -109,23 +99,25 @@ def create_calibration_table(
         "sigma_C_agg": ["sigma_C_agg", "sigma_C_exp_agg", "sigma_C_expenditure_agg"],
         "sigma_I_agg": ["sigma_I_agg", "sigma_I_exp_agg", "sigma_I_expenditure_agg"],
         "sigma_L_agg": ["sigma_L_agg", "sigma_L_hc_agg", "sigma_L_headcount_agg"],
-        "sigma_Domar_avg": ["sigma_Domar_avg"],
-        "sigma_L_avg": ["sigma_L_avg"],
-        "sigma_I_avg": ["sigma_I_avg"],
         "sigma_L_avg_empweighted": ["sigma_L_avg_empweighted"],
         "sigma_I_avg_invweighted": ["sigma_I_avg_invweighted"],
     }
 
-    rows = []
-    for row_label, model_key, data_key in _CALIBRATION_ROWS:
-        model_val = _first_available_scalar(
-            first_order_model_stats, model_key_aliases.get(model_key, [model_key])
-        )
-        data_val = _first_available_scalar(empirical_targets, data_key_aliases.get(data_key, [data_key]))
-        rows.append((row_label, model_val, data_val))
+    def _resolve_rows(row_defs):
+        rows = []
+        for row_label, model_key, data_key in row_defs:
+            model_val = _first_available_scalar(
+                first_order_model_stats, model_key_aliases.get(model_key, [model_key])
+            )
+            data_val = _first_available_scalar(empirical_targets, data_key_aliases.get(data_key, [data_key]))
+            rows.append((row_label, model_val, data_val))
+        return rows
 
-    latex_code = _generate_calibration_latex_table(rows)
-    console_output = _generate_calibration_console_table(rows, analysis_name)
+    targeted_rows = _resolve_rows(_CALIBRATION_TARGETED_ROWS)
+    untargeted_rows = _resolve_rows(_CALIBRATION_UNTARGETED_ROWS)
+
+    latex_code = _generate_calibration_latex_table(targeted_rows, untargeted_rows)
+    console_output = _generate_calibration_console_table(targeted_rows, untargeted_rows, analysis_name)
 
     if save_path:
         if analysis_name:
@@ -142,7 +134,9 @@ def create_calibration_table(
     return latex_code
 
 
-def _generate_calibration_console_table(rows: list, analysis_name: Optional[str] = None) -> str:
+def _generate_calibration_console_table(
+    targeted_rows: list, untargeted_rows: list, analysis_name: Optional[str] = None
+) -> str:
     line_len = 80
     output = []
     output.append("")
@@ -153,26 +147,24 @@ def _generate_calibration_console_table(rows: list, analysis_name: Optional[str]
         output.append(f"Experiment: {analysis_name}")
     output.append("-" * line_len)
     output.append("")
-    output.append("[B] MODEL vs DATA (Business Cycle Moments)")
-    output.append("                    Model      Data    Ratio")
-    output.append("    " + "-" * 52)
+    output.append("    TARGETED MOMENTS (Sectoral Volatilities)")
+    output.append(f"    {'':18s} {'Model':>7s}   {'Data':>7s}")
+    output.append("    " + "-" * 36)
 
-    for i, ((_, model_val, data_val), console_label) in enumerate(zip(rows, _CALIBRATION_CONSOLE_LABELS)):
-        for section_idx in range(len(_CALIBRATION_SECTION_BREAKS) - 1):
-            if i == _CALIBRATION_SECTION_BREAKS[section_idx + 1] and _CALIBRATION_SECTION_TITLES[section_idx + 1]:
-                output.append("")
-                output.append(f"    {_CALIBRATION_SECTION_TITLES[section_idx + 1]}")
-                output.append("    " + "-" * 52)
-                break
-
+    for (_, model_val, data_val), console_label in zip(targeted_rows, _CALIBRATION_TARGETED_CONSOLE_LABELS):
         ms = f"{model_val:7.4f}" if model_val is not None else "    N/A"
         ds = f"{data_val:7.4f}" if data_val is not None else "    N/A"
-        if model_val is not None and data_val is not None and abs(data_val) > 1e-10:
-            ratio = model_val / data_val
-            ratio_str = f"  {ratio:5.2f}"
-        else:
-            ratio_str = "   —"
-        output.append(f"    {console_label:<18} {ms}   {ds} {ratio_str}")
+        output.append(f"    {console_label:<18} {ms}   {ds}")
+
+    output.append("")
+    output.append("    UNTARGETED MOMENTS (Aggregates)")
+    output.append(f"    {'':18s} {'Model':>7s}   {'Data':>7s}")
+    output.append("    " + "-" * 36)
+
+    for (_, model_val, data_val), console_label in zip(untargeted_rows, _CALIBRATION_UNTARGETED_CONSOLE_LABELS):
+        ms = f"{model_val:7.4f}" if model_val is not None else "    N/A"
+        ds = f"{data_val:7.4f}" if data_val is not None else "    N/A"
+        output.append(f"    {console_label:<18} {ms}   {ds}")
 
     output.append("")
     output.append("=" * line_len)
@@ -180,36 +172,46 @@ def _generate_calibration_console_table(rows: list, analysis_name: Optional[str]
     return "\n".join(output)
 
 
-def _generate_calibration_latex_table(rows: list) -> str:
+def _generate_calibration_latex_table(targeted_rows: list, untargeted_rows: list) -> str:
     latex_code = (
-        r"\begin{tabular}{l r r r}" + "\n"
+        r"\begin{table}[htbp]" + "\n"
+        r"\centering" + "\n"
+        r"\caption{Model Calibration: Targeted and Untargeted Moments}" + "\n"
+        r"\label{tab:calibration}" + "\n"
+        r"\begin{tabular}{l r r}" + "\n"
         r"\toprule" + "\n"
-        r"\textbf{Moment} & \textbf{Model (1st)} & \textbf{Data} & \textbf{Ratio} \\" + "\n"
+        r" & \textbf{Model} & \textbf{Data} \\" + "\n"
         r"\midrule" + "\n"
     )
-    for i, (row_label, model_val, data_val) in enumerate(rows):
-        if i == 4:
-            latex_code += r"\midrule" + "\n"
-            latex_code += r"\multicolumn{4}{l}{\textit{Sectoral volatilities (VA-weighted)}} \\" + "\n"
-            latex_code += r"\midrule" + "\n"
-        elif i == 6:
-            latex_code += r"\midrule" + "\n"
-            latex_code += r"\multicolumn{4}{l}{\textit{Sectoral volatilities (own-variable weighted)}} \\" + "\n"
-            latex_code += r"\midrule" + "\n"
 
-        model_cell = f"{model_val:.4f}" if model_val is not None else "N/A"
-        data_cell = f"{data_val:.4f}" if data_val is not None else "N/A"
-        if model_val is not None and data_val is not None and abs(data_val) > 1e-10:
-            ratio_cell = f"{model_val / data_val:.2f}"
-        else:
-            ratio_cell = "—"
-        latex_code += f"{row_label} & {model_cell} & {data_cell} & {ratio_cell} \\\\\n"
-    latex_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
-    latex_code += r"\\" + "\n"
+    latex_code += r"\multicolumn{3}{l}{\textit{Targeted moments}} \\" + "\n"
+    latex_code += r"\addlinespace[0.3em]" + "\n"
+    for row_label, model_val, data_val in targeted_rows:
+        model_cell = f"{model_val:.4f}" if model_val is not None else "---"
+        data_cell = f"{data_val:.4f}" if data_val is not None else "---"
+        latex_code += f"\\quad {row_label} & {model_cell} & {data_cell} \\\\\n"
+
+    latex_code += r"\addlinespace[0.6em]" + "\n"
+    latex_code += r"\multicolumn{3}{l}{\textit{Untargeted moments}} \\" + "\n"
+    latex_code += r"\addlinespace[0.3em]" + "\n"
+    for row_label, model_val, data_val in untargeted_rows:
+        model_cell = f"{model_val:.4f}" if model_val is not None else "---"
+        data_cell = f"{data_val:.4f}" if data_val is not None else "---"
+        latex_code += f"\\quad {row_label} & {model_cell} & {data_cell} \\\\\n"
+
+    latex_code += r"\bottomrule" + "\n"
+    latex_code += r"\end{tabular}" + "\n"
     latex_code += (
-        r"\textit{Note: Volatilities are standard deviations of HP-filtered log series. "
-        r"Model: first-order (log-linear) solution. Data: empirical targets from calibration.}" + "\n"
+        r"\begin{minipage}{0.85\textwidth}" + "\n"
+        r"\vspace{0.5em}" + "\n"
+        r"\footnotesize" + "\n"
+        r"\textit{Notes:} Volatilities are standard deviations of HP-filtered log series. "
+        r"$\bar{\sigma}(L_j)$ and $\bar{\sigma}(I_j)$ are employment-weighted and "
+        r"investment-weighted averages of sectoral volatilities, respectively. "
+        r"Model moments from the first-order (log-linear) solution." + "\n"
+        r"\end{minipage}" + "\n"
     )
+    latex_code += r"\end{table}" + "\n"
     return latex_code
 
 
@@ -260,26 +262,28 @@ def create_descriptive_stats_table(
 
     stats_data: Dict[str, Dict[str, Dict[str, float]]] = {}
 
+    min_samples = 100
+
     for var_label in var_labels:
         stats_data[var_label] = {}
         for exp_name in experiment_names:
-            # First check if we have pre-computed theoretical stats
-            if theoretical_stats and exp_name in theoretical_stats:
-                if var_label in theoretical_stats[exp_name]:
-                    stats_data[var_label][exp_name] = theoretical_stats[exp_name][var_label]
-                    continue
-
-            # Otherwise compute from samples
+            used_simulation = False
             if exp_name in analysis_variables_data:
                 analysis_vars_dict = analysis_variables_data[exp_name]
                 if var_label in analysis_vars_dict:
-                    var_values = analysis_vars_dict[var_label]
-                    stats_data[var_label][exp_name] = {
-                        "Mean": float(np.mean(var_values) * 100),
-                        "Sd": float(np.std(var_values) * 100),
-                        "Skewness": float(skew(var_values)),
-                        "Excess Kurtosis": float(kurtosis(var_values)),  # scipy returns excess kurtosis
-                    }
+                    var_values = np.asarray(analysis_vars_dict[var_label])
+                    if var_values.size >= min_samples:
+                        stats_data[var_label][exp_name] = {
+                            "Mean": float(np.mean(var_values) * 100),
+                            "Sd": float(np.std(var_values) * 100),
+                            "Skewness": float(skew(var_values)),
+                            "Excess Kurtosis": float(kurtosis(var_values)),
+                        }
+                        used_simulation = True
+
+            if not used_simulation and theoretical_stats and exp_name in theoretical_stats:
+                if var_label in theoretical_stats[exp_name]:
+                    stats_data[var_label][exp_name] = theoretical_stats[exp_name][var_label]
 
     latex_code = _generate_variable_organized_latex_table(stats_data, experiment_names)
     console_output = _generate_console_table(stats_data, experiment_names)

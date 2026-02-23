@@ -62,6 +62,7 @@ prepare_dynare_workspace(ModData, params, opts, dynare_folder);
 
 idx = get_variable_indices(n_sectors);
 policies_ss = ModData.policies_ss;
+endostates_ss = ModData.endostates_ss;
 Cagg_ss = exp(policies_ss(idx.cagg - idx.ss_offset));
 Lagg_ss = exp(policies_ss(idx.lagg - idx.ss_offset));
 
@@ -74,12 +75,12 @@ Results.M_1st = M_1st;
 Results.steady_state = oo_1st.steady_state;
 
 %% Theoretical statistics
-TheoStats = compute_theoretical_statistics(oo_1st, M_1st, policies_ss, n_sectors);
+TheoStats = compute_theoretical_statistics(oo_1st, M_1st, policies_ss, n_sectors, endostates_ss);
 Results.TheoStats = TheoStats;
 
 if v && ~isempty(fieldnames(TheoStats))
-    fprintf('TheoStats: sig_GDP=%.4f sig_C=%.4f sig_I=%.4f sig_L=%.4f\n', ...
-        TheoStats.sigma_VA_agg, TheoStats.sigma_C_agg, TheoStats.sigma_I_agg, TheoStats.sigma_L_agg);
+    fprintf('TheoStats: sig_GDP=%.4f sig_C=%.4f sig_I=%.4f sig_L=%.4f sig_K=%.4f\n', ...
+        TheoStats.sigma_VA_agg, TheoStats.sigma_C_agg, TheoStats.sigma_I_agg, TheoStats.sigma_L_agg, TheoStats.sigma_K_agg);
 end
 
 %% 2. First-order simulation
@@ -100,7 +101,7 @@ if opts.run_firstorder_simul
 
     Results.SolData = SolData;
     Results.SimulFirstOrder = dynare_simul_1st;
-    Results.ModelStats = compute_model_statistics(simul_data_1st, idx, policies_ss, n_sectors);
+    Results.ModelStats = compute_model_statistics(simul_data_1st, idx, policies_ss, n_sectors, endostates_ss);
 
     if v, fprintf('1st-order done (%.1fs)\n', toc); end
 end
@@ -121,7 +122,7 @@ if opts.run_secondorder_simul
     Results.SimulSecondOrder = dynare_simul_2nd;
     % Column 1 of simult_ output is the initial steady state; exclude it for statistics
     simul_data_2nd = dynare_simul_2nd(:, 2:end);
-    Results.ModelStats2nd = compute_model_statistics(simul_data_2nd, idx, policies_ss, n_sectors);
+    Results.ModelStats2nd = compute_model_statistics(simul_data_2nd, idx, policies_ss, n_sectors, endostates_ss);
 
     if v, fprintf('2nd-order done (%.1fs)\n', toc); end
 end
@@ -219,7 +220,7 @@ if opts.run_pf_simul
         Results.pf_burn_out = burn_out;
         Results.pf_T_active = T_active;
         Results.pf_T_total = T_total;
-        Results.ModelStatsPF = compute_model_statistics(dynare_simul_pf, idx, policies_ss, n_sectors);
+        Results.ModelStatsPF = compute_model_statistics(dynare_simul_pf, idx, policies_ss, n_sectors, endostates_ss);
 
         if v, fprintf('PF simulation done (%.1fs)\n', toc); end
     catch ME
@@ -265,7 +266,7 @@ if opts.run_mit_shocks_simul
         Results.mit_burn_out = burn_out_mit;
         Results.mit_T_active = T_mit;
         Results.mit_T_total = T_total_mit;
-        Results.ModelStatsMIT = compute_model_statistics(dynare_simul_mit, idx, policies_ss, n_sectors);
+        Results.ModelStatsMIT = compute_model_statistics(dynare_simul_mit, idx, policies_ss, n_sectors, endostates_ss);
 
         if v, fprintf('MIT shocks done (%.1fs)\n', toc); end
     catch ME

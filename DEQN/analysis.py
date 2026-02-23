@@ -170,6 +170,7 @@ config = {
     "ir_max_periods": 80,
     # Aggregate reporting controls
     "aggregate_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
+    "descriptive_stats_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP"],
     # Benchmark methods included in ergodic exercises (descriptive table, aggregate stats, histograms).
     # Nonlinear experiment methods are always included when always_include_nonlinear_methods=True.
     # Canonical names: "Log-Linear", "SecondOrder", "PerfectForesight", "MITShocks".
@@ -520,7 +521,8 @@ def main():
             n_nan = jnp.sum(jnp.isnan(var_values))
             if n_nan > 0:
                 print(f"    ⚠ WARNING: {var_name} has {n_nan} NaN values!", flush=True)
-        print("  ✓ Loaded First-Order (Dynare) for diagnostics only; using theoretical log-linear moments in tables.")
+        analysis_variables_data["Log-Linear"] = firstorder_analysis_vars
+        print("  ✓ Loaded First-Order (Dynare) simulation with consistent aggregation.")
 
     if dynare_simul_so is not None:
         secondorder_analysis_vars = process_simulation_with_consistent_aggregation(
@@ -556,9 +558,8 @@ def main():
         theo_dist_params = get_loglinear_distribution_params(theo_stats)
         histogram_theo_params["Log-Linear"] = theo_dist_params
 
-        # Still need placeholder data for the plotting function to include this experiment
-        # Create minimal placeholder (actual curve uses theo_dist_params)
-        analysis_variables_data["Log-Linear"] = {var_name: jnp.zeros(10) for var_name in theo_dist_params.keys()}
+        if "Log-Linear" not in analysis_variables_data:
+            analysis_variables_data["Log-Linear"] = {var_name: jnp.zeros(10) for var_name in theo_dist_params.keys()}
 
         # Print theoretical statistics
         for var_name, params_dict in theo_dist_params.items():
@@ -819,11 +820,29 @@ def main():
         if _normalize_method_name(k) in selected_methods
     }
 
+    desc_vars = config.get("descriptive_stats_variables")
+    if desc_vars:
+        desc_analysis_data = {
+            method: {k: v for k, v in variables.items() if k in desc_vars}
+            for method, variables in filtered_analysis_variables_data.items()
+        }
+        desc_analysis_data = {k: v for k, v in desc_analysis_data.items() if v}
+        desc_theo_stats = None
+        if filtered_theoretical_stats:
+            desc_theo_stats = {
+                method: {k: v for k, v in variables.items() if k in desc_vars}
+                for method, variables in filtered_theoretical_stats.items()
+            }
+            desc_theo_stats = {k: v for k, v in desc_theo_stats.items() if v} or None
+    else:
+        desc_analysis_data = filtered_analysis_variables_data
+        desc_theo_stats = filtered_theoretical_stats if filtered_theoretical_stats else None
+
     create_descriptive_stats_table(
-        analysis_variables_data=filtered_analysis_variables_data,
+        analysis_variables_data=desc_analysis_data,
         save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
         analysis_name=config["analysis_name"],
-        theoretical_stats=filtered_theoretical_stats if filtered_theoretical_stats else None,
+        theoretical_stats=desc_theo_stats,
     )
 
     # Aggregate-only ergodic descriptive statistics (C, I, GDP, K)

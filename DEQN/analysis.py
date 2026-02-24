@@ -165,7 +165,11 @@ config = {
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0, 2, 19, 23],
     "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP"],
-    "sectoral_ir_variables_to_plot": ["Cj", "Ioutj", "Yj", "Kj", "Lj", "Qj"],
+    "sectoral_ir_variables_to_plot": [
+        "Cj", "Pj", "Ioutj", "Moutj", "Lj", "Ij", "Mj", "Yj", "Qj", "Kj",
+        "Cj_client", "Pj_client", "Ioutj_client", "Moutj_client", "Lj_client",
+        "Ij_client", "Mj_client", "Yj_client", "Qj_client", "Pmj_client", "gammaij_client",
+    ],
     "ir_shock_sizes": [5, 10, 20],
     "ir_max_periods": 80,
     # Aggregate reporting controls
@@ -713,25 +717,37 @@ def main():
     else:
         ir_response_source = "IR_stoch_ss"
 
+    largest_shock = shock_sizes[-1]
+
+    import numpy as _np
+
+    policies_ss_np = _np.asarray(policies_ss)
+    P_ergodic_np = _np.asarray(P_ergodic)
+
     for sector_idx in sectors_to_plot:
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
         )
 
         for ir_variable in ir_variables:
+            is_agg_consumption = ir_variable == "Agg. Consumption"
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
                 matlab_ir_data=matlab_ir_data,
                 sector_idx=sector_idx,
                 sector_label=sector_label,
                 variable_to_plot=ir_variable,
-                shock_sizes=shock_sizes,
+                shock_sizes=shock_sizes if is_agg_consumption else [largest_shock],
                 save_dir=irs_dir,
                 analysis_name=config["analysis_name"],
                 max_periods=max_periods,
                 n_sectors=n_sectors,
                 benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
                 response_source=ir_response_source,
+                agg_consumption_mode=is_agg_consumption,
+                negative_only=not is_agg_consumption,
+                policies_ss=policies_ss_np,
+                P_ergodic=P_ergodic_np,
             )
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -769,13 +785,16 @@ def main():
                 sector_idx=sector_idx,
                 sector_label=sector_label,
                 variable_to_plot=ir_variable,
-                shock_sizes=shock_sizes,
+                shock_sizes=[largest_shock],
                 save_dir=irs_dir,
                 analysis_name=config["analysis_name"],
                 max_periods=max_periods,
                 n_sectors=n_sectors,
                 benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
                 response_source=ir_response_source,
+                negative_only=True,
+                policies_ss=policies_ss_np,
+                P_ergodic=P_ergodic_np,
             )
 
     # ═══════════════════════════════════════════════════════════════════════════

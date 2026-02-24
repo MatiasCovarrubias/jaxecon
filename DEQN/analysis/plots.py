@@ -824,7 +824,7 @@ def plot_sector_ir_by_shock_size(
     sector_label: str,
     variable_to_plot: str = "Agg. Consumption",
     shock_sizes: list = [5, 10, 20],
-    figsize: Tuple[float, float] = (10, 15),
+    figsize: Optional[Tuple[float, float]] = None,
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
@@ -832,51 +832,72 @@ def plot_sector_ir_by_shock_size(
     n_sectors: int = 37,
     benchmark_method: str = "PerfectForesight",
     response_source: str = "IR_stoch_ss",
+    agg_consumption_mode: bool = False,
+    negative_only: bool = False,
+    policies_ss: Optional[np.ndarray] = None,
+    P_ergodic: Optional[np.ndarray] = None,
 ):
     """
-    Create a figure with one row per shock size and two columns:
-    - left: negative-shock IRs
-    - right: positive-shock IRs
+    Create a figure with one row per shock size and two columns (negative / positive shock).
 
-    For each row (shock size), y-axis scaling is:
-    - independent across rows (to maximize visibility per shock size)
-    - symmetric in absolute value across left/right panels (for direct visual comparison)
-    - allows sign changes in both panels (no quadrant restriction)
+    Layout modes
+    ------------
+    Default (both panels, symmetric y-axis):
+        Each row shows neg (left) and pos (right) panels with a symmetric y-axis
+        ``[-max, +max]`` so both directions are visible simultaneously.
+
+    agg_consumption_mode=True (both panels, one-sided y-axis):
+        Intended for the main aggregate-consumption IR figure.  The negative panel
+        spans ``[-magnitude, 0]`` and the positive panel spans ``[0, magnitude]``
+        where ``magnitude`` is the largest absolute response across either panel.
+        This maximises vertical resolution since each panel uses its full height for
+        the relevant territory.
+
+    negative_only=True (single panel, symmetric y-axis):
+        Only the negative-shock column is created.  Useful for non-consumption
+        aggregate IRs and sectoral IRs where a single large shock is sufficient.
 
     Parameters:
     -----------
     gir_data : dict
-        Dictionary containing GIR results from JAX analysis.
-        May include both regular GIRs (pos_5, neg_5, etc.) and stochastic SS IRs
-        (pos_5_stochss, neg_5_stochss, etc.)
+        GIR results from JAX analysis (pos_5, neg_5, pos_5_stochss, neg_5_stochss …).
     matlab_ir_data : dict
-        Dictionary from load_matlab_irs containing MATLAB IRs
+        Dictionary from load_matlab_irs containing MATLAB IRs.
     sector_idx : int
-        Sector index (0-based) to plot
+        Sector index (0-based) to plot.
     sector_label : str
-        Label for the sector
+        Label for the sector.
     variable_to_plot : str
-        Analysis variable to plot (default: "Agg. Consumption")
+        Analysis variable to plot (default: "Agg. Consumption").
     shock_sizes : list
-        List of shock sizes (e.g., [5, 10, 20])
-    figsize : tuple
-        Figure size
+        Shock sizes to show, one row per size (e.g., [5, 10, 20]).
+    figsize : tuple, optional
+        Figure size.  Defaults to (10, 5*n_sizes) for two-panel modes and
+        (7, 4*n_sizes) for negative_only.
     save_dir : str, optional
-        Directory to save the figure
+        Directory to save the figure.
     analysis_name : str, optional
-        Name for the analysis
+        Name for the analysis (used in the saved file name).
     display_dpi : int
-        DPI for display
+        DPI for display.
     max_periods : int
-        Maximum periods to plot
+        Maximum periods to plot.
     n_sectors : int
-        Number of sectors in the model
+        Number of sectors in the model.
+    benchmark_method : str
+        MATLAB benchmark to overlay ("PerfectForesight", "FirstOrder", "SecondOrder").
+    response_source : str
+        Which DEQN responses to plot ("GIR", "IR_stoch_ss", or "both").
+    agg_consumption_mode : bool
+        If True, use one-sided y-axis (neg panel: neg territory, pos panel: pos territory).
+    negative_only : bool
+        If True, create only the negative-shock panel (single column).
 
     Returns:
     --------
     fig, axes : matplotlib figure and axes array
     """
-    from DEQN.analysis.matlab_irs import get_matlab_ir_for_analysis_variable
+    from DEQN.analysis.matlab_irs import get_matlab_ir_fixedprice, get_matlab_ir_for_analysis_variable
 
     benchmark_key_map = {
         "FirstOrder": "first_order",
@@ -892,7 +913,15 @@ def plot_sector_ir_by_shock_size(
     benchmark_label = benchmark_label_map.get(benchmark_method, benchmark_method)
 
     n_sizes = len(shock_sizes)
-    fig, axes = plt.subplots(n_sizes, 2, figsize=figsize, dpi=display_dpi, sharex=True, squeeze=False)
+    n_cols = 1 if negative_only else 2
+
+    if figsize is None:
+        if negative_only:
+            figsize = (7, 4 * n_sizes)
+        else:
+            figsize = (10, 5 * n_sizes)
+
+    fig, axes = plt.subplots(n_sizes, n_cols, figsize=figsize, dpi=display_dpi, sharex=True, squeeze=False)
 
     experiment_names = list(gir_data.keys()) if gir_data else []
     first_exp_data = gir_data[experiment_names[0]] if experiment_names else {}
@@ -917,24 +946,33 @@ def plot_sector_ir_by_shock_size(
 
     for j, shock_size in enumerate(shock_sizes):
         ax_neg = axes[j, 0]
-        ax_pos = axes[j, 1]
+        ax_pos = axes[j, 1] if not negative_only else None
 
         pos_key = f"pos_{shock_size}"
         neg_key = f"neg_{shock_size}"
         pos_stochss_key = f"pos_{shock_size}_stochss"
         neg_stochss_key = f"neg_{shock_size}_stochss"
 
-        # For sectoral capital, keep MATLAB period-0 so the IR starts at 0 on impact
-        # (capital is predetermined). For other variables, skip initial period
-        # to align with GIR timing convention.
         skip_initial_matlab = variable_to_plot != "Kj"
-        matlab_irs = get_matlab_ir_for_analysis_variable(
-            matlab_ir_data,
-            sector_idx,
-            variable_to_plot,
-            max_periods,
-            skip_initial=skip_initial_matlab,
-        )
+        if policies_ss is not None and P_ergodic is not None:
+            matlab_irs = get_matlab_ir_fixedprice(
+                matlab_ir_data,
+                sector_idx,
+                variable_to_plot,
+                policies_ss=policies_ss,
+                P_ergodic=P_ergodic,
+                n_sectors=n_sectors,
+                max_periods=max_periods,
+                skip_initial=skip_initial_matlab,
+            )
+        else:
+            matlab_irs = get_matlab_ir_for_analysis_variable(
+                matlab_ir_data,
+                sector_idx,
+                variable_to_plot,
+                max_periods,
+                skip_initial=skip_initial_matlab,
+            )
         row_abs_max = 0.0
 
         def _plot_line(ax, series, *, label=None, color=None, linewidth=1.5, linestyle="-", alpha=0.8):
@@ -966,19 +1004,20 @@ def plot_sector_ir_by_shock_size(
             if not pos_keys and not neg_keys:
                 other_keys = list(matlab_irs.keys())
 
-            for pk in pos_keys:
-                pos_benchmark = matlab_irs[pk].get(benchmark_series_key)
-                if pos_benchmark is not None:
-                    pos_benchmark = pos_benchmark[:max_periods] * 100
-                    _plot_line(
-                        ax_pos,
-                        pos_benchmark,
-                        color=colors[4],
-                        linewidth=1.5,
-                        linestyle="--",
-                        alpha=0.8,
-                        label=benchmark_label if j == 0 else None,
-                    )
+            if not negative_only and ax_pos is not None:
+                for pk in pos_keys:
+                    pos_benchmark = matlab_irs[pk].get(benchmark_series_key)
+                    if pos_benchmark is not None:
+                        pos_benchmark = pos_benchmark[:max_periods] * 100
+                        _plot_line(
+                            ax_pos,
+                            pos_benchmark,
+                            color=colors[4],
+                            linewidth=1.5,
+                            linestyle="--",
+                            alpha=0.8,
+                        )
+
             for nk in neg_keys:
                 neg_benchmark = matlab_irs[nk].get(benchmark_series_key)
                 if neg_benchmark is not None:
@@ -990,10 +1029,17 @@ def plot_sector_ir_by_shock_size(
                         linewidth=1.5,
                         linestyle="--",
                         alpha=0.8,
+                        label=benchmark_label if j == 0 else None,
                     )
 
             for ok in other_keys:
-                target_ax = ax_pos if ok.startswith("pos_") else ax_neg if ok.startswith("neg_") else ax_pos
+                if ok.startswith("pos_") and negative_only:
+                    continue
+                target_ax = (
+                    ax_pos
+                    if (ax_pos is not None and ok.startswith("pos_"))
+                    else ax_neg if ok.startswith("neg_") else (ax_pos if ax_pos is not None else ax_neg)
+                )
                 generic_benchmark = matlab_irs[ok].get(benchmark_series_key)
                 if generic_benchmark is not None:
                     generic_benchmark = generic_benchmark[:max_periods] * 100
@@ -1004,7 +1050,7 @@ def plot_sector_ir_by_shock_size(
                         linewidth=1.5,
                         linestyle="--",
                         alpha=0.8,
-                        label=f"{benchmark_label} ({ok})" if j == 0 else None,
+                        label=f"{benchmark_label} ({ok})" if (j == 0 and target_ax is ax_neg) else None,
                     )
         elif j == 0:
             available_sector_indices = sorted(
@@ -1024,18 +1070,17 @@ def plot_sector_ir_by_shock_size(
                 state_gir_data = gir_data[exp_name][state_name]
 
                 if response_source in ["GIR", "both"] and pos_key in state_gir_data:
-                    gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
-                    if variable_to_plot in gir_vars_pos:
-                        response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
-                        label = f"GIR ({exp_name})" if j == 0 else None
-                        _plot_line(
-                            ax_pos,
-                            response_pos,
-                            color=colors[k % len(colors)],
-                            linewidth=2.5,
-                            alpha=0.9,
-                            label=label,
-                        )
+                    if not negative_only and ax_pos is not None:
+                        gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
+                        if variable_to_plot in gir_vars_pos:
+                            response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
+                            _plot_line(
+                                ax_pos,
+                                response_pos,
+                                color=colors[k % len(colors)],
+                                linewidth=2.5,
+                                alpha=0.9,
+                            )
 
                 if response_source in ["GIR", "both"] and neg_key in state_gir_data:
                     gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
@@ -1047,22 +1092,21 @@ def plot_sector_ir_by_shock_size(
                             color=colors[k % len(colors)],
                             linewidth=2.5,
                             alpha=0.9,
+                            label=f"GIR ({exp_name})" if j == 0 else None,
                         )
 
-                # Plot IR from stochastic steady state (primary IR method)
                 if response_source in ["IR_stoch_ss", "both"] and pos_stochss_key in state_gir_data:
-                    gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
-                    if variable_to_plot in gir_vars_pos_stochss:
-                        response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
-                        label_stochss = f"IR_stoch_ss ({exp_name})" if j == 0 else None
-                        _plot_line(
-                            ax_pos,
-                            response_pos_stochss,
-                            color=colors[k % len(colors)],
-                            linewidth=2.5,
-                            alpha=0.9,
-                            label=label_stochss,
-                        )
+                    if not negative_only and ax_pos is not None:
+                        gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
+                        if variable_to_plot in gir_vars_pos_stochss:
+                            response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
+                            _plot_line(
+                                ax_pos,
+                                response_pos_stochss,
+                                color=colors[k % len(colors)],
+                                linewidth=2.5,
+                                alpha=0.9,
+                            )
 
                 if response_source in ["IR_stoch_ss", "both"] and neg_stochss_key in state_gir_data:
                     gir_vars_neg_stochss = state_gir_data[neg_stochss_key].get("gir_analysis_variables", {})
@@ -1074,41 +1118,61 @@ def plot_sector_ir_by_shock_size(
                             color=colors[k % len(colors)],
                             linewidth=2.5,
                             alpha=0.9,
+                            label=f"IR_stoch_ss ({exp_name})" if j == 0 else None,
                         )
 
         if row_abs_max <= 0 or not np.isfinite(row_abs_max):
             row_abs_max = 0.1
-        y_lim_abs = row_abs_max * 1.08
 
         ax_neg.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
-        ax_pos.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax_neg.grid(True, alpha=0.3)
-        ax_pos.grid(True, alpha=0.3)
-
-        # Keep panels close to square for better visual comparison across lines.
         ax_neg.set_box_aspect(1)
-        ax_pos.set_box_aspect(1)
 
-        ax_neg.set_ylim(-y_lim_abs, y_lim_abs)
-        ax_pos.set_ylim(-y_lim_abs, y_lim_abs)
+        if agg_consumption_mode and not negative_only:
+            # One-sided y-axis: derive magnitude from the data on each panel so
+            # the neg panel spans [-magnitude, 0] and pos panel spans [0, magnitude].
+            # Using the same magnitude across both panels keeps them directly comparable.
+            def _panel_abs_max(ax_obj):
+                vals = [
+                    float(y)
+                    for line in ax_obj.get_lines()
+                    for y in line.get_ydata()
+                    if np.isfinite(y)
+                ]
+                return max((abs(v) for v in vals), default=0.1)
+
+            neg_abs = _panel_abs_max(ax_neg)
+            pos_abs = _panel_abs_max(ax_pos) if ax_pos is not None else 0.0
+            magnitude = max(neg_abs, pos_abs, 0.1) * 1.08
+            ax_neg.set_ylim(-magnitude, 0)
+            if ax_pos is not None:
+                ax_pos.set_ylim(0, magnitude)
+        else:
+            y_lim_abs = row_abs_max * 1.08
+            ax_neg.set_ylim(-y_lim_abs, y_lim_abs)
+            if ax_pos is not None:
+                ax_pos.set_ylim(-y_lim_abs, y_lim_abs)
+
+        if ax_pos is not None:
+            ax_pos.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
+            ax_pos.grid(True, alpha=0.3)
+            ax_pos.set_box_aspect(1)
+            ax_pos.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
+            ax_pos.set_xlim(0, max_periods - 1)
 
         ax_neg.set_ylabel(f"{shock_size}% shock\n(% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
         ax_neg.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
-        ax_pos.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
         ax_neg.set_xlim(0, max_periods - 1)
-        ax_pos.set_xlim(0, max_periods - 1)
 
     axes[-1, 0].set_xlabel("Periods", fontsize=SMALL_SIZE)
-    axes[-1, 1].set_xlabel("Periods", fontsize=SMALL_SIZE)
+    if not negative_only:
+        axes[-1, 1].set_xlabel("Periods", fontsize=SMALL_SIZE)
+
     axes[0, 0].set_title("Negative shock IR", fontweight="bold", fontsize=MEDIUM_SIZE)
-    axes[0, 1].set_title("Positive shock IR", fontweight="bold", fontsize=MEDIUM_SIZE)
+    if not negative_only:
+        axes[0, 1].set_title("Positive shock IR", fontweight="bold", fontsize=MEDIUM_SIZE)
 
-    fig.suptitle(
-        f"{sector_label}: {variable_to_plot} (% change)",
-        fontweight="bold",
-        fontsize=LARGE_SIZE,
-    )
-
+    # Legend: always on the negative panel (col 0, row 0) so it is visible regardless of mode.
     handles_neg, labels_neg = axes[0, 0].get_legend_handles_labels()
     if handles_neg:
         axes[0, 0].legend(
@@ -1118,17 +1182,8 @@ def plot_sector_ir_by_shock_size(
             fontsize=SMALL_SIZE - 1,
             framealpha=0.9,
         )
-    handles_pos, labels_pos = axes[0, 1].get_legend_handles_labels()
-    if handles_pos:
-        axes[0, 1].legend(
-            handles_pos,
-            labels_pos,
-            loc="upper right",
-            fontsize=SMALL_SIZE - 1,
-            framealpha=0.9,
-        )
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.tight_layout()
 
     if save_dir:
 

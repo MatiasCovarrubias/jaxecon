@@ -351,7 +351,7 @@ def _process_flat_format_shock(md_irs: Dict, shock_idx: int) -> Dict[str, Any]:
         if irs_first_order is None:
             continue
 
-        processed["sectors"][sector_idx] = {
+        sector_entry = {
             "IRSFirstOrder": np.array(irs_first_order),
             "IRSSecondOrder": np.array(irs_second_order) if irs_second_order is not None else None,
             "IRSPerfectForesight": np.array(irs_pf) if irs_pf is not None else None,
@@ -359,6 +359,25 @@ def _process_flat_format_shock(md_irs: Dict, shock_idx: int) -> Dict[str, Any]:
             "IRSLoglin": np.array(irs_first_order),
             "IRSDeterm": np.array(irs_pf) if irs_pf is not None else None,
         }
+
+        # Extract full sectoral vectors if available
+        for method_key, struct_key in [
+            ("sectoral_first_order", "sectoral_loglin"),
+            ("sectoral_perfect_foresight", "sectoral_determ"),
+        ]:
+            sectoral_data = irf_data.get(struct_key)
+            if sectoral_data is not None:
+                sectoral_dict = _coerce_mat_struct(sectoral_data)
+                if isinstance(sectoral_dict, dict):
+                    parsed = {}
+                    for field in ("C_all", "Iout_all", "Q_all", "Mout_all"):
+                        arr = sectoral_dict.get(field)
+                        if arr is not None:
+                            parsed[field] = np.array(arr)
+                    if parsed:
+                        sector_entry[method_key] = parsed
+
+        processed["sectors"][sector_idx] = sector_entry
 
     return processed
 
@@ -427,7 +446,7 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
             arr_first = np.array(irs_first_order)
             arr_second = np.array(irs_second_order) if irs_second_order is not None else None
             arr_pf = np.array(irs_pf) if irs_pf is not None else None
-            processed["sectors"][sector_idx] = {
+            sector_entry = {
                 "IRSFirstOrder": arr_first,
                 "IRSSecondOrder": arr_second,
                 "IRSPerfectForesight": arr_pf,
@@ -435,6 +454,24 @@ def _process_new_format_shock(shock_result: Dict) -> Dict[str, Any]:
                 "IRSLoglin": arr_first,
                 "IRSDeterm": arr_pf,
             }
+
+            for method_key, struct_key in [
+                ("sectoral_first_order", "sectoral_loglin"),
+                ("sectoral_perfect_foresight", "sectoral_determ"),
+            ]:
+                sectoral_data = irf_data.get(struct_key)
+                if sectoral_data is not None:
+                    sectoral_dict = _coerce_mat_struct(sectoral_data)
+                    if isinstance(sectoral_dict, dict):
+                        parsed = {}
+                        for field in ("C_all", "Iout_all", "Q_all", "Mout_all"):
+                            arr = sectoral_dict.get(field)
+                            if arr is not None:
+                                parsed[field] = np.array(arr)
+                        if parsed:
+                            sector_entry[method_key] = parsed
+
+            processed["sectors"][sector_idx] = sector_entry
 
     return processed
 
@@ -644,20 +681,20 @@ def get_sector_irs(
     return result
 
 
-# New format (Dec 2025+), aligned with process_ir_data.m:
-#   Row  1: A_ir
-#   Row  2: C_exp_ir
-#   Row  3: I_exp_ir
-#   Row  4: Cj_ir
-#   Row  5: Pj_ir
-#   Row  6: Ioutj_ir
-#   Row  7: Moutj_ir
-#   Row  8: Lj_ir
-#   Row  9: Ij_ir
-#   Row 10: Mj_ir
-#   Row 11: Yj_ir
-#   Row 12: Qj_ir
-#   Row 13: A_client_ir
+# New format (Dec 2025+), actual rows from process_ir_data.m:
+#   Row  1: A_ir        (TFP level of shocked sector)
+#   Row  2: C_ir        (Dynare CES aggregate consumption, current prices)
+#   Row  3: L_ir        (Dynare CES aggregate labor)
+#   Row  4: Cj_ir       (sectoral consumption, shocked sector)
+#   Row  5: Pj_ir       (sectoral price, shocked sector)
+#   Row  6: Ioutj_ir    (sectoral investment output, shocked sector)
+#   Row  7: Moutj_ir    (sectoral intermediate output, shocked sector)
+#   Row  8: Lj_ir       (sectoral labor, shocked sector)
+#   Row  9: Ij_ir       (sectoral investment input, shocked sector)
+#   Row 10: Mj_ir       (sectoral intermediate input, shocked sector)
+#   Row 11: Yj_ir       (sectoral value added, shocked sector)
+#   Row 12: Qj_ir       (sectoral gross output, shocked sector)
+#   Row 13: A_client_ir (TFP level, client sector)
 #   Row 14: Cj_client_ir
 #   Row 15: Pj_client_ir
 #   Row 16: Ioutj_client_ir
@@ -667,15 +704,20 @@ def get_sector_irs(
 #   Row 20: Mj_client_ir
 #   Row 21: Yj_client_ir
 #   Row 22: Qj_client_ir
-#   Row 23: Kj_ir
-#   Row 24: GDP_exp_ir
+#   Row 23: Kj_ir       (sectoral capital, shocked sector)
+#   Row 24: Y_ir        (Dynare aggregate output, current prices)
 #   Row 25: Pmj_client_ir
 #   Row 26: gammaij_client_ir
-#   Row 27: C_utility_ir
+#
+# NOTE: Rows 2, 3, 24 are Dynare's built-in aggregates (current-price weighted).
+# For aggregate IRs (Agg. Consumption, Agg. Investment, Agg. GDP), the Python side
+# re-aggregates from full sectoral vectors stored in sectoral_loglin/sectoral_determ
+# using fixed ergodic prices (P_ergodic) via get_matlab_ir_fixedprice().
+# This ensures consistency with the DEQN nonlinear IRs.
 NEW_FORMAT_VARIABLE_INDICES = {
     "A": 0,  # TFP level (shocked sector)
-    "Cexp": 1,  # Aggregate consumption expenditure
-    "Iexp": 2,  # Aggregate investment expenditure
+    "Cexp": 1,  # Dynare aggregate consumption (CES / current-price)
+    "Lexp": 2,  # Dynare aggregate labor
     "Cj": 3,  # Sectoral consumption
     "Pj": 4,  # Sectoral price
     "Ioutj": 5,  # Sectoral investment output
@@ -696,10 +738,9 @@ NEW_FORMAT_VARIABLE_INDICES = {
     "Yj_client": 20,  # Client output
     "Qj_client": 21,  # Client Tobin's Q
     "Kj": 22,  # Sectoral capital
-    "GDPexp": 23,  # Aggregate GDP expenditure
+    "GDPexp": 23,  # Dynare aggregate output (current-price)
     "Pmj_client": 24,  # Client intermediate price
     "gammaij_client": 25,  # Client expenditure share deviation
-    "Cutil": 26,  # Utility aggregate consumption
 }
 
 # Legacy format variable indices (for backwards compatibility)
@@ -736,11 +777,10 @@ MATLAB_IR_VARIABLE_INDICES = NEW_FORMAT_VARIABLE_INDICES.copy()
 # Mapping from analysis variable names to MATLAB variable names
 ANALYSIS_TO_MATLAB_MAPPING = {
     "Agg. Consumption": "Cexp",
-    "Agg. Consumption (Utility)": "Cutil",
     "Agg. Output": "GDPexp",
     "Agg. GDP": "GDPexp",
-    "Agg. Investment": "Iexp",
-    # Sectoral variables (for sectoral IR plots from MATLAB IR objects)
+    "Agg. Labor": "Lexp",
+    # Own-sector variables
     "Cj": "Cj",
     "Pj": "Pj",
     "Ioutj": "Ioutj",
@@ -751,6 +791,18 @@ ANALYSIS_TO_MATLAB_MAPPING = {
     "Yj": "Yj",
     "Qj": "Qj",
     "Kj": "Kj",
+    # Client (main customer) variables
+    "Cj_client": "Cj_client",
+    "Pj_client": "Pj_client",
+    "Ioutj_client": "Ioutj_client",
+    "Moutj_client": "Moutj_client",
+    "Lj_client": "Lj_client",
+    "Ij_client": "Ij_client",
+    "Mj_client": "Mj_client",
+    "Yj_client": "Yj_client",
+    "Qj_client": "Qj_client",
+    "Pmj_client": "Pmj_client",
+    "gammaij_client": "gammaij_client",
 }
 
 
@@ -808,6 +860,168 @@ def get_matlab_ir_for_analysis_variable(
     var_idx = MATLAB_IR_VARIABLE_INDICES[matlab_var_name]
 
     return get_sector_irs(ir_data, sector_idx, var_idx, max_periods, skip_initial)
+
+
+AGGREGATE_VARIABLE_SECTORAL_MAP = {
+    "Agg. Consumption": "C_all",
+    "Agg. Investment": "Iout_all",
+}
+
+AGGREGATE_VARIABLE_GDP_COMPONENTS = {
+    "Agg. Output": ("Q_all", "Mout_all"),
+    "Agg. GDP": ("Q_all", "Mout_all"),
+}
+
+
+def _reaggregate_sectoral_ir(
+    sectoral_data: Dict[str, np.ndarray],
+    policies_ss: np.ndarray,
+    P_ergodic: np.ndarray,
+    analysis_var_name: str,
+    n_sectors: int,
+    skip_initial: bool = True,
+    max_periods: int = 100,
+) -> Optional[np.ndarray]:
+    """
+    Re-aggregate a MATLAB IR using fixed ergodic prices from sectoral vectors.
+
+    The sectoral data contains log deviations from SS for all n_sectors.
+    We convert to levels, weight by P_ergodic, sum, and take log deviations
+    from the deterministic SS aggregate.
+
+    Args:
+        sectoral_data: Dict with C_all, Iout_all, Q_all, Mout_all (each n_sectors x T)
+        policies_ss: MATLAB steady-state policies in log (412-vector)
+        P_ergodic: Fixed ergodic output prices in levels (n_sectors-vector)
+        analysis_var_name: Which aggregate to compute
+        n_sectors: Number of sectors
+        skip_initial: If True, skip period 0 (align MATLAB[1:] with DEQN GIR[0:])
+        max_periods: Maximum periods to return
+
+    Returns:
+        IR as log deviations from deterministic SS, or None if data not available
+    """
+    n = n_sectors
+    ps_levels = np.exp(policies_ss)
+
+    if analysis_var_name in AGGREGATE_VARIABLE_SECTORAL_MAP:
+        field = AGGREGATE_VARIABLE_SECTORAL_MAP[analysis_var_name]
+        logdev_all = sectoral_data.get(field)
+        if logdev_all is None:
+            return None
+
+        if field == "C_all":
+            X_ss = ps_levels[:n]
+        elif field == "Iout_all":
+            X_ss = ps_levels[7 * n : 8 * n]
+        else:
+            return None
+
+        X_levels = X_ss[:, None] * np.exp(logdev_all)
+
+        agg_t = P_ergodic @ X_levels
+        agg_ss = P_ergodic @ X_ss
+
+    elif analysis_var_name in AGGREGATE_VARIABLE_GDP_COMPONENTS:
+        q_field, mout_field = AGGREGATE_VARIABLE_GDP_COMPONENTS[analysis_var_name]
+        logdev_q = sectoral_data.get(q_field)
+        logdev_mout = sectoral_data.get(mout_field)
+        if logdev_q is None or logdev_mout is None:
+            return None
+
+        Q_ss = ps_levels[9 * n : 10 * n]
+        Mout_ss = ps_levels[5 * n : 6 * n]
+
+        Q_levels = Q_ss[:, None] * np.exp(logdev_q)
+        Mout_levels = Mout_ss[:, None] * np.exp(logdev_mout)
+
+        agg_t = P_ergodic @ (Q_levels - Mout_levels)
+        agg_ss = P_ergodic @ (Q_ss - Mout_ss)
+    else:
+        return None
+
+    eps = 1e-12
+    ir = np.log(np.maximum(agg_t, eps)) - np.log(np.maximum(agg_ss, eps))
+
+    if skip_initial:
+        ir = ir[1 : max_periods + 1]
+    else:
+        ir = ir[:max_periods]
+
+    return ir
+
+
+def get_matlab_ir_fixedprice(
+    ir_data: Dict[str, Any],
+    sector_idx: int,
+    analysis_var_name: str,
+    policies_ss: np.ndarray,
+    P_ergodic: np.ndarray,
+    n_sectors: int,
+    max_periods: int = 100,
+    skip_initial: bool = True,
+) -> Optional[Dict[str, Dict[str, np.ndarray]]]:
+    """
+    Get MATLAB IRs re-aggregated with fixed ergodic prices.
+
+    Falls back to the pre-computed row if sectoral data is not available.
+
+    Args:
+        ir_data: Dictionary from load_matlab_irs
+        sector_idx: Sector index (0-based)
+        analysis_var_name: Name of analysis variable (e.g., "Agg. Consumption")
+        policies_ss: MATLAB steady-state policies in log
+        P_ergodic: Ergodic output prices in levels
+        n_sectors: Number of sectors
+        max_periods: Maximum number of periods to return
+        skip_initial: If True, skip period 0
+
+    Returns:
+        Dictionary with IRs for each shock size/sign, or None if variable not found
+    """
+    is_aggregate = (
+        analysis_var_name in AGGREGATE_VARIABLE_SECTORAL_MAP
+        or analysis_var_name in AGGREGATE_VARIABLE_GDP_COMPONENTS
+    )
+
+    if not is_aggregate:
+        return get_matlab_ir_for_analysis_variable(
+            ir_data, sector_idx, analysis_var_name, max_periods, skip_initial
+        )
+
+    result = {}
+
+    for key, data in ir_data.items():
+        if "sectors" not in data or sector_idx not in data["sectors"]:
+            continue
+
+        sector_data = data["sectors"][sector_idx]
+
+        entry = {}
+        for method_label, sectoral_key in [
+            ("first_order", "sectoral_first_order"),
+            ("perfect_foresight", "sectoral_perfect_foresight"),
+        ]:
+            sectoral = sector_data.get(sectoral_key)
+            if sectoral is not None:
+                reagg = _reaggregate_sectoral_ir(
+                    sectoral, policies_ss, P_ergodic, analysis_var_name,
+                    n_sectors, skip_initial, max_periods,
+                )
+                if reagg is not None:
+                    entry[method_label] = reagg
+
+        if entry:
+            entry["loglin"] = entry.get("first_order")
+            entry["determ"] = entry.get("perfect_foresight")
+            result[key] = entry
+
+    if result:
+        return result
+
+    return get_matlab_ir_for_analysis_variable(
+        ir_data, sector_idx, analysis_var_name, max_periods, skip_initial
+    )
 
 
 def get_amplification_stats(ir_data: Dict[str, Any]) -> Dict[str, Dict[str, np.ndarray]]:

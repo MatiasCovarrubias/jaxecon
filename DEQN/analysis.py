@@ -122,15 +122,15 @@ jax_config.update("jax_debug_nans", True)
 config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_Dec2025",
-    "analysis_name": "Frisch_feb2026",
+    "analysis_name": "benchmarkMarch",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
-    "model_data_file": "ModelData_Frisch0dot75.mat",
-    "model_data_irs_file": "ModelData_IRs_Frisch0dot75.mat",
-    "model_data_simulation_file": "ModelData_simulation.mat",
+    "model_data_file": "ModelData_benchMar.mat",
+    "model_data_irs_file": "ModelData_IRs_benchMar.mat",
+    "model_data_simulation_file": "ModelData_simulation_benchMar.mat",  # Set to None to skip MATLAB simulation comparison
     # Experiments to analyze
     "experiments_to_analyze": {
-        "Frisch0dot75": "Frisch0dot75",
+        "Benchmark March": "sigl0dot5capadj3epsl0dot05",
     },
     # Simulation configuration
     "init_range": 6,
@@ -155,7 +155,7 @@ config = {
     # IR method(s): choose any of ["GIR", "IR_stoch_ss"].
     # - GIR: average over ergodic draws
     # - IR_stoch_ss: single IR from stochastic steady state
-    "ir_methods": ["GIR", "IR_stoch_ss"],
+    "ir_methods": ["IR_stoch_ss"],
     # MATLAB benchmark used in IR figures. Options:
     # "FirstOrder", "SecondOrder", "PerfectForesight"
     "ir_benchmark_method": "PerfectForesight",
@@ -163,27 +163,45 @@ config = {
     # Sectors to analyze: specify sector indices (0-based).
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
-    "ir_sectors_to_plot": [0, 2, 19, 23],
-    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP"],
+    "ir_sectors_to_plot": [0],
+    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
     "sectoral_ir_variables_to_plot": [
-        "Cj", "Pj", "Ioutj", "Moutj", "Lj", "Ij", "Mj", "Yj", "Qj", "Kj",
-        "Cj_client", "Pj_client", "Ioutj_client", "Moutj_client", "Lj_client",
-        "Ij_client", "Mj_client", "Yj_client", "Qj_client", "Pmj_client", "gammaij_client",
+        "Cj",
+        "Pj",
+        "Ioutj",
+        "Moutj",
+        "Lj",
+        "Ij",
+        "Mj",
+        "Yj",
+        "Qj",
+        "Kj",
+        "Cj_client",
+        "Pj_client",
+        "Ioutj_client",
+        "Moutj_client",
+        "Lj_client",
+        "Ij_client",
+        "Mj_client",
+        "Yj_client",
+        "Qj_client",
+        "Pmj_client",
+        "gammaij_client",
     ],
-    "ir_shock_sizes": [5, 10, 20],
-    "ir_max_periods": 80,
+    "ir_shock_sizes": [10, 20, 30],
+    "ir_max_periods": 40,
     # Aggregate reporting controls
     "aggregate_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
-    "descriptive_stats_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP"],
+    "descriptive_stats_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
     # Benchmark methods included in ergodic exercises (descriptive table, aggregate stats, histograms).
     # Nonlinear experiment methods are always included when always_include_nonlinear_methods=True.
     # Canonical names: "Log-Linear", "SecondOrder", "PerfectForesight", "MITShocks".
     # Alias supported: "FirstOrder" -> "Log-Linear".
-    "ergodic_methods_to_include": None,
+    "ergodic_methods_to_include": [],
     "always_include_nonlinear_methods": True,
     # Methods included in stochastic-SS aggregate table.
     # Use None to include all analyzed experiments.
-    "stochss_methods_to_include": None,
+    "stochss_methods_to_include": [],
     # JAX configuration
     "double_precision": True,
 }
@@ -891,14 +909,9 @@ def main():
     # Generate histograms:
     # - keep model simulation distributions
     # - keep theoretical log-linear distribution
+    histogram_data = {k: v for k, v in filtered_analysis_variables_data.items() if "Deterministic" not in k}
     histogram_data = {
-        k: v
-        for k, v in filtered_analysis_variables_data.items()
-        if "Deterministic" not in k
-    }
-    histogram_data = {
-        k: {var: arr for var, arr in v.items() if var in aggregate_vars}
-        for k, v in histogram_data.items()
+        k: {var: arr for var, arr in v.items() if var in aggregate_vars} for k, v in histogram_data.items()
     }
     histogram_data = {k: v for k, v in histogram_data.items() if v}
     filtered_histogram_theo_params = {

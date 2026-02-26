@@ -470,10 +470,4 @@ def plot_upstreamness(
 # REGISTER MODEL-SPECIFIC PLOTS
 # ============================================================================
 
-MODEL_SPECIFIC_PLOTS = [
-    {
-        "name": "sectoral_capital",
-        "function": plot_sectoral_capital,
-        "description": "Bar plot of mean sectoral capital across sectors",
-    },
-]
+MODEL_SPECIFIC_PLOTS = []

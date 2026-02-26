@@ -295,8 +295,12 @@ def create_descriptive_stats_table(
                 if var_label in theoretical_stats[exp_name]:
                     stats_data[var_label][exp_name] = theoretical_stats[exp_name][var_label]
 
-    latex_code = _generate_variable_organized_latex_table(stats_data, experiment_names)
-    console_output = _generate_console_table(stats_data, experiment_names)
+    if len(experiment_names) == 1:
+        latex_code = _generate_single_method_latex_table(stats_data, experiment_names[0])
+        console_output = _generate_single_method_console_table(stats_data, experiment_names[0])
+    else:
+        latex_code = _generate_variable_organized_latex_table(stats_data, experiment_names)
+        console_output = _generate_console_table(stats_data, experiment_names)
 
     if save_path:
         if analysis_name:
@@ -338,6 +342,59 @@ def _generate_console_table(stats_data: Dict[str, Dict[str, Dict[str, float]]], 
 
     output.append("\n" + "═" * 72)
     return "\n".join(output)
+
+
+def _generate_single_method_console_table(
+    stats_data: Dict[str, Dict[str, Dict[str, float]]], method_name: str
+) -> str:
+    """Console table for the single-method case: variables as rows, metrics as columns."""
+    output = []
+    output.append("\n" + "═" * 72)
+    output.append("  DESCRIPTIVE STATISTICS (% deviations from steady state)")
+    output.append(f"  Method: {method_name}")
+    output.append("═" * 72)
+    output.append(f"  {'Variable':<30} {'Mean':>10} {'Sd':>10} {'Skew':>10} {'Ex.Kurt':>10}")
+    output.append("  " + "─" * 68)
+
+    for var_label, exp_stats in stats_data.items():
+        if method_name in exp_stats:
+            s = exp_stats[method_name]
+            output.append(
+                f"  {var_label:<30} {s['Mean']:>10.3f} {s['Sd']:>10.3f}"
+                f" {s['Skewness']:>10.3f} {s['Excess Kurtosis']:>10.3f}"
+            )
+
+    output.append("\n" + "═" * 72)
+    return "\n".join(output)
+
+
+def _generate_single_method_latex_table(
+    stats_data: Dict[str, Dict[str, Dict[str, float]]], method_name: str
+) -> str:
+    """LaTeX table for single-method case: variables as rows, metrics as columns."""
+    latex_code = (
+        r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
+        r"\toprule" + "\n"
+        r"\textbf{Variable} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\"
+        + "\n"
+        r"\midrule" + "\n"
+    )
+
+    for var_label, exp_stats in stats_data.items():
+        if method_name in exp_stats:
+            s = exp_stats[method_name]
+            var_display = var_label.replace("_", r"\_")
+            latex_code += (
+                f"{var_display} & {s['Mean']:.3f} & {s['Sd']:.3f}"
+                f" & {s['Skewness']:.3f} & {s['Excess Kurtosis']:.3f} \\\\\n"
+            )
+
+    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    latex_code += r"\\" + "\n"
+    latex_code += (
+        r"\textit{Note: Mean and Sd are reported as percentage deviations from deterministic steady state.}" + "\n"
+    )
+    return latex_code
 
 
 def _generate_variable_organized_latex_table(
@@ -612,17 +669,22 @@ def create_stochastic_ss_table(
     return latex_code
 
 
+_STOCHSS_AGGREGATE_ORDER = [
+    ("Agg. Consumption", "C"),
+    ("Agg. Investment", "I"),
+    ("Agg. GDP", "GDP"),
+    ("Agg. Capital", "K"),
+]
+
+
 def _generate_stochastic_ss_console_table(stochastic_ss_data: Dict[str, Dict[str, float]]) -> str:
-    """Generate formatted console output for stochastic steady state."""
+    """Generate formatted console output for stochastic steady state (four main aggregates)."""
     output = []
     output.append("\n" + "═" * 72)
     output.append("  STOCHASTIC STEADY STATE (% deviations from deterministic SS)")
     output.append("═" * 72)
 
     experiment_names = list(stochastic_ss_data.keys())
-    excluded_vars = ["Utility"]
-    first_exp = experiment_names[0]
-    var_labels = [v for v in stochastic_ss_data[first_exp].keys() if v not in excluded_vars]
 
     header_parts = [f"{'Variable':<25}"]
     for exp_name in experiment_names:
@@ -631,12 +693,12 @@ def _generate_stochastic_ss_console_table(stochastic_ss_data: Dict[str, Dict[str
     output.append("\n    " + " ".join(header_parts))
     output.append("  " + "─" * 68)
 
-    for var_label in var_labels:
-        row_parts = [f"{var_label:<25}"]
+    for var_key, var_short in _STOCHSS_AGGREGATE_ORDER:
+        row_parts = [f"{var_short:<25}"]
         for exp_name in experiment_names:
             ss_vars_dict = stochastic_ss_data[exp_name]
-            if var_label in ss_vars_dict:
-                value = float(ss_vars_dict[var_label]) * 100
+            if var_key in ss_vars_dict:
+                value = float(ss_vars_dict[var_key]) * 100
                 row_parts.append(f"{value:>12.3f}")
             else:
                 row_parts.append(f"{'—':>12}")
@@ -647,14 +709,9 @@ def _generate_stochastic_ss_console_table(stochastic_ss_data: Dict[str, Dict[str
 
 
 def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, float]]) -> str:
-    """Generate LaTeX table code for stochastic steady state analysis variables."""
+    """Generate LaTeX table code for stochastic steady state (four main aggregates)."""
     experiment_names = list(stochastic_ss_data.keys())
     n_experiments = len(experiment_names)
-
-    excluded_vars = ["Utility"]
-
-    first_exp = experiment_names[0]
-    var_labels = [v for v in stochastic_ss_data[first_exp].keys() if v not in excluded_vars]
 
     latex_code = (
         f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_experiments}}}{{X}}}}\n"
@@ -669,13 +726,13 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
 
     latex_code += r" \\" + "\n" + r"\midrule" + "\n"
 
-    for var_label in var_labels:
-        latex_code += f"{var_label}"
+    for var_key, var_short in _STOCHSS_AGGREGATE_ORDER:
+        latex_code += var_short
 
         for exp_name in experiment_names:
             ss_vars_dict = stochastic_ss_data[exp_name]
-            if var_label in ss_vars_dict:
-                value = float(ss_vars_dict[var_label]) * 100
+            if var_key in ss_vars_dict:
+                value = float(ss_vars_dict[var_key]) * 100
                 latex_code += f" & {value:.3f}"
             else:
                 latex_code += " & —"

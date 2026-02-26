@@ -1172,6 +1172,12 @@ def plot_sector_ir_by_shock_size(
     if not negative_only:
         axes[0, 1].set_title("Positive shock IR", fontweight="bold", fontsize=MEDIUM_SIZE)
 
+    fig.suptitle(
+        f"{variable_to_plot}  —  {sector_label} TFP Shock",
+        fontweight="bold",
+        fontsize=LARGE_SIZE,
+    )
+
     # Legend: always on the negative panel (col 0, row 0) so it is visible regardless of mode.
     handles_neg, labels_neg = axes[0, 0].get_legend_handles_labels()
     if handles_neg:

@@ -791,12 +791,43 @@ def main():
     # ═══════════════════════════════════════════════════════════════════════════
     # SECTORAL IMPULSE RESPONSES
     # ═══════════════════════════════════════════════════════════════════════════
-    # Uses the same plotting routine when sectoral variables are available/mapped.
+    _SECTORAL_VAR_DESC = {
+        "Cj":           ("Row  3", "Consumption (own sector)"),
+        "Pj":           ("Row  4", "Output price (own sector)"),
+        "Ioutj":        ("Row  5", "Investment output (own sector)"),
+        "Moutj":        ("Row  6", "Intermediate output (own sector)"),
+        "Lj":           ("Row  7", "Labor (own sector)"),
+        "Ij":           ("Row  8", "Investment input (own sector)"),
+        "Mj":           ("Row  9", "Intermediate input (own sector)"),
+        "Yj":           ("Row 10", "Value added (own sector)"),
+        "Qj":           ("Row 11", "Gross output (own sector)"),
+        "Kj":           ("Row 22", "Capital (own sector)"),
+        "Cj_client":    ("Row 13", "Consumption (client sector)"),
+        "Pj_client":    ("Row 14", "Output price (client sector)"),
+        "Ioutj_client": ("Row 15", "Investment output (client sector)"),
+        "Moutj_client": ("Row 16", "Intermediate output (client sector)"),
+        "Lj_client":    ("Row 17", "Labor (client sector)"),
+        "Ij_client":    ("Row 18", "Investment input (client sector)"),
+        "Mj_client":    ("Row 19", "Intermediate input (client sector)"),
+        "Yj_client":    ("Row 20", "Value added (client sector)"),
+        "Qj_client":    ("Row 21", "Gross output (client sector)"),
+        "Pmj_client":   ("Row 24", "Intermediate input price (client sector)"),
+        "gammaij_client": ("Row 25", "Expenditure share deviation (client sector)"),
+    }
+
     for sector_idx in sectors_to_plot:
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
         )
+        if sectoral_ir_variables:
+            print(f"\n  ── Sectoral IRs: {sector_label} (sector {sector_idx + 1}) ──")
+            for v in sectoral_ir_variables:
+                row_ref, desc = _SECTORAL_VAR_DESC.get(v, ("      ", v))
+                print(f"    {row_ref}  {v:<20}  {desc}")
+            print()
         for ir_variable in sectoral_ir_variables:
+            row_ref, desc = _SECTORAL_VAR_DESC.get(ir_variable, ("", ir_variable))
+            print(f"    Plotting [{row_ref}] {ir_variable}: {desc}  |  {sector_label}")
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
                 matlab_ir_data=matlab_ir_data,

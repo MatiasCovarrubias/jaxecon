@@ -917,7 +917,7 @@ def plot_sector_ir_by_shock_size(
 
     if figsize is None:
         if negative_only:
-            figsize = (7, 4 * n_sizes)
+            figsize = (9, 3.5 * n_sizes)
         else:
             figsize = (10, 5 * n_sizes)
 
@@ -1126,7 +1126,8 @@ def plot_sector_ir_by_shock_size(
 
         ax_neg.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax_neg.grid(True, alpha=0.3)
-        ax_neg.set_box_aspect(1)
+        if not negative_only:
+            ax_neg.set_box_aspect(1)
 
         if agg_consumption_mode and not negative_only:
             # One-sided y-axis: derive magnitude from the data on each panel so
@@ -1168,11 +1169,20 @@ def plot_sector_ir_by_shock_size(
     if not negative_only:
         axes[-1, 1].set_xlabel("Periods", fontsize=SMALL_SIZE)
 
-    axes[0, 0].set_title("Negative shock IR", fontweight="bold", fontsize=MEDIUM_SIZE)
     if not negative_only:
-        axes[0, 1].set_title("Positive shock IR", fontweight="bold", fontsize=MEDIUM_SIZE)
+        axes[0, 0].set_title("Negative shock", fontsize=SMALL_SIZE, color="gray")
+        axes[0, 1].set_title("Positive shock", fontsize=SMALL_SIZE, color="gray")
 
-    print(f"      IR plot: {variable_to_plot}  —  {sector_label} TFP Shock")
+    # Footer: identification text for Python viewer only — not a figure title.
+    # Small and gray so it is clearly a label, not a panel title.
+    fig.text(
+        0.5, 0.005,
+        f"{variable_to_plot}  |  {sector_label} TFP shock",
+        ha="center", va="bottom",
+        fontsize=SMALL_SIZE - 1, color="#888888", style="italic",
+    )
+
+    print(f"      IR plot: [{variable_to_plot}]  {sector_label} TFP Shock")
 
     # Legend: always on the negative panel (col 0, row 0) so it is visible regardless of mode.
     handles_neg, labels_neg = axes[0, 0].get_legend_handles_labels()
@@ -1185,7 +1195,7 @@ def plot_sector_ir_by_shock_size(
             framealpha=0.9,
         )
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.03, 1, 1])
 
     if save_dir:
 

@@ -1003,13 +1003,25 @@ def get_matlab_ir_fixedprice(
             ("perfect_foresight", "sectoral_perfect_foresight"),
         ]:
             sectoral = sector_data.get(sectoral_key)
-            if sectoral is not None:
-                reagg = _reaggregate_sectoral_ir(
-                    sectoral, policies_ss, P_ergodic, analysis_var_name,
-                    n_sectors, skip_initial, max_periods,
+            if sectoral is None:
+                print(
+                    f"    [fixedprice] {analysis_var_name} / {key}: "
+                    f"'{sectoral_key}' not found in sector_data. "
+                    f"Available keys: {list(sector_data.keys())}"
                 )
-                if reagg is not None:
-                    entry[method_label] = reagg
+                continue
+            available_fields = list(sectoral.keys()) if isinstance(sectoral, dict) else type(sectoral).__name__
+            reagg = _reaggregate_sectoral_ir(
+                sectoral, policies_ss, P_ergodic, analysis_var_name,
+                n_sectors, skip_initial, max_periods,
+            )
+            if reagg is not None:
+                entry[method_label] = reagg
+            else:
+                print(
+                    f"    [fixedprice] {analysis_var_name} / {key} / {method_label}: "
+                    f"_reaggregate returned None. Sectoral fields: {available_fields}"
+                )
 
         if entry:
             entry["loglin"] = entry.get("first_order")
@@ -1019,6 +1031,10 @@ def get_matlab_ir_fixedprice(
     if result:
         return result
 
+    print(
+        f"    [fixedprice] {analysis_var_name}: no re-aggregated results, "
+        f"falling back to row-based lookup"
+    )
     return get_matlab_ir_for_analysis_variable(
         ir_data, sector_idx, analysis_var_name, max_periods, skip_initial
     )

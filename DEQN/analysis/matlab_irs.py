@@ -642,32 +642,22 @@ def get_sector_irs(
         sector_data = data["sectors"][sector_idx]
 
         first_raw = _extract_series(sector_data.get("IRSFirstOrder"))
-        if first_raw is None:
+        second_raw = _extract_series(sector_data.get("IRSSecondOrder"))
+        pf_raw = _extract_series(sector_data.get("IRSPerfectForesight"))
+
+        # Skip this shock key only when no usable series exists at all.
+        # Do NOT require first_order — it is absent in PF-only MATLAB runs.
+        if first_raw is None and pf_raw is None:
             continue
-        if skip_initial:
-            first_order = first_raw[1 : max_periods + 1]
-        else:
-            first_order = first_raw[:max_periods]
 
-        irs_second = sector_data.get("IRSSecondOrder")
-        second_raw = _extract_series(irs_second)
-        if second_raw is not None:
-            if skip_initial:
-                second_order = second_raw[1 : max_periods + 1]
-            else:
-                second_order = second_raw[:max_periods]
-        else:
-            second_order = None
+        def _trim(raw):
+            if raw is None:
+                return None
+            return raw[1 : max_periods + 1] if skip_initial else raw[:max_periods]
 
-        irs_pf = sector_data.get("IRSPerfectForesight")
-        pf_raw = _extract_series(irs_pf)
-        if pf_raw is not None:
-            if skip_initial:
-                perfect_foresight = pf_raw[1 : max_periods + 1]
-            else:
-                perfect_foresight = pf_raw[:max_periods]
-        else:
-            perfect_foresight = None
+        first_order = _trim(first_raw)
+        second_order = _trim(second_raw)
+        perfect_foresight = _trim(pf_raw)
 
         result[key] = {
             "first_order": first_order,
@@ -681,43 +671,44 @@ def get_sector_irs(
     return result
 
 
-# New format (Dec 2025+), actual rows from process_ir_data.m:
-#   Row  1: A_ir        (TFP level of shocked sector)
-#   Row  2: C_ir        (Dynare CES aggregate consumption, current prices)
-#   Row  3: L_ir        (Dynare CES aggregate labor)
-#   Row  4: Cj_ir       (sectoral consumption, shocked sector)
-#   Row  5: Pj_ir       (sectoral price, shocked sector)
-#   Row  6: Ioutj_ir    (sectoral investment output, shocked sector)
-#   Row  7: Moutj_ir    (sectoral intermediate output, shocked sector)
-#   Row  8: Lj_ir       (sectoral labor, shocked sector)
-#   Row  9: Ij_ir       (sectoral investment input, shocked sector)
-#   Row 10: Mj_ir       (sectoral intermediate input, shocked sector)
-#   Row 11: Yj_ir       (sectoral value added, shocked sector)
-#   Row 12: Qj_ir       (sectoral gross output, shocked sector)
-#   Row 13: A_client_ir (TFP level, client sector)
-#   Row 14: Cj_client_ir
-#   Row 15: Pj_client_ir
-#   Row 16: Ioutj_client_ir
-#   Row 17: Moutj_client_ir
-#   Row 18: Lj_client_ir
-#   Row 19: Ij_client_ir
-#   Row 20: Mj_client_ir
-#   Row 21: Yj_client_ir
-#   Row 22: Qj_client_ir
-#   Row 23: Kj_ir       (sectoral capital, shocked sector)
-#   Row 24: Y_ir        (Dynare aggregate output, current prices)
-#   Row 25: Pmj_client_ir
-#   Row 26: gammaij_client_ir
+# New format (Dec 2025+), actual rows from process_ir_data.m (0-indexed):
+#   Row  0: A_ir        (TFP level of shocked sector, in levels not log dev)
+#   Row  1: C_ir        (aggregate consumption expenditure, current-price, log dev)
+#   Row  2: I_ir        (aggregate investment expenditure, current-price, log dev)
+#   Row  3: Cj_ir       (sectoral consumption, shocked sector)
+#   Row  4: Pj_ir       (sectoral price, shocked sector)
+#   Row  5: Ioutj_ir    (sectoral investment output, shocked sector)
+#   Row  6: Moutj_ir    (sectoral intermediate output, shocked sector)
+#   Row  7: Lj_ir       (sectoral labor, shocked sector)
+#   Row  8: Ij_ir       (sectoral investment input, shocked sector)
+#   Row  9: Mj_ir       (sectoral intermediate input, shocked sector)
+#   Row 10: Yj_ir       (sectoral value added, shocked sector)
+#   Row 11: Qj_ir       (sectoral gross output, shocked sector)
+#   Row 12: A_client_ir (TFP level, client sector, in levels)
+#   Row 13: Cj_client_ir
+#   Row 14: Pj_client_ir
+#   Row 15: Ioutj_client_ir
+#   Row 16: Moutj_client_ir
+#   Row 17: Lj_client_ir
+#   Row 18: Ij_client_ir
+#   Row 19: Mj_client_ir
+#   Row 20: Yj_client_ir
+#   Row 21: Qj_client_ir (client gross output)
+#   Row 22: Kj_ir       (sectoral capital, shocked sector)
+#   Row 23: GDP_ir      (aggregate GDP expenditure, current-price, log dev)
+#   Row 24: Pmj_client_ir
+#   Row 25: gammaij_client_ir
+#   Row 26: C_util_ir   (utility aggregate consumption, CES aggregator, log dev)
 #
-# NOTE: Rows 2, 3, 24 are Dynare's built-in aggregates (current-price weighted).
+# NOTE: Rows 1, 2, 23 are Dynare's built-in aggregates (current-price weighted).
 # For aggregate IRs (Agg. Consumption, Agg. Investment, Agg. GDP), the Python side
 # re-aggregates from full sectoral vectors stored in sectoral_loglin/sectoral_determ
 # using fixed ergodic prices (P_ergodic) via get_matlab_ir_fixedprice().
 # This ensures consistency with the DEQN nonlinear IRs.
 NEW_FORMAT_VARIABLE_INDICES = {
-    "A": 0,  # TFP level (shocked sector)
-    "Cexp": 1,  # Dynare aggregate consumption (CES / current-price)
-    "Lexp": 2,  # Dynare aggregate labor
+    "A": 0,  # TFP level (shocked sector, in levels)
+    "Cexp": 1,  # Aggregate consumption expenditure (current-price)
+    "Iexp": 2,  # Aggregate investment expenditure (current-price)
     "Cj": 3,  # Sectoral consumption
     "Pj": 4,  # Sectoral price
     "Ioutj": 5,  # Sectoral investment output
@@ -725,9 +716,9 @@ NEW_FORMAT_VARIABLE_INDICES = {
     "Lj": 7,  # Sectoral labor
     "Ij": 8,  # Sectoral investment input
     "Mj": 9,  # Sectoral intermediate input
-    "Yj": 10,  # Sectoral output
-    "Qj": 11,  # Sectoral Tobin's Q
-    "A_client": 12,  # Client TFP level
+    "Yj": 10,  # Sectoral value added
+    "Qj": 11,  # Sectoral gross output
+    "A_client": 12,  # Client TFP level (in levels)
     "Cj_client": 13,  # Client consumption
     "Pj_client": 14,  # Client price
     "Ioutj_client": 15,  # Client investment output
@@ -735,12 +726,13 @@ NEW_FORMAT_VARIABLE_INDICES = {
     "Lj_client": 17,  # Client labor
     "Ij_client": 18,  # Client investment input
     "Mj_client": 19,  # Client intermediate input
-    "Yj_client": 20,  # Client output
-    "Qj_client": 21,  # Client Tobin's Q
+    "Yj_client": 20,  # Client value added
+    "Qj_client": 21,  # Client gross output
     "Kj": 22,  # Sectoral capital
-    "GDPexp": 23,  # Dynare aggregate output (current-price)
+    "GDPexp": 23,  # Aggregate GDP expenditure (current-price)
     "Pmj_client": 24,  # Client intermediate price
     "gammaij_client": 25,  # Client expenditure share deviation
+    "C_util": 26,  # Utility aggregate consumption (CES aggregator)
 }
 
 # Legacy format variable indices (for backwards compatibility)
@@ -777,9 +769,9 @@ MATLAB_IR_VARIABLE_INDICES = NEW_FORMAT_VARIABLE_INDICES.copy()
 # Mapping from analysis variable names to MATLAB variable names
 ANALYSIS_TO_MATLAB_MAPPING = {
     "Agg. Consumption": "Cexp",
+    "Agg. Investment": "Iexp",
     "Agg. Output": "GDPexp",
     "Agg. GDP": "GDPexp",
-    "Agg. Labor": "Lexp",
     # Own-sector variables
     "Cj": "Cj",
     "Pj": "Pj",
@@ -980,14 +972,11 @@ def get_matlab_ir_fixedprice(
         Dictionary with IRs for each shock size/sign, or None if variable not found
     """
     is_aggregate = (
-        analysis_var_name in AGGREGATE_VARIABLE_SECTORAL_MAP
-        or analysis_var_name in AGGREGATE_VARIABLE_GDP_COMPONENTS
+        analysis_var_name in AGGREGATE_VARIABLE_SECTORAL_MAP or analysis_var_name in AGGREGATE_VARIABLE_GDP_COMPONENTS
     )
 
     if not is_aggregate:
-        return get_matlab_ir_for_analysis_variable(
-            ir_data, sector_idx, analysis_var_name, max_periods, skip_initial
-        )
+        return get_matlab_ir_for_analysis_variable(ir_data, sector_idx, analysis_var_name, max_periods, skip_initial)
 
     result = {}
 
@@ -1012,8 +1001,13 @@ def get_matlab_ir_fixedprice(
                 continue
             available_fields = list(sectoral.keys()) if isinstance(sectoral, dict) else type(sectoral).__name__
             reagg = _reaggregate_sectoral_ir(
-                sectoral, policies_ss, P_ergodic, analysis_var_name,
-                n_sectors, skip_initial, max_periods,
+                sectoral,
+                policies_ss,
+                P_ergodic,
+                analysis_var_name,
+                n_sectors,
+                skip_initial,
+                max_periods,
             )
             if reagg is not None:
                 entry[method_label] = reagg
@@ -1031,13 +1025,8 @@ def get_matlab_ir_fixedprice(
     if result:
         return result
 
-    print(
-        f"    [fixedprice] {analysis_var_name}: no re-aggregated results, "
-        f"falling back to row-based lookup"
-    )
-    return get_matlab_ir_for_analysis_variable(
-        ir_data, sector_idx, analysis_var_name, max_periods, skip_initial
-    )
+    print(f"    [fixedprice] {analysis_var_name}: no re-aggregated results, " f"falling back to row-based lookup")
+    return get_matlab_ir_for_analysis_variable(ir_data, sector_idx, analysis_var_name, max_periods, skip_initial)
 
 
 def get_amplification_stats(ir_data: Dict[str, Any]) -> Dict[str, Dict[str, np.ndarray]]:

@@ -100,9 +100,10 @@ for idx = 1:n_analyzed
     fprintf('Processing sector %d (%d/%d)\n', sector_idx, idx, n_analyzed);
     
     % Process first-order IRF
+    sectoral_loglin = [];
     if has_1storder
         dynare_simul_1st = DynareResults.IRSFirstOrder_raw{idx};
-        IRS1stOrder = process_ir_data(dynare_simul_1st, sector_idx, client_idx, params, ...
+        [IRS1stOrder, sectoral_loglin] = process_ir_data(dynare_simul_1st, sector_idx, client_idx, params, ...
             steady_state, n_sectors, k_ss, Cagg_ss, Lagg_ss, policies_ss);
     else
         IRS1stOrder = [];
@@ -111,16 +112,17 @@ for idx = 1:n_analyzed
     % Process second-order IRF
     if has_2ndorder
         dynare_simul_2nd = DynareResults.IRSSecondOrder_raw{idx};
-        IRS2ndOrder = process_ir_data(dynare_simul_2nd, sector_idx, client_idx, params, ...
+        [IRS2ndOrder, ~] = process_ir_data(dynare_simul_2nd, sector_idx, client_idx, params, ...
             steady_state, n_sectors, k_ss, Cagg_ss, Lagg_ss, policies_ss);
     else
         IRS2ndOrder = [];
     end
     
     % Process perfect foresight IRF
+    sectoral_determ = [];
     if has_determ
         dynare_simul_pf = DynareResults.IRSPerfectForesight_raw{idx};
-        IRSPerfForesight = process_ir_data(dynare_simul_pf, sector_idx, client_idx, params, ...
+        [IRSPerfForesight, sectoral_determ] = process_ir_data(dynare_simul_pf, sector_idx, client_idx, params, ...
             steady_state, n_sectors, k_ss, Cagg_ss, Lagg_ss, policies_ss);
     else
         IRSPerfForesight = [];
@@ -129,9 +131,11 @@ for idx = 1:n_analyzed
     % Store IRFs
     IRFs{idx}.sector_idx = sector_idx;
     IRFs{idx}.client_idx = client_idx;
-    IRFs{idx}.IRSFirstOrder = IRS1stOrder;        % First-order (linear)
-    IRFs{idx}.IRSSecondOrder = IRS2ndOrder;       % Second-order (quadratic)
-    IRFs{idx}.IRSPerfectForesight = IRSPerfForesight; % Perfect foresight (nonlinear)
+    IRFs{idx}.IRSFirstOrder = IRS1stOrder;
+    IRFs{idx}.IRSSecondOrder = IRS2ndOrder;
+    IRFs{idx}.IRSPerfectForesight = IRSPerfForesight;
+    IRFs{idx}.sectoral_loglin = sectoral_loglin;
+    IRFs{idx}.sectoral_determ = sectoral_determ;
     
     if has_1storder
         if size(IRS1stOrder, 1) >= R.N_ROWS

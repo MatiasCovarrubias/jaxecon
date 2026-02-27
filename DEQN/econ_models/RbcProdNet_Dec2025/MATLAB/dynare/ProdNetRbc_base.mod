@@ -58,9 +58,9 @@ varexo
     @#endfor
     ;
 
-parameters eps_l eps_c beta phi theta sigma_c sigma_m sigma_q sigma_y sigma_I sigma_l Cagg_ss Lagg_ss
+parameters eps_l eps_c beta phi theta sigma_c sigma_m sigma_q sigma_y sigma_I sigma_l Cagg_ss Lagg_ss MU_SS DENOMC
     @#for j in 1:n_sectors
-        xi_@{j} alpha_@{j} mu_@{j} rho_@{j} delta_@{j} pss_@{j} pkss_@{j} pmss_@{j}
+        xi_@{j} alpha_@{j} mu_@{j} rho_@{j} delta_@{j} pss_@{j} pkss_@{j} pmss_@{j} Css_@{j}
         @#for i in 1:n_sectors
             Gamma_M_@{i}_@{j} Gamma_I_@{i}_@{j}
         @#endfor
@@ -85,6 +85,7 @@ Lagg_ss = exp(policies_ss(11*parn_sectors+2));
     pss_@{j}=policies_ss(8*parn_sectors+@{j});
     pkss_@{j}=policies_ss(2*parn_sectors+@{j});
     pmss_@{j}=policies_ss(3*parn_sectors+@{j});
+    Css_@{j}=exp(policies_ss(@{j}));
     xi_@{j}=parxi(@{j});
     alpha_@{j}=paralpha(@{j});
     mu_@{j}=parmu(@{j});
@@ -96,14 +97,17 @@ Lagg_ss = exp(policies_ss(11*parn_sectors+2));
     @#endfor
 @#endfor
 
+// Time-invariant normalization constant pinned at steady state (fixed numeraire).
+MU_SS = (Cagg_ss - theta*(1/(1+eps_l^(-1))) * Lagg_ss^(1+eps_l^(-1)))^(-eps_c^(-1));
+
+DENOMC = (0
+@#for i in 1:n_sectors
+    + xi_@{i} * ( MU_SS * (Cagg_ss * xi_@{i} / Css_@{i})^(1/sigma_c) )^(1 - sigma_c)
+@#endfor
+)^(1/(1 - sigma_c));
+
 model;
 # MU = (exp(cagg) - theta*(1/(1+eps_l^(-1))) * exp(lagg)^(1+eps_l^(-1)))^(-eps_c^(-1));
-
-# DENOMC = (0 
-@#for i in 1:n_sectors
-    + xi_@{i} * ( MU * (exp(cagg) * xi_@{i} / exp(c_@{i}))^(1/sigma_c) )^(1 - sigma_c)
-@#endfor 
-)^(1/(1 - sigma_c));
 
 @#for j in 1:n_sectors
     #   Pktil_@{j} = (0

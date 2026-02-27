@@ -90,6 +90,15 @@ class Model:
         ]
         self.Cagg_ss = jnp.exp(self.policies_ss[11 * self.n_sectors])
         self.Lagg_ss = jnp.exp(self.policies_ss[11 * self.n_sectors + 1])
+
+        # Time-invariant normalization constant (steady-state numeraire).
+        # Using a fixed normC avoids mechanically cancelling MU_t from equilibrium conditions.
+        C_ss = jnp.exp(self.policies_ss[: self.n_sectors])
+        MU_ss = (self.Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.Lagg_ss ** (1 + self.eps_l ** (-1))) ** (
+            -self.eps_c ** (-1)
+        )
+        MgUtCmod_temp_ss = MU_ss * (self.Cagg_ss * self.xi / C_ss) ** (1 / self.sigma_c)
+        self.normC_ss = (self.xi.T @ MgUtCmod_temp_ss ** (1 - self.sigma_c)) ** (1 / (1 - self.sigma_c))
         self.utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
             self.Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.Lagg_ss ** (1 + self.eps_l ** (-1))
         ) ** (1 - self.eps_c ** (-1))
@@ -210,7 +219,7 @@ class Model:
         # key variables for loss function
         # Normalize consumption prices (P-hat trick)
         MgUtCmod_temp = MgUtCagg * (Cagg * self.xi / C) ** (1 / self.sigma_c)
-        normC = (self.xi.T @ MgUtCmod_temp ** (1 - self.sigma_c)) ** (1 / (1 - self.sigma_c))
+        normC = self.normC_ss
         MgUtCmod = MgUtCmod_temp / normC
 
         MgUtLmod = MgUtCagg * self.theta * Lagg ** (self.eps_l**-1) * (L / Lagg) ** (1 / self.sigma_l) / normC

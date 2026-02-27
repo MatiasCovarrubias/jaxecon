@@ -241,8 +241,7 @@ if opts.run_mit_shocks_simul
 
     shockssim_mit = shocks_master(1:T_mit, :);
     Shocks.usage.MITShocks = struct('start', 1, 'end', T_mit);
-    assignin('base', 'shockssim_mit', shockssim_mit);
-    generate_mit_shocks_mod(dynare_folder, T_mit, burn_out_mit);
+    generate_mit_shocks_mod(dynare_folder, T_mit, burn_out_mit, n_sectors, shockssim_mit);
 
     try
         run_dynare_mod(dynare_folder, 'mit_shocks_simul_generated');

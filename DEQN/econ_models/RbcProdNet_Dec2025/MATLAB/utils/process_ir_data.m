@@ -1,4 +1,4 @@
-function irs = process_ir_data(dynare_simul, sector_idx, client_idx, params, steady_state, ...
+function [irs, sectoral] = process_ir_data(dynare_simul, sector_idx, client_idx, params, steady_state, ...
     n_sectors, endostates_ss, Cagg_ss, Lagg_ss, policies_ss)
 % PROCESS_IR_DATA Process Dynare simulation output into impulse response data
 %
@@ -135,4 +135,18 @@ function irs = process_ir_data(dynare_simul, sector_idx, client_idx, params, ste
            A_client_ir; Cj_client_ir; Pj_client_ir; Ioutj_client_ir; Moutj_client_ir; ...
            Lj_client_ir; Ij_client_ir; Mj_client_ir; Yj_client_ir; Qj_client_ir; ...
            Kj_ir; GDP_ir; Pmj_client_ir; gammaij_client_ir; C_util_ir];
+
+    %% Full sectoral vectors for Python-side fixed-price aggregation
+    pol_c    = (idx.c(1):idx.c(2))       - idx.ss_offset;
+    pol_iout = (idx.iout(1):idx.iout(2)) - idx.ss_offset;
+    pol_q    = (idx.q(1):idx.q(2))       - idx.ss_offset;
+    pol_mout = (idx.mout(1):idx.mout(2)) - idx.ss_offset;
+
+    ps = policies_ss(:);
+
+    sectoral = struct();
+    sectoral.C_all    = dynare_simul(idx.c(1):idx.c(2), :)       - ps(pol_c);
+    sectoral.Iout_all = dynare_simul(idx.iout(1):idx.iout(2), :) - ps(pol_iout);
+    sectoral.Q_all    = dynare_simul(idx.q(1):idx.q(2), :)       - ps(pol_q);
+    sectoral.Mout_all = dynare_simul(idx.mout(1):idx.mout(2), :) - ps(pol_mout);
 end

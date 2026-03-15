@@ -114,9 +114,33 @@ Models are Python classes implementing:
 
 See `econ_models/readme.md` for details on implementing new models.
 
+## Compatibility Note
+
+The supported analysis architecture is now:
+
+- `DEQN/analysis/` for generic analysis logic
+- `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py` for model-specific analysis integration
+- `DEQN/econ_models/{MODEL_DIR}/plots.py` and `tables.py` for model-specific outputs
+
+This is the path intended for active models going forward.
+
+Older model folders, especially legacy `RbcProdNet*` variants and older standalone
+analysis scripts, are in a transition period:
+
+- they are not considered fully supported by the new generic analysis stack
+- they are not fully removed/deprecated yet
+- they may still run partially, but compatibility is not guaranteed unless they are migrated to `analysis_hooks.py`
+
+At the moment, the reference implementation for the new structure is `RbcProdNet_March2026`
+(with `RbcProdNet_Dec2025` using a temporary compatibility shim).
+
 ## Adding Model-Specific Analysis
 
-Model-specific plots are auto-discovered. In your model's `plots.py`:
+Model-specific plots are auto-discovered. If a model also needs custom preprocessing,
+benchmark adapters, or GIR state selection, place that logic in
+`DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py`.
+
+In your model's `plots.py`:
 
 ```python
 def my_plot(simul_obs, simul_policies, simul_analysis_variables,
@@ -130,3 +154,9 @@ MODEL_SPECIFIC_PLOTS = [
 ```
 
 The analysis script automatically discovers and runs registered plots.
+
+The shared analysis layer stays generic:
+
+- `DEQN/analysis/` handles label-based tables, histograms, welfare, stochastic steady state, and generic GIR plumbing
+- `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py` handles model-aware context preparation and post-processing
+- `DEQN/econ_models/{MODEL_DIR}/plots.py` and `tables.py` handle model-specific outputs

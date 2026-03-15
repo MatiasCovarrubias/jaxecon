@@ -71,23 +71,15 @@ import scipy.io as sio  # noqa: E402
 from jax import config as jax_config  # noqa: E402
 from jax import random  # noqa: E402
 
-from DEQN.analysis.aggregation_correction import (  # noqa: E402
-    compute_ergodic_prices_from_simulation,
-    compute_ergodic_steady_state,
-    create_perfect_foresight_descriptive_stats,
-    create_theoretical_descriptive_stats,
-    get_loglinear_distribution_params,
-    process_simulation_with_consistent_aggregation,
-    recenter_analysis_variables,
-)
 from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
-from DEQN.analysis.matlab_irs import load_matlab_irs  # noqa: E402
-from DEQN.analysis.plots import (  # noqa: E402
-    plot_ergodic_histograms,
-    plot_sector_ir_by_shock_size,
-    plot_sectoral_variable_ergodic,
-    plot_sectoral_variable_stochss,
+from DEQN.analysis.model_hooks import (  # noqa: E402
+    apply_model_config_defaults,
+    compute_analysis_variables,
+    get_states_to_shock,
+    load_model_analysis_hooks,
+    run_model_postprocess,
 )
+from DEQN.analysis.plots import plot_ergodic_histograms  # noqa: E402
 from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
     simulation_analysis,
@@ -213,10 +205,20 @@ config = {
 # Import Model class from the specified model directory
 model_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.model")
 Model = model_module.Model
+analysis_hooks = load_model_analysis_hooks(config["model_dir"])
+config = apply_model_config_defaults(config, analysis_hooks)
 
-# Import model-specific plots module and registry
-plots_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.plots")
-MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", [])
+# Import model-specific plots module and registry if available
+plots_module_name = f"DEQN.econ_models.{config['model_dir']}.plots"
+try:
+    plots_module = importlib.import_module(plots_module_name)
+except ModuleNotFoundError as exc:
+    if exc.name == plots_module_name:
+        plots_module = None
+    else:
+        raise
+
+MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", []) if plots_module is not None else []
 
 
 # ============================================================================
@@ -347,9 +349,11 @@ def main():
         "params_dtype": precision,
     }
 
-    ir_sectors = config.get("ir_sectors_to_plot", [0])
-    states_to_shock = [n_sectors + sector_idx for sector_idx in ir_sectors]
-    config["states_to_shock"] = states_to_shock
+    config["states_to_shock"] = get_states_to_shock(
+        config=config,
+        econ_model=econ_model,
+        analysis_hooks=analysis_hooks,
+    )
 
     # Keep welfare baseline available for all methods.
     welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
@@ -405,7 +409,7 @@ def main():
     welfare_fn = jax.jit(get_welfare_fn(econ_model, config))
     stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, config))
     stoch_ss_loss_fn = create_stochss_loss_fn(econ_model, mc_draws=32)
-    gir_fn = jax.jit(create_GIR_fn(econ_model, config))
+    gir_fn = jax.jit(create_GIR_fn(econ_model, config, analysis_hooks=analysis_hooks))
 
     # Storage for analysis results
     analysis_variables_data = {}
@@ -440,14 +444,19 @@ def main():
 
         train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
 
-        simul_obs, simul_policies, simul_analysis_variables = simulation_analysis(
-            train_state, econ_model, config, simulation_fn
+        simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
+            train_state,
+            econ_model,
+            config,
+            simulation_fn,
+            analysis_hooks=analysis_hooks,
         )
 
         raw_simulation_data[experiment_label] = {
             "simul_obs": simul_obs,
             "simul_policies": simul_policies,
             "simul_analysis_variables": simul_analysis_variables,
+            "analysis_context": analysis_context,
         }
 
         analysis_variables_data[experiment_label] = simul_analysis_variables
@@ -467,13 +476,12 @@ def main():
         stochastic_ss_states[experiment_label] = stoch_ss_obs
         stochastic_ss_policies[experiment_label] = stoch_ss_policy
 
-        simul_policies_mean = jnp.mean(simul_policies, axis=0)
-        P_mean = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
-        Pk_mean = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
-        Pm_mean = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
-
-        stoch_ss_analysis_variables = econ_model.get_analysis_variables(
-            stoch_ss_obs, stoch_ss_policy, P_mean, Pk_mean, Pm_mean
+        stoch_ss_analysis_variables = compute_analysis_variables(
+            econ_model=econ_model,
+            state_logdev=stoch_ss_obs,
+            policy_logdev=stoch_ss_policy,
+            analysis_context=analysis_context,
+            analysis_hooks=analysis_hooks,
         )
 
         stochastic_ss_data[experiment_label] = stoch_ss_analysis_variables
@@ -503,160 +511,38 @@ def main():
             welfare_costs[method_name] = welfare_cost
             print(f"    Welfare cost ({method_name}): {float(welfare_cost):.4f}%")
 
-    # Compute ergodic prices and steady state corrections
-    first_experiment_label = list(analysis_variables_data.keys())[0]
-    first_sim_data = raw_simulation_data[first_experiment_label]
+    theoretical_stats = {}
+    histogram_theo_params = {}
+    matlab_ir_data = None
+    upstreamness_data = None
 
-    simul_policies = first_sim_data["simul_policies"]
-    P_ergodic, Pk_ergodic, Pm_ergodic = compute_ergodic_prices_from_simulation(simul_policies, policies_ss, n_sectors)
-
-    ss_corrections = compute_ergodic_steady_state(
+    model_postprocess = run_model_postprocess(
+        analysis_hooks=analysis_hooks,
+        config=config,
+        model_dir=model_dir,
+        analysis_dir=analysis_dir,
+        simulation_dir=simulation_dir,
+        irs_dir=irs_dir,
+        econ_model=econ_model,
+        model_data=md,
+        stats=stats,
         policies_ss=policies_ss,
         state_ss=state_ss,
-        P_ergodic=P_ergodic,
-        Pk_ergodic=Pk_ergodic,
-        Pm_ergodic=Pm_ergodic,
-        n_sectors=n_sectors,
+        raw_simulation_data=raw_simulation_data,
+        analysis_variables_data=analysis_variables_data,
+        stochastic_ss_states=stochastic_ss_states,
+        stochastic_ss_policies=stochastic_ss_policies,
+        stochastic_ss_data=stochastic_ss_data,
+        gir_data=gir_data,
+        dynare_simulations=dynare_welfare_inputs,
+        irs_path=irs_path,
     )
 
-    # Recenter nonlinear simulation data
-    for exp_label in list(analysis_variables_data.keys()):
-        analysis_variables_data[exp_label] = recenter_analysis_variables(
-            analysis_variables_data[exp_label], ss_corrections
-        )
-
-    # Process Dynare simulations (if available)
-    if dynare_simul_1storder is not None:
-        firstorder_analysis_vars = process_simulation_with_consistent_aggregation(
-            simul_data=dynare_simul_1storder,
-            policies_ss=policies_ss,
-            state_ss=state_ss,
-            P_ergodic=P_ergodic,
-            Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
-            n_sectors=n_sectors,
-            burn_in=config["burn_in_periods"],
-            source_label="First-Order (Dynare)",
-        )
-
-        for var_name, var_values in firstorder_analysis_vars.items():
-            n_nan = jnp.sum(jnp.isnan(var_values))
-            if n_nan > 0:
-                print(f"    ⚠ WARNING: {var_name} has {n_nan} NaN values!", flush=True)
-        analysis_variables_data["Log-Linear"] = firstorder_analysis_vars
-        print("  ✓ Loaded First-Order (Dynare) simulation with consistent aggregation.")
-
-    if dynare_simul_so is not None:
-        secondorder_analysis_vars = process_simulation_with_consistent_aggregation(
-            simul_data=dynare_simul_so,
-            policies_ss=policies_ss,
-            state_ss=state_ss,
-            P_ergodic=P_ergodic,
-            Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
-            n_sectors=n_sectors,
-            burn_in=config["burn_in_periods"],
-            source_label="Second-Order",
-        )
-        analysis_variables_data["SecondOrder"] = secondorder_analysis_vars
-        print("  ✓ Loaded Second-Order simulation series.")
-
-    # Initialize theoretical/precomputed stats for descriptive stats table
-    theoretical_stats = {}
-
-    # Add log-linear theoretical stats (from TheoStats)
-    # Store theoretical distribution params for smooth PDF plotting (instead of janky histograms)
-    histogram_theo_params = {}
-
-    if "TheoStats" in stats:
-        theo_stats = stats["TheoStats"]
-        print("  ✓ Using TheoStats for Log-Linear moments (mean=0, skew=0, kurt=0)", flush=True)
-
-        # Create theoretical stats for descriptive table (no samples needed)
-        loglin_theo_stats = create_theoretical_descriptive_stats(theo_stats=theo_stats, label="Log-Linear")
-        theoretical_stats.update(loglin_theo_stats)
-
-        # Get theoretical distribution params for smooth PDF curves in histograms
-        theo_dist_params = get_loglinear_distribution_params(theo_stats)
-        histogram_theo_params["Log-Linear"] = theo_dist_params
-
-        if "Log-Linear" not in analysis_variables_data:
-            analysis_variables_data["Log-Linear"] = {var_name: jnp.zeros(10) for var_name in theo_dist_params.keys()}
-
-        # Print theoretical statistics
-        for var_name, params_dict in theo_dist_params.items():
-            print(f"    {var_name}: σ={params_dict['std']*100:.4f}%", flush=True)
-
-    # Add perfect foresight stats (from Statistics.PerfectForesight or legacy Statistics.Determ)
-    pf_stats_key = "PerfectForesight" if "PerfectForesight" in stats else ("Determ" if "Determ" in stats else None)
-    if pf_stats_key:
-        pf_stats = stats[pf_stats_key]
-        pf_model_stats = pf_stats.get("ModelStats") if isinstance(pf_stats, dict) else None
-        if dynare_simul_pf is None:
-            if pf_model_stats is not None:
-                print(f"  ✓ Using Statistics.{pf_stats_key} (+ ModelStats) for Perfect Foresight moments", flush=True)
-            else:
-                print(f"  ✓ Using Statistics.{pf_stats_key} for Perfect Foresight moments", flush=True)
-
-            pf_theo_stats = create_perfect_foresight_descriptive_stats(
-                determ_stats=pf_stats,
-                label="PerfectForesight",
-                n_sectors=n_sectors,
-                model_stats=pf_model_stats,
-                policies_ss=policies_ss,
-            )
-            theoretical_stats.update(pf_theo_stats)
-
-            # Print available stats prioritizing expenditure-based ModelStats.
-            if isinstance(pf_model_stats, dict):
-                c_sd = pf_model_stats.get("sigma_C_agg")
-                i_sd = pf_model_stats.get("sigma_I_agg")
-                y_sd = pf_model_stats.get("sigma_VA_agg")
-                if c_sd is not None:
-                    print(f"    Agg. Consumption (exp): σ={float(c_sd)*100:.4f}%", flush=True)
-                if i_sd is not None:
-                    print(f"    Agg. Investment (exp): σ={float(i_sd)*100:.4f}%", flush=True)
-                if y_sd is not None:
-                    print(f"    Agg. Output/GDP (exp): σ={float(y_sd)*100:.4f}%", flush=True)
-            elif "policies_std" in pf_stats:
-                # Fallback for old files without ModelStats
-                policies_std = pf_stats["policies_std"]
-                n = n_sectors
-                if len(policies_std) > 11 * n + 1:
-                    print(f"    Agg. Consumption (utility): σ={float(policies_std[11*n])*100:.4f}%", flush=True)
-                    print(f"    Agg. Labor: σ={float(policies_std[11*n+1])*100:.4f}%", flush=True)
-        else:
-            print("  ✓ Perfect Foresight moments will use Perfect Foresight (Dynare) simulation series.")
-
-    if dynare_simul_pf is not None:
-        pf_analysis_vars = process_simulation_with_consistent_aggregation(
-            simul_data=dynare_simul_pf,
-            policies_ss=policies_ss,
-            state_ss=state_ss,
-            P_ergodic=P_ergodic,
-            Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
-            n_sectors=n_sectors,
-            burn_in=min(config["burn_in_periods"], dynare_simul_pf.shape[1] // 10),
-            source_label="Perfect Foresight",
-        )
-
-        analysis_variables_data["PerfectForesight"] = pf_analysis_vars
-
-    if dynare_simul_mit is not None:
-        mit_analysis_vars = process_simulation_with_consistent_aggregation(
-            simul_data=dynare_simul_mit,
-            policies_ss=policies_ss,
-            state_ss=state_ss,
-            P_ergodic=P_ergodic,
-            Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
-            n_sectors=n_sectors,
-            burn_in=0,  # MIT has no burn-in by construction.
-            source_label="MITShocks",
-        )
-        analysis_variables_data["MITShocks"] = mit_analysis_vars
-        print("  ✓ Loaded MITShocks simulation series.")
+    analysis_variables_data = model_postprocess.get("analysis_variables_data", analysis_variables_data)
+    theoretical_stats = model_postprocess.get("theoretical_stats", theoretical_stats)
+    histogram_theo_params = model_postprocess.get("histogram_theo_params", histogram_theo_params)
+    matlab_ir_data = model_postprocess.get("matlab_ir_data", matlab_ir_data)
+    upstreamness_data = model_postprocess.get("upstreamness_data", upstreamness_data)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CALIBRATION TABLE (First-Order Model vs Empirical Targets)
@@ -697,154 +583,6 @@ def main():
         save_path=os.path.join(analysis_dir, "stochastic_ss_table.tex"),
         analysis_name=config["analysis_name"],
     )
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # IMPULSE RESPONSES - AGGREGATES
-    # ═══════════════════════════════════════════════════════════════════════════
-    matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
-    matlab_ir_data = load_matlab_irs(
-        matlab_ir_dir=matlab_ir_dir,
-        shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
-        irs_file_path=irs_path,  # Use the custom IRs file path from config
-    )
-
-    sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
-    ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
-    if isinstance(ir_variables, str):
-        ir_variables = [ir_variables]
-    # Aggregate capital IR benchmark is not supported from MATLAB IR payload.
-    unsupported_aggregate_ir_vars = {"Agg. Capital"}
-    filtered_ir_variables = [v for v in ir_variables if v not in unsupported_aggregate_ir_vars]
-    dropped_ir_variables = [v for v in ir_variables if v in unsupported_aggregate_ir_vars]
-    if dropped_ir_variables:
-        print(
-            "  Note: aggregate capital IR benchmark is not available; "
-            f"skipping {dropped_ir_variables} from ir_variables_to_plot."
-        )
-    ir_variables = filtered_ir_variables
-    sectoral_ir_variables = config.get("sectoral_ir_variables_to_plot", [])
-    shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
-    max_periods = config.get("ir_max_periods", 80)
-    configured_ir_methods = config.get("ir_methods", ["IR_stoch_ss"])
-    if isinstance(configured_ir_methods, str):
-        configured_ir_methods = [configured_ir_methods]
-    if "GIR" in configured_ir_methods and "IR_stoch_ss" in configured_ir_methods:
-        ir_response_source = "both"
-    elif "GIR" in configured_ir_methods:
-        ir_response_source = "GIR"
-    else:
-        ir_response_source = "IR_stoch_ss"
-
-    largest_shock = shock_sizes[-1]
-
-    import numpy as _np
-
-    policies_ss_np = _np.asarray(policies_ss)
-    P_ergodic_np = _np.asarray(P_ergodic)
-
-    for sector_idx in sectors_to_plot:
-        sector_label = (
-            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
-        )
-
-        for ir_variable in ir_variables:
-            is_agg_consumption = ir_variable == "Agg. Consumption"
-            plot_sector_ir_by_shock_size(
-                gir_data=gir_data,
-                matlab_ir_data=matlab_ir_data,
-                sector_idx=sector_idx,
-                sector_label=sector_label,
-                variable_to_plot=ir_variable,
-                shock_sizes=shock_sizes if is_agg_consumption else [largest_shock],
-                save_dir=irs_dir,
-                analysis_name=config["analysis_name"],
-                max_periods=max_periods,
-                n_sectors=n_sectors,
-                benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
-                response_source=ir_response_source,
-                agg_consumption_mode=is_agg_consumption,
-                negative_only=not is_agg_consumption,
-                policies_ss=policies_ss_np,
-                P_ergodic=P_ergodic_np,
-            )
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SECTORAL VARIABLES - STOCHASTIC SS
-    # ═══════════════════════════════════════════════════════════════════════════
-    upstreamness_data = econ_model.upstreamness()
-
-    if stochastic_ss_policies:
-        for var_name in ["K", "L", "Y", "M", "Q"]:
-            try:
-                plot_sectoral_variable_stochss(
-                    stochastic_ss_states=stochastic_ss_states,
-                    stochastic_ss_policies=stochastic_ss_policies,
-                    variable_name=var_name,
-                    save_dir=simulation_dir,
-                    analysis_name=config["analysis_name"],
-                    econ_model=econ_model,
-                    upstreamness_data=upstreamness_data,
-                )
-            except Exception as e:
-                print(f"    ✗ Failed to create stochastic SS {var_name} plot: {e}", flush=True)
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SECTORAL IMPULSE RESPONSES
-    # ═══════════════════════════════════════════════════════════════════════════
-    _SECTORAL_VAR_DESC = {
-        "Cj":           ("Row  3", "Consumption (own sector)"),
-        "Pj":           ("Row  4", "Output price (own sector)"),
-        "Ioutj":        ("Row  5", "Investment output (own sector)"),
-        "Moutj":        ("Row  6", "Intermediate output (own sector)"),
-        "Lj":           ("Row  7", "Labor (own sector)"),
-        "Ij":           ("Row  8", "Investment input (own sector)"),
-        "Mj":           ("Row  9", "Intermediate input (own sector)"),
-        "Yj":           ("Row 10", "Value added (own sector)"),
-        "Qj":           ("Row 11", "Gross output (own sector)"),
-        "Kj":           ("Row 22", "Capital (own sector)"),
-        "Cj_client":    ("Row 13", "Consumption (client sector)"),
-        "Pj_client":    ("Row 14", "Output price (client sector)"),
-        "Ioutj_client": ("Row 15", "Investment output (client sector)"),
-        "Moutj_client": ("Row 16", "Intermediate output (client sector)"),
-        "Lj_client":    ("Row 17", "Labor (client sector)"),
-        "Ij_client":    ("Row 18", "Investment input (client sector)"),
-        "Mj_client":    ("Row 19", "Intermediate input (client sector)"),
-        "Yj_client":    ("Row 20", "Value added (client sector)"),
-        "Qj_client":    ("Row 21", "Gross output (client sector)"),
-        "Pmj_client":   ("Row 24", "Intermediate input price (client sector)"),
-        "gammaij_client": ("Row 25", "Expenditure share deviation (client sector)"),
-    }
-
-    for sector_idx in sectors_to_plot:
-        sector_label = (
-            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
-        )
-        if sectoral_ir_variables:
-            print(f"\n  ── Sectoral IRs: {sector_label} (sector {sector_idx + 1}) ──")
-            for v in sectoral_ir_variables:
-                row_ref, desc = _SECTORAL_VAR_DESC.get(v, ("      ", v))
-                print(f"    {row_ref}  {v:<20}  {desc}")
-            print()
-        for ir_variable in sectoral_ir_variables:
-            row_ref, desc = _SECTORAL_VAR_DESC.get(ir_variable, ("", ir_variable))
-            print(f"    Plotting [{row_ref}] {ir_variable}: {desc}  |  {sector_label}")
-            plot_sector_ir_by_shock_size(
-                gir_data=gir_data,
-                matlab_ir_data=matlab_ir_data,
-                sector_idx=sector_idx,
-                sector_label=sector_label,
-                variable_to_plot=ir_variable,
-                shock_sizes=[largest_shock],
-                save_dir=irs_dir,
-                analysis_name=config["analysis_name"],
-                max_periods=max_periods,
-                n_sectors=n_sectors,
-                benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
-                response_source=ir_response_source,
-                negative_only=True,
-                policies_ss=policies_ss_np,
-                P_ergodic=P_ergodic_np,
-            )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # ERGODIC DISTRIBUTION MOMENTS
@@ -956,23 +694,6 @@ def main():
         analysis_name=config["analysis_name"],
         theo_dist_params=filtered_histogram_theo_params if filtered_histogram_theo_params else None,
     )
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # AVERAGE SECTORAL VARIABLES - ERGODIC DISTRIBUTION
-    # ═══════════════════════════════════════════════════════════════════════════
-    if raw_simulation_data:
-        for var_name in ["K", "L", "Y", "M", "Q"]:
-            try:
-                plot_sectoral_variable_ergodic(
-                    raw_simulation_data=raw_simulation_data,
-                    variable_name=var_name,
-                    save_dir=simulation_dir,
-                    analysis_name=config["analysis_name"],
-                    econ_model=econ_model,
-                    upstreamness_data=upstreamness_data,
-                )
-            except Exception as e:
-                print(f"    ✗ Failed to create ergodic {var_name} plot: {e}", flush=True)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # WELFARE COSTS

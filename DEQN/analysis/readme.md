@@ -36,6 +36,15 @@ Model-specific plots and tables that require knowledge of the model structure.
 
 -   `DEQN/econ_models/{MODEL_DIR}/plots.py`
 -   `DEQN/econ_models/{MODEL_DIR}/tables.py`
+-   `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py`
+
+`analysis_hooks.py` is the model-local integration point for anything that cannot be expressed
+purely through labeled analysis variables. Typical responsibilities are:
+
+-   preparing model-specific analysis context from raw states/policies
+-   computing analysis variables when `econ_model.get_analysis_variables()` needs extra inputs
+-   choosing which states should be shocked in GIR exercises
+-   running benchmark comparisons, sectoral IR plots, or other model-specific post-processing
 
 #### Registry Pattern (Automatic Discovery!)
 
@@ -67,7 +76,9 @@ MODEL_SPECIFIC_PLOTS = [
 ]
 ```
 
-The analysis script will **automatically discover and run** all registered plots!
+The analysis script will **automatically discover and run** all registered plots.
+If your model also needs custom preprocessing or benchmark logic, put that in
+`analysis_hooks.py` rather than in `DEQN/analysis.py`.
 
 #### Standardized Signature
 
@@ -102,7 +113,8 @@ from DEQN.analysis.plots import (
     plot_gir_responses,
 )
 
-# 2. Import model-specific plots registry (automatically discovers all plots!)
+# 2. Import optional model-specific hooks and plots registry
+analysis_hooks = load_model_analysis_hooks(MODEL_DIR)
 plots_module = importlib.import_module(f"DEQN.econ_models.{MODEL_DIR}.plots")
 MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", [])
 
@@ -111,7 +123,10 @@ analysis_variables_data = {}  # For general analysis
 raw_simulation_data = {}      # For model-specific analysis
 
 for experiment in experiments:
-    simul_obs, simul_policies, simul_analysis_variables = simulation_analysis(...)
+    simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
+        ...,
+        analysis_hooks=analysis_hooks,
+    )
 
     # Store for general analysis (uses labels from get_analysis_variables)
     analysis_variables_data[exp_name] = simul_analysis_variables
@@ -123,11 +138,17 @@ for experiment in experiments:
         "simul_analysis_variables": simul_analysis_variables,
     }
 
-# 4. Generate general analysis
+# 4. Let the model hooks run optional post-processing
+model_specific_results = run_model_postprocess(
+    analysis_hooks=analysis_hooks,
+    ...
+)
+
+# 5. Generate general analysis
 create_descriptive_stats_table(analysis_variables_data, ...)
 plot_ergodic_histograms(analysis_variables_data, ...)
 
-# 5. Generate model-specific plots (AUTOMATIC!)
+# 6. Generate model-specific plots (AUTOMATIC!)
 for plot_spec in MODEL_SPECIFIC_PLOTS:
     plot_function = plot_spec["function"]
 
@@ -147,11 +168,18 @@ for plot_spec in MODEL_SPECIFIC_PLOTS:
 
 ### For Economic Models
 
-Your model must implement:
+Your model must implement either:
 
 ```python
 class YourModel:
-    def get_analysis_variables(self, state_logdev, policies_logdev, ...):
+    def get_analysis_variables(self, state_logdev, policies_logdev):
+        ...
+```
+
+or a model-local hook that adapts extra arguments:
+
+```python
+def compute_analysis_variables(econ_model, state_logdev, policy_logdev, analysis_context):
         """
         Returns:
             dict: {
@@ -166,10 +194,11 @@ The keys in this dictionary become the variable labels used in all general analy
 
 ### For Model-Specific Functions
 
-1. Use the **standardized signature** shown above
-2. Register in `MODEL_SPECIFIC_PLOTS` list
-3. Extract what you need from `econ_model` (e.g., `econ_model.n_sectors`, `econ_model.labels`)
-4. Use raw simulation data (`simul_obs`, `simul_policies`, `simul_analysis_variables`)
+1. Put preprocessing, benchmark loading, and other model-aware logic in `analysis_hooks.py`
+2. Use the **standardized signature** shown above for plot functions
+3. Register plot functions in `MODEL_SPECIFIC_PLOTS`
+4. Extract what you need from `econ_model` or `analysis_context`
+5. Use raw simulation data (`simul_obs`, `simul_policies`, `simul_analysis_variables`)
 
 ## Migration Guide
 
@@ -177,16 +206,25 @@ The keys in this dictionary become the variable labels used in all general analy
 
 If you're using the analysis script:
 
--   ✅ No changes needed - script works as before
--   ✅ New structure is backward compatible
--   ✅ Just run `python -m DEQN.analysis` as usual
+-   The supported path is the new hook-based structure:
+    `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py`
+-   `python -m DEQN.analysis` remains the main entrypoint
+-   Fully migrated models should work through the shared analysis pipeline without modifying `analysis.py`
+
+Compatibility status for legacy models:
+
+-   Older `RbcProdNet*` variants are only partially migrated
+-   Some legacy models and standalone analysis scripts are in transitional support only
+-   If a legacy model still depends on old price-weight assumptions or old helper contracts,
+    it should be treated as not fully supported until it is migrated to `analysis_hooks.py`
 
 ### For Developers Adding New Models
 
-1. Implement `get_analysis_variables()` in your model
-2. Use general analysis functions from `DEQN/analysis/`
-3. Add model-specific plots with standardized signature
-4. Register them in `MODEL_SPECIFIC_PLOTS` - that's it!
+1. Implement the minimal model interface needed by `DEQN/algorithm/`
+2. Expose labeled analysis variables either directly on the model or through `analysis_hooks.py`
+3. Use general analysis functions from `DEQN/analysis/`
+4. Add model-specific plots with standardized signature
+5. Register them in `MODEL_SPECIFIC_PLOTS`
 
 ### For Adding New General Analysis
 
@@ -196,10 +234,10 @@ If you're using the analysis script:
 
 ### For Adding Model-Specific Analysis
 
-1. Add function to `DEQN/econ_models/{MODEL_DIR}/plots.py` with standardized signature
-2. Register it in `MODEL_SPECIFIC_PLOTS` list
-3. **That's it!** The analysis script automatically discovers and runs it
-4. **No need to modify `analysis.py` at all!**
+1. Add hook functions to `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py` if you need model-aware preprocessing
+2. Add plot functions to `DEQN/econ_models/{MODEL_DIR}/plots.py`
+3. Register them in `MODEL_SPECIFIC_PLOTS`
+4. The shared `analysis.py` should remain unchanged
 
 ## Benefits
 

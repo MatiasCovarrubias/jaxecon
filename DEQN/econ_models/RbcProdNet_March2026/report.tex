@@ -1,0 +1,119 @@
+% \documentclass[12pt,twoside]{article}
+\documentclass[12pt,english]{article}
+\usepackage[sc]{mathpazo}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{rotating}
+\usepackage{adjustbox}
+\usepackage{tabularx}
+\usepackage{bm}
+\usepackage[utf8]{inputenc}     
+\usepackage{geometry}
+\usepackage{color}
+\usepackage{babel}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{setspace}
+\usepackage[authoryear]{natbib}
+\usepackage[flushleft]{threeparttable}
+\usepackage{comment}
+\usepackage{hyperref}
+\usepackage{parskip}  % Add vertical space between paragraphs
+\usepackage{multirow}
+\setlength{\parskip}{1em}  % Adjust the value (1em) to control space between paragraphs
+
+\geometry{left=6em, right=6em,top=6em,bottom=6em}
+
+\renewcommand{\arraystretch}{1.2}
+\newcommand{\fignote}[2]{\begin{center}\parbox[c]{#1}{\footnotesize #2} \end{center}}
+% Enter BibTeX file with references:
+\newcommand{\bib}{bibliography.bib}
+\newcommand*{\figuretitle}[1]{%
+    {\centering%   <--------  will only affect the title because of the grouping (by the
+    \textbf{#1}%              braces before \centering and behind \medskip). If you remove
+    \par\medskip}%            these braces the whole body of a {figure} env will be centered.
+}
+\hypersetup{colorlinks,linkcolor={blue},citecolor={blue},urlcolor={black}} 
+\usepackage{amsthm} % for defining theorem-like environments
+   \newtheorem{lemma}{Lemma} % first argument: what you have to write in "\begin{...}"; second argument is the displayed name
+   \newtheorem*{lemma*}{Lemma} % This allows us to define lemma that does not have numbering in appendix.
+   \newtheorem{proposition}{Proposition}
+   \newtheorem*{proposition*}{Proposition} % This allows us to define proposition that does not have numbering in appendix.
+  
+\onehalfspacing
+
+\begin{document}
+\bibliographystyle{aernobold}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TITLE PAGE
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\begin{singlespacing}
+\begin{spacing}{0.9}
+\begin{titlepage}
+
+\title{Computational results of nonlinear experiment}
+% \runningheads{Carvalho, Covarrubias and Nuño}{Dynamic Production Networks}
+
+\date{\small \today \ }% \\ {\it Preliminary}}
+\maketitle
+\thispagestyle{empty}
+
+%\clearpage
+\vspace{-0.3in}
+
+\end{titlepage}
+\end{spacing}
+
+\begin{section}{Calibration}
+
+    \begin{table}[!ht]
+        \centering
+        \caption{Model Calibration}
+        \label{tab:calibration}
+        \renewcommand{\arraystretch}{1.1}
+        \begin{tabular}{lcll}
+        \toprule\toprule
+        \textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
+        \midrule
+        \multicolumn{4}{l}{\textbf{Panel A: External Parameters}} \\
+        \midrule
+        Discount factor & $\beta$ & 0.96 & Standard \\
+        IES & $\epsilon_{c}$ & 0.3 & Standard \\
+        Frisch elasticity & $\epsilon_{l}$ & 0.5 & Standard \\
+        Intermediate elasticity & $\sigma_{m}$ & 0.001 & Atalay (2017) \\
+        K-L elasticity & $\sigma_{y}$ & 0.8 & Oberfield and Raval (2021) \\
+        VA-Int. elasticity & $\sigma_{q}$ & 0.5 & Intermediate Value \\ 
+        Investment elasticity & $\sigma_{I}$ & 0.5 & Intermediate Value \\
+        Consumption elasticity & $\sigma_{c}$ & 0.5 & Intermediate Value \\
+        Depreciation & $\delta_{j}$ & By sector & BEA (1947-2018) \\
+        TFP persistence & $\rho_{j}$ & By sector & Solow residuals \\
+        TFP covariance & $\Sigma_{A}$ & By sector & Solow residuals \\
+        \midrule
+        \multicolumn{4}{l}{\textbf{Panel B: Internal Parameters}} \\
+        \midrule
+        HH preferences & $\xi_{j}$ & By sector & Exp. shares \\
+        VA intensity & $\mu_{j}$ & By sector & Exp. shares \\
+        Capital intensity & $\alpha_{j}$ & By sector & Exp. shares \\
+        Investment network & $\gamma_{ij}^{I}$ & By sector-pair & Exp. shares \\
+        I-O network & $\gamma_{ij}^{M}$ & By sector-pair & Exp. shares \\
+        Capital adj. cost & $\phi$ & Calibrated & Inv. volatility \\
+        Labor realloc. & $\sigma_{l}$ & Calibrated & Labor volatility \\
+        \bottomrule\bottomrule
+        \end{tabular}
+        \begin{tablenotes}[flushleft]
+        \small
+        \item \textit{Notes:} Panel A shows parameters from data or literature. Panel B shows parameters matched to empirical moments. Model calibrated annually with $N=37$ sectors (BEA 1948-2018). TFP processes detrended using fourth-order log-polynomial.
+        \end{tablenotes}
+        \end{table}
+
+
+\begin{section}{Ergodic distrubution}
+
+    
+\end{document}
+

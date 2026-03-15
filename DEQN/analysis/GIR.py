@@ -2,13 +2,21 @@ import jax
 from jax import lax, random
 from jax import numpy as jnp
 
+from DEQN.analysis.model_hooks import (
+    augment_gir_analysis_variables,
+    compute_analysis_variables,
+    extend_gir_var_labels,
+    get_shock_dimension,
+    get_states_to_shock,
+    prepare_analysis_context,
+)
 
-def create_GIR_fn(econ_model, config, simul_policies=None):
+
+def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
     """
     Create a function to compute Generalized Impulse Responses (GIRs) for analysis variables.
 
-    GIRs are computed by shocking TFP/productivity states only. Capital states evolve
-    deterministically and are not shocked directly.
+    GIRs are computed by shocking the state indices configured for the selected model.
 
     Args:
         econ_model: Economic model instance
@@ -16,14 +24,14 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             - gir_n_draws: Number of points to sample from ergodic distribution
             - gir_trajectory_length: Length of trajectories to simulate
             - ir_shock_sizes: List of shock sizes as percentages (e.g., [5, 10, 20])
-            - states_to_shock: List of TFP state indices to shock (n_sectors + sector_idx)
+            - states_to_shock: Optional list of state indices to shock
             - gir_seed: Random seed
             - ir_method: Single method name ("GIR" or "IR_stoch_ss")
             - ir_methods: Optional list of method names to compute
             - gir_symmetric_shocks: If True, positive shock is symmetric with negative
                                     (A_pos = 1/A_neg), not (1 + shock_size) (default: True)
-        simul_policies: Simulation policies for extracting price weights (optional, can be passed in GIR_fn)
-                       Should be in logdev form when using simulation_verbose_fn
+        simul_policies: Simulation policies for extracting model-specific analysis context
+                       (optional, can be passed in GIR_fn)
 
     Shock magnitudes:
         With gir_symmetric_shocks=True (default):
@@ -38,6 +46,8 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
           in log deviation form (not normalized by standard deviations).
     """
 
+    shock_dimension = get_shock_dimension(econ_model, analysis_hooks)
+
     def random_draws(simul_obs, n_draws, seed=0):
         """Sample random points from the ergodic distribution"""
         n_simul = simul_obs.shape[0]
@@ -46,22 +56,13 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         obs_draws = simul_obs[indices, :]
         return obs_draws
 
-    def extract_price_weights(simul_policies_data):
-        """Extract price weights from simulation policies"""
-        # Get average prices from simulation policies (following stochastic SS pattern)
-        simul_policies_mean = jnp.mean(simul_policies_data, axis=0)
-        P_weights = simul_policies_mean[8 * econ_model.n_sectors : 9 * econ_model.n_sectors]
-        Pk_weights = simul_policies_mean[2 * econ_model.n_sectors : 3 * econ_model.n_sectors]
-        Pm_weights = simul_policies_mean[3 * econ_model.n_sectors : 4 * econ_model.n_sectors]
-        return P_weights, Pk_weights, Pm_weights
-
     def create_counterfactual_state(state_logdev, state_idx, shock_size, shock_sign="neg"):
         """
-        Create counterfactual initial state with TFP shocked for a specific sector.
+        Create counterfactual initial state with one state component shocked.
 
         Args:
             state_logdev: State in log deviation form (not normalized)
-            state_idx: Index of TFP state to shock (should be n_sectors + sector_idx)
+            state_idx: Index of the state variable to shock
             shock_size: Size of shock to apply (as fraction, e.g., 0.2 for 20%)
             shock_sign: "neg" for negative shock (decreases TFP), "pos" for positive shock
 
@@ -114,11 +115,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         train_state,
         shocks,
         obs_init_logdev,
-        P_weights,
-        Pk_weights,
-        Pm_weights,
+        analysis_context,
         var_labels,
-        sector_idx_for_extra=None,
+        state_idx,
     ):
         """
         Simulate full trajectory and return analysis variables at each step.
@@ -128,7 +127,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             train_state: Trained neural network state
             shocks: Sequence of shocks
             obs_init_logdev: Initial observation in log deviation form
-            P_weights, Pk_weights, Pm_weights: Price weights for aggregation
+            analysis_context: Model-specific context for computing analysis variables
             var_labels: List of variable labels in consistent order
 
         Returns:
@@ -146,19 +145,22 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             policy_logdev = policy_normalized * econ_model.policies_sd
 
             # Compute analysis variables and convert to array using consistent label order
-            analysis_vars_dict = econ_model.get_analysis_variables(
-                obs_logdev, policy_logdev, P_weights, Pk_weights, Pm_weights
+            analysis_vars_dict = compute_analysis_variables(
+                econ_model=econ_model,
+                state_logdev=obs_logdev,
+                policy_logdev=policy_logdev,
+                analysis_context=analysis_context,
+                analysis_hooks=analysis_hooks,
             )
-            if sector_idx_for_extra is not None and 0 <= sector_idx_for_extra < econ_model.n_sectors:
-                n = econ_model.n_sectors
-                j = sector_idx_for_extra
-                # Sectoral IR variables for the shocked sector (all in log-deviation units).
-                analysis_vars_dict["Cj"] = policy_logdev[j]
-                analysis_vars_dict["Ioutj"] = policy_logdev[7 * n + j]
-                analysis_vars_dict["Yj"] = policy_logdev[10 * n + j]
-                analysis_vars_dict["Kj"] = obs_logdev[j]
-                analysis_vars_dict["Lj"] = policy_logdev[n + j]
-                analysis_vars_dict["Qj"] = policy_logdev[9 * n + j]
+            analysis_vars_dict = augment_gir_analysis_variables(
+                analysis_vars_dict=analysis_vars_dict,
+                obs_logdev=obs_logdev,
+                policy_logdev=policy_logdev,
+                state_idx=state_idx,
+                econ_model=econ_model,
+                config=config,
+                analysis_hooks=analysis_hooks,
+            )
             analysis_vars_array = jnp.array([analysis_vars_dict[label] for label in var_labels])
             return next_obs_logdev, analysis_vars_array
 
@@ -168,18 +170,22 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         final_obs_normalized = final_obs_logdev / econ_model.state_sd
         final_policy_normalized = train_state.apply_fn(train_state.params, final_obs_normalized)
         final_policy_logdev = final_policy_normalized * econ_model.policies_sd
-        final_analysis_vars_dict = econ_model.get_analysis_variables(
-            final_obs_logdev, final_policy_logdev, P_weights, Pk_weights, Pm_weights
+        final_analysis_vars_dict = compute_analysis_variables(
+            econ_model=econ_model,
+            state_logdev=final_obs_logdev,
+            policy_logdev=final_policy_logdev,
+            analysis_context=analysis_context,
+            analysis_hooks=analysis_hooks,
         )
-        if sector_idx_for_extra is not None and 0 <= sector_idx_for_extra < econ_model.n_sectors:
-            n = econ_model.n_sectors
-            j = sector_idx_for_extra
-            final_analysis_vars_dict["Cj"] = final_policy_logdev[j]
-            final_analysis_vars_dict["Ioutj"] = final_policy_logdev[7 * n + j]
-            final_analysis_vars_dict["Yj"] = final_policy_logdev[10 * n + j]
-            final_analysis_vars_dict["Kj"] = final_obs_logdev[j]
-            final_analysis_vars_dict["Lj"] = final_policy_logdev[n + j]
-            final_analysis_vars_dict["Qj"] = final_policy_logdev[9 * n + j]
+        final_analysis_vars_dict = augment_gir_analysis_variables(
+            analysis_vars_dict=final_analysis_vars_dict,
+            obs_logdev=final_obs_logdev,
+            policy_logdev=final_policy_logdev,
+            state_idx=state_idx,
+            econ_model=econ_model,
+            config=config,
+            analysis_hooks=analysis_hooks,
+        )
         final_analysis_vars_array = jnp.array([final_analysis_vars_dict[label] for label in var_labels])
 
         # Add final analysis variables to trajectory
@@ -189,17 +195,15 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
 
         return trajectory_analysis_variables_full
 
-    def compute_state_GIR(
-        simul_obs, train_state, state_idx, P_weights, Pk_weights, Pm_weights, var_labels, shock_size, shock_sign
-    ):
+    def compute_state_GIR(simul_obs, train_state, state_idx, analysis_context, var_labels, shock_size, shock_sign):
         """
         Compute GIR for a specific TFP state using analysis variables.
 
         Args:
             simul_obs: Simulation observations from ergodic distribution (in logdev form)
             train_state: Trained neural network state
-            state_idx: Index of TFP state to shock (n_sectors + sector_idx)
-            P_weights, Pk_weights, Pm_weights: Price weights for aggregation
+            state_idx: Index of the state variable to shock
+            analysis_context: Model-specific context for computing analysis variables
             var_labels: List of variable labels in consistent order
             shock_size: Size of shock (fraction, e.g., 0.2 for 20%)
             shock_sign: "neg" or "pos"
@@ -213,9 +217,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         # Function to compute impulse response for a single initial point
         def single_point_IR(_i, obs_init_logdev):
             # Keep paths deterministic after the initial perturbation.
-            zero_shocks = jnp.zeros((config["gir_trajectory_length"], econ_model.n_sectors))
-
-            sector_idx = state_idx - econ_model.n_sectors
+            zero_shocks = jnp.zeros((config["gir_trajectory_length"], shock_dimension))
 
             # Original trajectory analysis variables
             traj_analysis_vars_orig = simul_trajectory_analysis_variables(
@@ -223,11 +225,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                 train_state,
                 zero_shocks,
                 obs_init_logdev,
-                P_weights,
-                Pk_weights,
-                Pm_weights,
+                analysis_context,
                 var_labels,
-                sector_idx_for_extra=sector_idx,
+                state_idx=state_idx,
             )
 
             # Create counterfactual initial state with specified shock sign
@@ -239,11 +239,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                 train_state,
                 zero_shocks,
                 obs_counterfactual_logdev,
-                P_weights,
-                Pk_weights,
-                Pm_weights,
+                analysis_context,
                 var_labels,
-                sector_idx_for_extra=sector_idx,
+                state_idx=state_idx,
             )
 
             # Impulse response is difference
@@ -264,9 +262,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         initial_state_logdev,
         train_state,
         state_idx,
-        P_weights,
-        Pk_weights,
-        Pm_weights,
+        analysis_context,
         var_labels,
         shock_size,
         shock_sign,
@@ -280,8 +276,8 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         Args:
             initial_state_logdev: Initial state in log deviation form
             train_state: Trained neural network state
-            state_idx: Index of TFP state to shock (n_sectors + sector_idx)
-            P_weights, Pk_weights, Pm_weights: Price weights for aggregation
+            state_idx: Index of the state variable to shock
+            analysis_context: Model-specific context for computing analysis variables
             var_labels: List of variable labels in consistent order
             shock_size: Size of shock (fraction, e.g., 0.2 for 20%)
             shock_sign: "neg" or "pos"
@@ -290,9 +286,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             ir_analysis_variables: Impulse response for analysis variables [T+1, n_analysis_vars]
         """
         # Generate zero shocks for the trajectory (no uncertainty after initial shock)
-        zero_shocks = jnp.zeros((config["gir_trajectory_length"], econ_model.n_sectors))
-
-        sector_idx = state_idx - econ_model.n_sectors
+        zero_shocks = jnp.zeros((config["gir_trajectory_length"], shock_dimension))
 
         # Original trajectory (no shock)
         traj_analysis_vars_orig = simul_trajectory_analysis_variables(
@@ -300,11 +294,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             train_state,
             zero_shocks,
             initial_state_logdev,
-            P_weights,
-            Pk_weights,
-            Pm_weights,
+            analysis_context,
             var_labels,
-            sector_idx_for_extra=sector_idx,
+            state_idx=state_idx,
         )
 
         # Create counterfactual initial state with specified shock
@@ -316,11 +308,9 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
             train_state,
             zero_shocks,
             obs_counterfactual_logdev,
-            P_weights,
-            Pk_weights,
-            Pm_weights,
+            analysis_context,
             var_labels,
-            sector_idx_for_extra=sector_idx,
+            state_idx=state_idx,
         )
 
         # Impulse response is difference
@@ -358,24 +348,31 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
         if simul_policies_data is None:
             raise ValueError("simul_policies must be provided either during create_GIR_fn or GIR_fn call")
 
-        # Extract price weights from simulation policies
-        P_weights, Pk_weights, Pm_weights = extract_price_weights(simul_policies_data)
+        analysis_context = prepare_analysis_context(
+            econ_model=econ_model,
+            simul_obs=simul_obs,
+            simul_policies=simul_policies_data,
+            config=config,
+            analysis_hooks=analysis_hooks,
+        )
 
         # Get variable labels from a single analysis call
-        first_analysis_vars = econ_model.get_analysis_variables(
-            simul_obs[0], simul_policies_data[0], P_weights, Pk_weights, Pm_weights
+        first_analysis_vars = compute_analysis_variables(
+            econ_model=econ_model,
+            state_logdev=simul_obs[0],
+            policy_logdev=simul_policies_data[0],
+            analysis_context=analysis_context,
+            analysis_hooks=analysis_hooks,
         )
-        var_labels = list(first_analysis_vars.keys())
-        extra_sectoral_labels = ["Cj", "Ioutj", "Yj", "Kj", "Lj", "Qj"]
-        for label in extra_sectoral_labels:
-            if label not in var_labels:
-                var_labels.append(label)
+        var_labels = extend_gir_var_labels(
+            var_labels=list(first_analysis_vars.keys()),
+            econ_model=econ_model,
+            config=config,
+            analysis_hooks=analysis_hooks,
+        )
 
         # Determine which states to shock
-        states_to_shock = config.get("states_to_shock", None)
-        if states_to_shock is None:
-            # Default to all states in the model
-            states_to_shock = list(range(simul_obs.shape[1]))
+        states_to_shock = get_states_to_shock(config=config, econ_model=econ_model, analysis_hooks=analysis_hooks)
 
         # Get shock sizes from config (as percentages, e.g., [5, 10, 20])
         ir_shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
@@ -411,14 +408,12 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                 shock_size = shock_size_pct / 100.0  # Convert percentage to fraction
 
                 for shock_sign in ["pos", "neg"]:
-                    sector_idx = state_idx - econ_model.n_sectors
-
                     # Compute GIR averaged over ergodic distribution.
                     if compute_gir:
                         current_computation += 1
                         print(
                             f"      GIR [{current_computation}/{total_computations}]: "
-                            f"TFP sector {sector_idx} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
+                            f"{state_name} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
                             flush=True,
                         )
 
@@ -426,9 +421,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                             simul_obs,
                             train_state,
                             state_idx,
-                            P_weights,
-                            Pk_weights,
-                            Pm_weights,
+                            analysis_context,
                             var_labels,
                             shock_size,
                             shock_sign,
@@ -446,7 +439,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                         current_computation += 1
                         print(
                             f"      IR_stoch_ss [{current_computation}/{total_computations}]: "
-                            f"TFP sector {sector_idx} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
+                            f"{state_name} (state {state_idx}), {shock_sign}_{shock_size_pct}%",
                             flush=True,
                         )
 
@@ -454,9 +447,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None):
                             stoch_ss_state_logdev,
                             train_state,
                             state_idx,
-                            P_weights,
-                            Pk_weights,
-                            Pm_weights,
+                            analysis_context,
                             var_labels,
                             shock_size,
                             shock_sign,

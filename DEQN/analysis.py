@@ -389,8 +389,17 @@ def _run_experiment_analysis(
 
 def _normalize_dynare_simulation_orientation(simul_matrix, expected_n_vars, precision):
     arr = jnp.array(simul_matrix, dtype=precision)
+    if arr.ndim == 1:
+        if arr.size == 0:
+            return jnp.zeros((expected_n_vars, 0), dtype=precision)
+        if arr.size == expected_n_vars:
+            return arr.reshape(expected_n_vars, 1)
+        raise ValueError(
+            "Unexpected 1D Dynare simulation vector with "
+            f"length={arr.size}; expected length {expected_n_vars} for a single-period slice."
+        )
     if arr.ndim != 2:
-        raise ValueError(f"Unexpected Dynare simulation ndim={arr.ndim}; expected 2.")
+        raise ValueError(f"Unexpected Dynare simulation ndim={arr.ndim}; expected 1 or 2.")
     if arr.shape[0] == expected_n_vars:
         return arr
     if arr.shape[1] == expected_n_vars:
@@ -450,8 +459,17 @@ def _extract_dynare_simulation_artifact(simul, method_names, expected_n_vars, pr
 
 def _normalize_shock_matrix(shocks_matrix, shock_dimension, precision):
     arr = jnp.array(shocks_matrix, dtype=precision)
+    if arr.ndim == 1:
+        if arr.size == 0:
+            return jnp.zeros((0, shock_dimension), dtype=precision)
+        if arr.size == shock_dimension:
+            return arr.reshape(1, shock_dimension)
+        raise ValueError(
+            "Unexpected 1D shock vector with "
+            f"length={arr.size}; expected length {shock_dimension} for a single-period shock path."
+        )
     if arr.ndim != 2:
-        raise ValueError(f"Expected 2D shock matrix, got shape {arr.shape}")
+        raise ValueError(f"Expected 1D or 2D shock matrix, got shape {arr.shape}")
     if arr.shape[1] == shock_dimension:
         return arr
     if arr.shape[0] == shock_dimension:

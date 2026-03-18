@@ -105,12 +105,19 @@ SECTORAL_VAR_DESC = {
 
 def prepare_analysis_context(econ_model, simul_obs, simul_policies, config) -> Dict[str, Any]:
     del simul_obs, config
-    simul_policies_mean = jnp.mean(simul_policies, axis=0)
     n = econ_model.n_sectors
+    P_ergodic, Pk_ergodic, Pm_ergodic = compute_ergodic_prices_from_simulation(
+        simul_policies,
+        econ_model.policies_ss,
+        n,
+    )
+    P_ss = jnp.exp(econ_model.policies_ss[8 * n : 9 * n])
+    Pk_ss = jnp.exp(econ_model.policies_ss[2 * n : 3 * n])
+    Pm_ss = jnp.exp(econ_model.policies_ss[3 * n : 4 * n])
     return {
-        "P_weights": simul_policies_mean[8 * n : 9 * n],
-        "Pk_weights": simul_policies_mean[2 * n : 3 * n],
-        "Pm_weights": simul_policies_mean[3 * n : 4 * n],
+        "P_weights": jnp.log(P_ergodic) - jnp.log(P_ss),
+        "Pk_weights": jnp.log(Pk_ergodic) - jnp.log(Pk_ss),
+        "Pm_weights": jnp.log(Pm_ergodic) - jnp.log(Pm_ss),
     }
 
 

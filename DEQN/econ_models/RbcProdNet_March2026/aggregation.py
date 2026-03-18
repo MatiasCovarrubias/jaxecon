@@ -157,18 +157,16 @@ def compute_ergodic_prices_from_simulation(
     """
     n = n_sectors
 
-    # Get mean log deviations
-    simul_policies_mean = jnp.mean(simul_policies, axis=0)
-
     # SS prices in levels
     P_ss = jnp.exp(policies_ss[8 * n : 9 * n])
     Pk_ss = jnp.exp(policies_ss[2 * n : 3 * n])
     Pm_ss = jnp.exp(policies_ss[3 * n : 4 * n])
 
-    # Mean prices in levels: P_level = P_ss * exp(mean_logdev)
-    P_ergodic = P_ss * jnp.exp(simul_policies_mean[8 * n : 9 * n])
-    Pk_ergodic = Pk_ss * jnp.exp(simul_policies_mean[2 * n : 3 * n])
-    Pm_ergodic = Pm_ss * jnp.exp(simul_policies_mean[3 * n : 4 * n])
+    # Convert each simulated price path to levels first, then take the arithmetic
+    # mean so the fixed-price vector matches the intended expenditure weights.
+    P_ergodic = jnp.mean(P_ss[None, :] * jnp.exp(simul_policies[:, 8 * n : 9 * n]), axis=0)
+    Pk_ergodic = jnp.mean(Pk_ss[None, :] * jnp.exp(simul_policies[:, 2 * n : 3 * n]), axis=0)
+    Pm_ergodic = jnp.mean(Pm_ss[None, :] * jnp.exp(simul_policies[:, 3 * n : 4 * n]), axis=0)
 
     return P_ergodic, Pk_ergodic, Pm_ergodic
 

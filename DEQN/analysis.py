@@ -75,6 +75,7 @@ from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
 from DEQN.analysis.model_hooks import (  # noqa: E402
     apply_model_config_defaults,
     compute_analysis_variables,
+    get_shock_dimension,
     get_states_to_shock,
     load_model_analysis_hooks,
     run_model_postprocess,
@@ -82,7 +83,9 @@ from DEQN.analysis.model_hooks import (  # noqa: E402
 from DEQN.analysis.plots import plot_ergodic_histograms  # noqa: E402
 from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
+    create_shock_path_simulation_fn,
     simulation_analysis,
+    simulation_analysis_with_shocks,
 )
 from DEQN.analysis.stochastic_ss import (  # noqa: E402
     create_stochss_fn,
@@ -113,7 +116,7 @@ jax_config.update("jax_debug_nans", True)
 # Configuration dictionary
 config = {
     # Key configuration - Edit these first
-    "model_dir": "RbcProdNet_Dec2025",
+    "model_dir": "RbcProdNet_March2026",
     "analysis_name": "benchmarkMarch",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
@@ -222,6 +225,350 @@ MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", []) if plot
 
 
 # ============================================================================
+# ANALYSIS HELPERS
+# ============================================================================
+
+
+def _write_analysis_config(config_dict, analysis_dir):
+    config_path = os.path.join(analysis_dir, "config.json")
+    with open(config_path, "w") as f:
+        json.dump(config_dict, f, indent=2)
+
+
+def _resolve_data_file(model_dir, configured_name, fallback_names, *, label, required):
+    candidate_names = []
+    for name in [configured_name, *fallback_names]:
+        if name is None or name in candidate_names:
+            continue
+        candidate_names.append(name)
+
+    for filename in candidate_names:
+        path = os.path.join(model_dir, filename)
+        if os.path.exists(path):
+            if configured_name is not None and filename != configured_name:
+                print(f"  Using fallback {label} file: {filename} (configured '{configured_name}' not found)")
+            return filename, path
+
+    if required:
+        raise FileNotFoundError(
+            f"{label} file not found in {model_dir}. Tried: {candidate_names}"
+        )
+
+    if configured_name is not None:
+        print(f"  ⚠ {label} file not found. Tried: {candidate_names} (skipping)")
+    return None, None
+
+
+def _create_nonlinear_simulation_runner(
+    *,
+    econ_model,
+    config_dict,
+    analysis_hooks,
+    matlab_common_shock_schedule,
+):
+    if matlab_common_shock_schedule is not None:
+        shock_path_simulation_fn = jax.jit(create_shock_path_simulation_fn(econ_model))
+        print(
+            "  Nonlinear simulation mode: shared MATLAB shock path "
+            f"({matlab_common_shock_schedule['reference_method']})"
+        )
+
+        def run_simulation(train_state):
+            return simulation_analysis_with_shocks(
+                train_state=train_state,
+                econ_model=econ_model,
+                shock_path=matlab_common_shock_schedule["full_shocks"],
+                simulation_fn=shock_path_simulation_fn,
+                active_start=matlab_common_shock_schedule["active_start"],
+                active_end=matlab_common_shock_schedule["active_end"],
+                analysis_config=config_dict,
+                analysis_hooks=analysis_hooks,
+                label=(f"Common-shock nonlinear simulation ({matlab_common_shock_schedule['reference_method']})"),
+            )
+
+        return run_simulation
+
+    simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config_dict))
+    print("  Nonlinear simulation mode: ergodic fallback (no MATLAB common-shock schedule found)")
+
+    def run_simulation(train_state):
+        simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
+            train_state=train_state,
+            econ_model=econ_model,
+            analysis_config=config_dict,
+            simulation_fn=simulation_fn,
+            analysis_hooks=analysis_hooks,
+        )
+        return (
+            simul_obs,
+            simul_policies,
+            simul_analysis_variables,
+            analysis_context,
+            simul_obs,
+            simul_policies,
+        )
+
+    return run_simulation
+
+
+def _run_experiment_analysis(
+    *,
+    exp_data,
+    save_dir,
+    nn_config_base,
+    econ_model,
+    run_nonlinear_simulation,
+    welfare_fn,
+    welfare_ss,
+    stoch_ss_fn,
+    stoch_ss_loss_fn,
+    gir_fn,
+    config_dict,
+    analysis_hooks,
+):
+    experiment_config = exp_data["config"]
+    experiment_name = exp_data["results"]["exper_name"]
+
+    nn_config = nn_config_base.copy()
+    nn_config["features"] = experiment_config["layers"] + [econ_model.dim_policies]
+
+    train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
+
+    (
+        simul_obs,
+        simul_policies,
+        simul_analysis_variables,
+        analysis_context,
+        simul_obs_full,
+        simul_policies_full,
+    ) = run_nonlinear_simulation(train_state)
+
+    simul_utilities = jax.vmap(econ_model.utility_from_policies)(simul_policies)
+    welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config_dict["welfare_seed"]))
+    welfare_cost_ce = -econ_model.consumption_equivalent(welfare) * 100
+
+    stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
+    if stoch_ss_obs_std.max() > 0.001:
+        raise ValueError("Stochastic steady state standard deviation too large")
+
+    stoch_ss_analysis_variables = compute_analysis_variables(
+        econ_model=econ_model,
+        state_logdev=stoch_ss_obs,
+        policy_logdev=stoch_ss_policy,
+        analysis_context=analysis_context,
+        analysis_hooks=analysis_hooks,
+    )
+
+    loss_results = stoch_ss_loss_fn(stoch_ss_obs, stoch_ss_policy, train_state, random.PRNGKey(config_dict["seed"]))
+    gir_results = gir_fn(simul_obs, train_state, simul_policies, stoch_ss_obs)
+
+    print(f"    Welfare cost (CE): {welfare_cost_ce:.4f}%")
+    print(
+        f"    Equilibrium accuracy: {loss_results['mean_accuracy']:.4f} (min: {loss_results['min_accuracy']:.4f})",
+        flush=True,
+    )
+
+    return {
+        "raw_simulation_data": {
+            "simul_obs": simul_obs,
+            "simul_obs_full": simul_obs_full,
+            "simul_policies": simul_policies,
+            "simul_policies_full": simul_policies_full,
+            "simul_analysis_variables": simul_analysis_variables,
+            "analysis_context": analysis_context,
+        },
+        "analysis_variables": simul_analysis_variables,
+        "welfare_cost": welfare_cost_ce,
+        "stochastic_ss_state": stoch_ss_obs,
+        "stochastic_ss_policy": stoch_ss_policy,
+        "stochastic_ss_data": stoch_ss_analysis_variables,
+        "stochastic_ss_loss": loss_results,
+        "gir_data": gir_results,
+    }
+
+
+def _normalize_dynare_simulation_orientation(simul_matrix, expected_n_vars, precision):
+    arr = jnp.array(simul_matrix, dtype=precision)
+    if arr.ndim != 2:
+        raise ValueError(f"Unexpected Dynare simulation ndim={arr.ndim}; expected 2.")
+    if arr.shape[0] == expected_n_vars:
+        return arr
+    if arr.shape[1] == expected_n_vars:
+        return arr.T
+    raise ValueError(f"Unexpected Dynare simulation shape {arr.shape}; expected one axis = {expected_n_vars}.")
+
+
+def _extract_dynare_simulation_artifact(simul, method_names, expected_n_vars, precision):
+    """Load active/full simulation paths for one Dynare method."""
+    for method_name in method_names:
+        method_block = simul.get(method_name)
+        if not isinstance(method_block, dict):
+            continue
+
+        full_simul = None
+        active_simul = None
+
+        full_simul_raw = method_block.get("full_simul")
+        if full_simul_raw is not None:
+            full_simul = _normalize_dynare_simulation_orientation(full_simul_raw, expected_n_vars, precision)
+
+        burnin_simul = method_block.get("burnin_simul")
+        shocks_simul = method_block.get("shocks_simul")
+        burnout_simul = method_block.get("burnout_simul")
+
+        if shocks_simul is not None:
+            active_simul = _normalize_dynare_simulation_orientation(shocks_simul, expected_n_vars, precision)
+
+        if full_simul is None:
+            windows = []
+            for window in (burnin_simul, shocks_simul, burnout_simul):
+                if window is None:
+                    continue
+                window_arr = _normalize_dynare_simulation_orientation(window, expected_n_vars, precision)
+                if window_arr.shape[1] > 0:
+                    windows.append(window_arr)
+            if windows:
+                full_simul = jnp.concatenate(windows, axis=1)
+
+        if active_simul is None and full_simul is not None:
+            burn_in = int(method_block.get("burn_in", 0))
+            t_active = method_block.get("T_active")
+            if t_active is not None:
+                t_active = int(t_active)
+                active_simul = full_simul[:, burn_in : burn_in + t_active]
+            else:
+                active_simul = full_simul
+
+        if active_simul is not None or full_simul is not None:
+            return {
+                "active_simul": active_simul if active_simul is not None else full_simul,
+                "full_simul": full_simul if full_simul is not None else active_simul,
+            }
+
+    return {"active_simul": None, "full_simul": None}
+
+
+def _normalize_shock_matrix(shocks_matrix, shock_dimension, precision):
+    arr = jnp.array(shocks_matrix, dtype=precision)
+    if arr.ndim != 2:
+        raise ValueError(f"Expected 2D shock matrix, got shape {arr.shape}")
+    if arr.shape[1] == shock_dimension:
+        return arr
+    if arr.shape[0] == shock_dimension:
+        return arr.T
+    raise ValueError(f"Unexpected shock matrix shape {arr.shape} for shock_dimension={shock_dimension}")
+
+
+def _extract_matlab_common_shock_schedule(simul, shock_dimension, precision):
+    shocks_block = simul.get("Shocks")
+    if not isinstance(shocks_block, dict) or "data" not in shocks_block:
+        return None
+
+    active_shocks_full = _normalize_shock_matrix(shocks_block["data"], shock_dimension, precision)
+    usage = shocks_block.get("usage", {})
+
+    candidate_methods = [
+        ("FirstOrder", ["FirstOrder", "Loglin", "LogLinear"]),
+        ("SecondOrder", ["SecondOrder"]),
+        ("PerfectForesight", ["PerfectForesight", "Determ"]),
+        ("MITShocks", ["MITShocks", "MITShock"]),
+    ]
+
+    selected_method = None
+    method_block = None
+    usage_block = None
+    for canonical_name, aliases in candidate_methods:
+        for alias in aliases:
+            block = simul.get(alias)
+            if not isinstance(block, dict):
+                continue
+            usage_candidate = usage.get(alias) or usage.get(canonical_name)
+            if usage_candidate is not None or "T_active" in block or "burn_in" in block:
+                selected_method = canonical_name
+                method_block = block
+                usage_block = usage_candidate
+                break
+        if selected_method is not None:
+            break
+
+    if method_block is None:
+        return None
+
+    active_shocks = active_shocks_full
+    if isinstance(usage_block, dict) and "start" in usage_block and "end" in usage_block:
+        start_idx = max(int(usage_block["start"]) - 1, 0)
+        end_idx = min(int(usage_block["end"]), active_shocks_full.shape[0])
+        active_shocks = active_shocks_full[start_idx:end_idx]
+
+    burn_in = int(method_block.get("burn_in", 0))
+    burn_out = int(method_block.get("burn_out", 0))
+    zero_burnin = jnp.zeros((burn_in, shock_dimension), dtype=precision)
+    zero_burnout = jnp.zeros((burn_out, shock_dimension), dtype=precision)
+    full_shocks = jnp.concatenate([zero_burnin, active_shocks, zero_burnout], axis=0)
+
+    return {
+        "reference_method": selected_method,
+        "active_shocks": active_shocks,
+        "full_shocks": full_shocks,
+        "burn_in": burn_in,
+        "burn_out": burn_out,
+        "active_start": burn_in,
+        "active_end": burn_in + active_shocks.shape[0],
+    }
+
+
+def _normalize_dynare_full_simul(simul_data, state_ss_vec, policies_ss_vec):
+    """Return simulation in log deviations with shape (n_vars, T)."""
+    expected_n_vars = state_ss_vec.shape[0] + policies_ss_vec.shape[0]
+    if simul_data.shape[0] == expected_n_vars:
+        simul_matrix = simul_data
+    elif simul_data.shape[1] == expected_n_vars:
+        simul_matrix = simul_data.T
+    else:
+        raise ValueError(
+            f"Unexpected Dynare simulation shape {simul_data.shape}; expected one axis = {expected_n_vars}."
+        )
+
+    ss_full = jnp.concatenate([state_ss_vec, policies_ss_vec])
+    dist_to_zero = jnp.mean(jnp.abs(simul_matrix[:, 0]))
+    dist_to_ss = jnp.mean(jnp.abs(simul_matrix[:, 0] - ss_full))
+    if dist_to_ss < dist_to_zero:
+        simul_matrix = simul_matrix - ss_full[:, None]
+    return simul_matrix
+
+
+def _welfare_cost_from_dynare_simul(
+    simul_data,
+    method_name,
+    state_ss,
+    policies_ss,
+    econ_model,
+    welfare_fn,
+    welfare_ss,
+    config_dict,
+):
+    """Compute consumption-equivalent welfare cost from the canonical active Dynare sample."""
+    if simul_data is None:
+        return None
+    simul_matrix = _normalize_dynare_full_simul(simul_data, state_ss, policies_ss)
+    n_state_vars = state_ss.shape[0]
+    policies_logdev = simul_matrix[n_state_vars:, :].T
+
+    if policies_logdev.shape[0] == 0:
+        print(f"  ⚠ Skipping welfare for {method_name}: active sample is empty.")
+        return None
+
+    method_seed = sum(ord(c) for c in method_name)
+    welfare = welfare_fn(
+        jax.vmap(econ_model.utility_from_policies)(policies_logdev),
+        welfare_ss,
+        random.PRNGKey(config_dict["welfare_seed"] + method_seed),
+    )
+    Vc = econ_model.consumption_equivalent(welfare)
+    return -Vc * 100
+
+
+# ============================================================================
 # MAIN FUNCTION
 # ============================================================================
 
@@ -245,21 +592,35 @@ def main():
     os.makedirs(simulation_dir, exist_ok=True)
     os.makedirs(irs_dir, exist_ok=True)
 
-    config_path = os.path.join(analysis_dir, "config.json")
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
-
     # ═══════════════════════════════════════════════════════════════════════════
     # LOAD MODEL DATA
     # ═══════════════════════════════════════════════════════════════════════════
-    # Determine file names from config (with defaults)
-    model_data_file = config.get("model_data_file", "ModelData.mat")
-    model_data_irs_file = config.get("model_data_irs_file", "ModelData_IRs.mat")
-    model_data_simulation_file = config.get("model_data_simulation_file", "ModelData_simulation.mat")
+    model_data_file, model_path = _resolve_data_file(
+        model_dir,
+        config.get("model_data_file"),
+        ["ModelData.mat", "model_data.mat"],
+        label="ModelData",
+        required=True,
+    )
+    model_data_irs_file, irs_path = _resolve_data_file(
+        model_dir,
+        config.get("model_data_irs_file"),
+        ["ModelData_IRs.mat"],
+        label="IR benchmark",
+        required=False,
+    )
+    model_data_simulation_file, simul_path = _resolve_data_file(
+        model_dir,
+        config.get("model_data_simulation_file"),
+        ["ModelData_simulation.mat"],
+        label="Simulation benchmark",
+        required=False,
+    )
 
-    model_path = os.path.join(model_dir, model_data_file)
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+    config["model_data_file"] = model_data_file
+    config["model_data_irs_file"] = model_data_irs_file
+    config["model_data_simulation_file"] = model_data_simulation_file
+    _write_analysis_config(config, analysis_dir)
 
     print(f"  Loading ModelData from: {model_data_file}")
     model_data = sio.loadmat(model_path, simplify_cells=True)
@@ -287,46 +648,47 @@ def main():
         n_policies = len(policies_sd)
         policies_ss = policies_ss[:n_policies]
 
+    expected_n_vars = state_ss.shape[0] + policies_ss.shape[0]
+
     # Load simulation data (optional - for Dynare comparison)
     dynare_simul_1storder = None
     dynare_simul_so = None
     dynare_simul_pf = None
     dynare_simul_mit = None
+    matlab_common_shock_schedule = None
+    matlab_simulation_block = None
+    dynare_1st_artifact = {"active_simul": None, "full_simul": None}
+    dynare_so_artifact = {"active_simul": None, "full_simul": None}
+    dynare_pf_artifact = {"active_simul": None, "full_simul": None}
+    dynare_mit_artifact = {"active_simul": None, "full_simul": None}
 
-    if model_data_simulation_file is not None:
-        simul_path = os.path.join(model_dir, model_data_simulation_file)
-        if os.path.exists(simul_path):
-            print(f"  Loading simulation data from: {model_data_simulation_file}")
-            simul_data = sio.loadmat(simul_path, simplify_cells=True)
-            simul = simul_data.get("ModelData_simulation", {})
+    if simul_path is not None:
+        print(f"  Loading simulation data from: {model_data_simulation_file}")
+        simul_data = sio.loadmat(simul_path, simplify_cells=True)
+        matlab_simulation_block = simul_data.get("ModelData_simulation", {})
 
-            # First-order simulation (new: FirstOrder, legacy: Loglin)
-            if "FirstOrder" in simul and "full_simul" in simul["FirstOrder"]:
-                dynare_simul_1storder = jnp.array(simul["FirstOrder"]["full_simul"], dtype=precision)
-            elif "Loglin" in simul and "full_simul" in simul["Loglin"]:
-                dynare_simul_1storder = jnp.array(simul["Loglin"]["full_simul"], dtype=precision)
+        dynare_1st_artifact = _extract_dynare_simulation_artifact(
+            matlab_simulation_block, ["FirstOrder", "Loglin"], expected_n_vars, precision
+        )
+        dynare_pf_artifact = _extract_dynare_simulation_artifact(
+            matlab_simulation_block, ["PerfectForesight", "Determ"], expected_n_vars, precision
+        )
+        dynare_so_artifact = _extract_dynare_simulation_artifact(
+            matlab_simulation_block, ["SecondOrder"], expected_n_vars, precision
+        )
+        dynare_mit_artifact = _extract_dynare_simulation_artifact(
+            matlab_simulation_block, ["MITShocks", "MITShock"], expected_n_vars, precision
+        )
 
-            # Perfect foresight simulation (new: PerfectForesight, legacy: Determ)
-            if "PerfectForesight" in simul and "full_simul" in simul["PerfectForesight"]:
-                dynare_simul_pf = jnp.array(simul["PerfectForesight"]["full_simul"], dtype=precision)
-            elif "Determ" in simul and "full_simul" in simul["Determ"]:
-                dynare_simul_pf = jnp.array(simul["Determ"]["full_simul"], dtype=precision)
+        dynare_simul_1storder = dynare_1st_artifact["active_simul"]
+        dynare_simul_pf = dynare_pf_artifact["active_simul"]
+        dynare_simul_so = dynare_so_artifact["active_simul"]
+        dynare_simul_mit = dynare_mit_artifact["active_simul"]
 
-            # Second-order simulation
-            if "SecondOrder" in simul and "full_simul" in simul["SecondOrder"]:
-                dynare_simul_so = jnp.array(simul["SecondOrder"]["full_simul"], dtype=precision)
-            # MIT shocks simulation
-            if "MITShocks" in simul and "full_simul" in simul["MITShocks"]:
-                dynare_simul_mit = jnp.array(simul["MITShocks"]["full_simul"], dtype=precision)
-        else:
-            print(f"  ⚠ Simulation file not found: {model_data_simulation_file} (skipping)")
-
-    # Load IRF data path for MATLAB IR comparison (actual loading happens later via load_matlab_irs)
-    irs_path = os.path.join(model_dir, model_data_irs_file) if model_data_irs_file else None
-    if irs_path and os.path.exists(irs_path):
+    if irs_path:
         print(f"  Found IRs file: {model_data_irs_file}")
-    elif model_data_irs_file:
-        print(f"  ⚠ IRs file not found: {model_data_irs_file} (will try legacy format)")
+    elif config.get("model_data_irs_file"):
+        print(f"  ⚠ IRs file not found: {config['model_data_irs_file']} (will try legacy format)")
 
     # Create economic model
     econ_model = Model(
@@ -337,10 +699,30 @@ def main():
         policies_sd=policies_sd,
         double_precision=config["double_precision"],
     )
+    shock_dimension = get_shock_dimension(econ_model, analysis_hooks)
+
+    if matlab_simulation_block is not None:
+        matlab_common_shock_schedule = _extract_matlab_common_shock_schedule(
+            matlab_simulation_block,
+            shock_dimension,
+            precision,
+        )
+        if matlab_common_shock_schedule is not None:
+            print(
+                "  Loaded shared MATLAB shock path "
+                f"({matlab_common_shock_schedule['reference_method']}: "
+                f"{matlab_common_shock_schedule['burn_in']} burn-in, "
+                f"{matlab_common_shock_schedule['active_shocks'].shape[0]} active, "
+                f"{matlab_common_shock_schedule['burn_out']} burn-out)"
+            )
 
     # Load experiment data
     experiments_to_analyze = config["experiments_to_analyze"]
-    experiments_data = load_experiment_data(experiments_to_analyze, save_dir)
+    experiments_data = load_experiment_data(
+        experiments_to_analyze,
+        save_dir,
+        expected_model_dir=config["model_dir"],
+    )
 
     nn_config_base = {
         "C": C_matrix,
@@ -358,58 +740,17 @@ def main():
     # Keep welfare baseline available for all methods.
     welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
 
-    def _normalize_dynare_full_simul(simul_data, state_ss_vec, policies_ss_vec):
-        """Return simulation in log deviations with shape (n_vars, T)."""
-        expected_n_vars = state_ss_vec.shape[0] + policies_ss_vec.shape[0]
-        if simul_data.shape[0] == expected_n_vars:
-            simul_matrix = simul_data
-        elif simul_data.shape[1] == expected_n_vars:
-            simul_matrix = simul_data.T
-        else:
-            raise ValueError(
-                f"Unexpected Dynare simulation shape {simul_data.shape}; expected one axis = {expected_n_vars}."
-            )
-
-        ss_full = jnp.concatenate([state_ss_vec, policies_ss_vec])
-        dist_to_zero = jnp.mean(jnp.abs(simul_matrix[:, 0]))
-        dist_to_ss = jnp.mean(jnp.abs(simul_matrix[:, 0] - ss_full))
-        if dist_to_ss < dist_to_zero:
-            simul_matrix = simul_matrix - ss_full[:, None]
-        return simul_matrix
-
-    def _welfare_cost_from_dynare_simul(simul_data, method_name):
-        """Compute consumption-equivalent welfare cost from Dynare full_simul."""
-        if simul_data is None:
-            return None
-        simul_matrix = _normalize_dynare_full_simul(simul_data, state_ss, policies_ss)
-        n_periods = simul_matrix.shape[1]
-        burn_in = min(config["burn_in_periods"], max(0, n_periods // 10))
-        if burn_in >= n_periods:
-            burn_in = 0
-        policies_logdev = simul_matrix[2 * n_sectors :, burn_in:].T
-
-        if policies_logdev.shape[0] <= config["welfare_traject_length"]:
-            print(
-                f"  ⚠ Skipping welfare for {method_name}: not enough periods ({policies_logdev.shape[0]}) "
-                f"for welfare_traject_length={config['welfare_traject_length']}"
-            )
-            return None
-
-        method_seed = sum(ord(c) for c in method_name)
-        welfare = welfare_fn(
-            jax.vmap(econ_model.utility_from_policies)(policies_logdev),
-            welfare_ss,
-            random.PRNGKey(config["welfare_seed"] + method_seed),
-        )
-        Vc = econ_model.consumption_equivalent(welfare)
-        return -Vc * 100
-
     # Create analysis functions
-    simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config))
     welfare_fn = jax.jit(get_welfare_fn(econ_model, config))
-    stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, config))
+    stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, config, analysis_hooks=analysis_hooks))
     stoch_ss_loss_fn = create_stochss_loss_fn(econ_model, mc_draws=32)
     gir_fn = jax.jit(create_GIR_fn(econ_model, config, analysis_hooks=analysis_hooks))
+    run_nonlinear_simulation = _create_nonlinear_simulation_runner(
+        econ_model=econ_model,
+        config_dict=config,
+        analysis_hooks=analysis_hooks,
+        matlab_common_shock_schedule=matlab_common_shock_schedule,
+    )
 
     # Storage for analysis results
     analysis_variables_data = {}
@@ -435,78 +776,48 @@ def main():
 
     for experiment_label, exp_data in experiments_data.items():
         print(f"\n  ▶ {experiment_label}", flush=True)
-
-        experiment_config = exp_data["config"]
-        experiment_name = exp_data["results"]["exper_name"]
-
-        nn_config = nn_config_base.copy()
-        nn_config["features"] = experiment_config["layers"] + [econ_model.dim_policies]
-
-        train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
-
-        simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
-            train_state,
-            econ_model,
-            config,
-            simulation_fn,
-            analysis_hooks=analysis_hooks,
-        )
-
-        raw_simulation_data[experiment_label] = {
-            "simul_obs": simul_obs,
-            "simul_policies": simul_policies,
-            "simul_analysis_variables": simul_analysis_variables,
-            "analysis_context": analysis_context,
-        }
-
-        analysis_variables_data[experiment_label] = simul_analysis_variables
-
-        simul_utilities = jax.vmap(econ_model.utility_from_policies)(simul_policies)
-
-        welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config["welfare_seed"]))
-
-        Vc = econ_model.consumption_equivalent(welfare)
-        welfare_cost_ce = -Vc * 100
-        welfare_costs[experiment_label] = welfare_cost_ce
-
-        stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
-        if stoch_ss_obs_std.max() > 0.001:
-            raise ValueError("Stochastic steady state standard deviation too large")
-
-        stochastic_ss_states[experiment_label] = stoch_ss_obs
-        stochastic_ss_policies[experiment_label] = stoch_ss_policy
-
-        stoch_ss_analysis_variables = compute_analysis_variables(
+        experiment_results = _run_experiment_analysis(
+            exp_data=exp_data,
+            save_dir=save_dir,
+            nn_config_base=nn_config_base,
             econ_model=econ_model,
-            state_logdev=stoch_ss_obs,
-            policy_logdev=stoch_ss_policy,
-            analysis_context=analysis_context,
+            run_nonlinear_simulation=run_nonlinear_simulation,
+            welfare_fn=welfare_fn,
+            welfare_ss=welfare_ss,
+            stoch_ss_fn=stoch_ss_fn,
+            stoch_ss_loss_fn=stoch_ss_loss_fn,
+            gir_fn=gir_fn,
+            config_dict=config,
             analysis_hooks=analysis_hooks,
         )
 
-        stochastic_ss_data[experiment_label] = stoch_ss_analysis_variables
-
-        loss_results = stoch_ss_loss_fn(stoch_ss_obs, stoch_ss_policy, train_state, random.PRNGKey(config["seed"]))
-        stochastic_ss_loss[experiment_label] = loss_results
-
-        print(f"    Welfare cost (CE): {welfare_cost_ce:.4f}%")
-        print(
-            f"    Equilibrium accuracy: {loss_results['mean_accuracy']:.4f} (min: {loss_results['min_accuracy']:.4f})",
-            flush=True,
-        )
-
-        gir_results = gir_fn(simul_obs, train_state, simul_policies, stoch_ss_obs)
-        gir_data[experiment_label] = gir_results
+        raw_simulation_data[experiment_label] = experiment_results["raw_simulation_data"]
+        analysis_variables_data[experiment_label] = experiment_results["analysis_variables"]
+        welfare_costs[experiment_label] = experiment_results["welfare_cost"]
+        stochastic_ss_states[experiment_label] = experiment_results["stochastic_ss_state"]
+        stochastic_ss_policies[experiment_label] = experiment_results["stochastic_ss_policy"]
+        stochastic_ss_data[experiment_label] = experiment_results["stochastic_ss_data"]
+        stochastic_ss_loss[experiment_label] = experiment_results["stochastic_ss_loss"]
+        gir_data[experiment_label] = experiment_results["gir_data"]
 
     # Add welfare costs from Dynare simulation methods (if available).
     dynare_welfare_inputs = {
-        "FirstOrder": dynare_simul_1storder,
-        "SecondOrder": dynare_simul_so,
-        "PerfectForesight": dynare_simul_pf,
-        "MITShocks": dynare_simul_mit,
+        "FirstOrder": dynare_1st_artifact["active_simul"] if model_data_simulation_file is not None else None,
+        "SecondOrder": dynare_so_artifact["active_simul"] if model_data_simulation_file is not None else None,
+        "PerfectForesight": dynare_pf_artifact["active_simul"] if model_data_simulation_file is not None else None,
+        "MITShocks": dynare_mit_artifact["active_simul"] if model_data_simulation_file is not None else None,
     }
     for method_name, simul_data in dynare_welfare_inputs.items():
-        welfare_cost = _welfare_cost_from_dynare_simul(simul_data, method_name)
+        welfare_cost = _welfare_cost_from_dynare_simul(
+            simul_data,
+            method_name,
+            state_ss,
+            policies_ss,
+            econ_model,
+            welfare_fn,
+            welfare_ss,
+            config,
+        )
         if welfare_cost is not None:
             welfare_costs[method_name] = welfare_cost
             print(f"    Welfare cost ({method_name}): {float(welfare_cost):.4f}%")
@@ -539,6 +850,7 @@ def main():
     )
 
     analysis_variables_data = model_postprocess.get("analysis_variables_data", analysis_variables_data)
+    calibration_method_stats = model_postprocess.get("calibration_method_stats")
     theoretical_stats = model_postprocess.get("theoretical_stats", theoretical_stats)
     histogram_theo_params = model_postprocess.get("histogram_theo_params", histogram_theo_params)
     matlab_ir_data = model_postprocess.get("matlab_ir_data", matlab_ir_data)
@@ -560,6 +872,7 @@ def main():
         create_calibration_table(
             empirical_targets=calibration_emp,
             first_order_model_stats=calibration_model_stats,
+            method_model_stats=calibration_method_stats,
             save_path=os.path.join(analysis_dir, "calibration_table.tex"),
             analysis_name=config["analysis_name"],
         )
@@ -592,6 +905,8 @@ def main():
         "LogLinear": "Log-Linear",
         "Second-Order": "SecondOrder",
         "Perfect Foresight": "PerfectForesight",
+        "MIT Shocks": "MITShocks",
+        "MIT shocks": "MITShocks",
         "MITShock": "MITShocks",
     }
 
@@ -741,6 +1056,19 @@ def main():
         "upstreamness_data": upstreamness_data,
         "theoretical_stats": theoretical_stats,  # Pre-computed stats for log-linear and perfect foresight
     }
+
+
+# Legacy long-ergodic simulation branch kept for later reuse:
+# simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config))
+# simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
+#     train_state,
+#     econ_model,
+#     config,
+#     simulation_fn,
+#     analysis_hooks=analysis_hooks,
+# )
+# simul_obs_full = simul_obs
+# simul_policies_full = simul_policies
 
 
 if __name__ == "__main__":

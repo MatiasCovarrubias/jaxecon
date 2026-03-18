@@ -21,7 +21,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
     Args:
         econ_model: Economic model instance
         config: Dictionary with parameters:
-            - gir_n_draws: Number of points to sample from ergodic distribution
+            - gir_n_draws: Number of points to sample from the active simulation window
             - gir_trajectory_length: Length of trajectories to simulate
             - ir_shock_sizes: List of shock sizes as percentages (e.g., [5, 10, 20])
             - states_to_shock: Optional list of state indices to shock
@@ -49,10 +49,12 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
     shock_dimension = get_shock_dimension(econ_model, analysis_hooks)
 
     def random_draws(simul_obs, n_draws, seed=0):
-        """Sample random points from the ergodic distribution"""
+        """Sample random points from the active simulation sample."""
         n_simul = simul_obs.shape[0]
         key = random.PRNGKey(seed)
-        indices = random.choice(key, n_simul, shape=(n_draws,), replace=False)
+        replace = bool(n_draws > n_simul)
+        draw_count = n_draws if replace else min(n_draws, n_simul)
+        indices = random.choice(key, n_simul, shape=(draw_count,), replace=replace)
         obs_draws = simul_obs[indices, :]
         return obs_draws
 
@@ -200,7 +202,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
         Compute GIR for a specific TFP state using analysis variables.
 
         Args:
-            simul_obs: Simulation observations from ergodic distribution (in logdev form)
+            simul_obs: Active simulation observations (in logdev form)
             train_state: Trained neural network state
             state_idx: Index of the state variable to shock
             analysis_context: Model-specific context for computing analysis variables
@@ -211,7 +213,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
         Returns:
             gir_analysis_variables: Averaged impulse response for analysis variables [T+1, n_analysis_vars]
         """
-        # Sample points from ergodic distribution
+        # Sample points from the active common-shock simulation window.
         sample_points = random_draws(simul_obs, config["gir_n_draws"], config["gir_seed"])
 
         # Function to compute impulse response for a single initial point
@@ -270,7 +272,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
         """
         Compute IR from a specific initial state (e.g., stochastic steady state).
 
-        Unlike GIR which averages over many draws from the ergodic distribution,
+        Unlike GIR which averages over many draws from the active simulation sample,
         this computes the IR from a single deterministic starting point.
 
         Args:
@@ -324,7 +326,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
         Computes GIRs for both positive and negative TFP shocks, and for multiple shock sizes.
 
         Args:
-            simul_obs: Simulation observations from ergodic distribution (in logdev form)
+            simul_obs: Active simulation observations (in logdev form)
             train_state: Trained neural network state
             simul_policies_data: Simulation policies for extracting price weights (in logdev form)
             stoch_ss_state_logdev: Optional stochastic steady state (in logdev form).
@@ -408,7 +410,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
                 shock_size = shock_size_pct / 100.0  # Convert percentage to fraction
 
                 for shock_sign in ["pos", "neg"]:
-                    # Compute GIR averaged over ergodic distribution.
+                    # Compute GIR averaged over the active common-shock sample.
                     if compute_gir:
                         current_computation += 1
                         print(

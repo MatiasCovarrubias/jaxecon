@@ -59,12 +59,17 @@ def load_trained_model_GPU(experiment_name: str, save_dir: str, nn_config: Dict[
     return train_state
 
 
-def load_experiment_data(experiments_config: Dict[str, str], save_dir: str) -> Dict[str, Dict[str, Any]]:
+def load_experiment_data(
+    experiments_config: Dict[str, str],
+    save_dir: str,
+    expected_model_dir: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
     """Load experiment results and configurations.
 
     Args:
         experiments_config: Dictionary mapping experiment labels to experiment names
         save_dir: Base directory where experiments are saved
+        expected_model_dir: Optional model_dir that every loaded experiment must match
 
     Returns:
         Dictionary containing experiment data with results, config, and model_name for each experiment
@@ -77,10 +82,18 @@ def load_experiment_data(experiments_config: Dict[str, str], save_dir: str) -> D
         with open(results_path, "r") as f:
             results = json.load(f)
 
+        experiment_config = results["config"]
+        experiment_model_dir = experiment_config["model_dir"]
+        if expected_model_dir is not None and experiment_model_dir != expected_model_dir:
+            raise ValueError(
+                f"Experiment '{experiment_label}' uses model_dir='{experiment_model_dir}', "
+                f"but the analysis is configured for '{expected_model_dir}'."
+            )
+
         experiments_data[experiment_label] = {
             "results": results,
-            "config": results["config"],
-            "model_name": results["config"]["model_dir"],
+            "config": experiment_config,
+            "model_name": experiment_model_dir,
         }
 
     return experiments_data

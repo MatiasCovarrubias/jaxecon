@@ -368,8 +368,9 @@ class Model:
             dict: Dictionary mapping variable labels to their log deviations from steady state
         """
         # Weights and policies: log level = logdev + ss
-        # Keep utility aggregates (Cagg/Lagg) for welfare objects.
-        # Build expenditure aggregates for moments/IR comparisons.
+        # Keep CES utility aggregates for welfare objects, but expose the exact
+        # headcount labor aggregate in the main analysis output so moments line up
+        # with the MATLAB reference statistics.
         epsilon = jnp.array(1e-12)
 
         # Get steady state prices in levels
@@ -396,11 +397,11 @@ class Model:
         Kagg = K @ Pk_weights_levels
 
         C = policies_levels[: self.n_sectors]
+        L = policies_levels[self.n_sectors : 2 * self.n_sectors]
         Iout = policies_levels[7 * self.n_sectors : 8 * self.n_sectors]
         Q = policies_levels[9 * self.n_sectors : 10 * self.n_sectors]
         Mout = policies_levels[5 * self.n_sectors : 6 * self.n_sectors]
         M = policies_levels[4 * self.n_sectors : 5 * self.n_sectors]
-        Inv = policies_levels[6 * self.n_sectors : 7 * self.n_sectors]
 
         # Expenditure-based aggregates (current prices)
         Cagg_exp = jnp.sum(P_weights_levels * C)
@@ -408,10 +409,10 @@ class Model:
         GDPagg_exp = jnp.sum(P_weights_levels * (Q - Mout))
 
         # Other aggregates used for diagnostics
-        Y = policies_levels[10 * self.n_sectors : 11 * self.n_sectors]
         Magg = M @ Pm_weights_levels
 
-        # Calculate steady state analysis variables in levels using steady state weights
+        # Build the fixed-price steady-state reference with the same mean simulated
+        # prices used in the time-varying aggregates.
         policies_ss_levels = jnp.exp(self.policies_ss)
 
         # Get steady state Kagg
@@ -419,15 +420,18 @@ class Model:
         Kagg_ss = K_ss @ Pk_weights_levels
 
         C_ss = policies_ss_levels[: self.n_sectors]
+        L_ss = policies_ss_levels[self.n_sectors : 2 * self.n_sectors]
         Iout_ss = policies_ss_levels[7 * self.n_sectors : 8 * self.n_sectors]
         Q_ss = policies_ss_levels[9 * self.n_sectors : 10 * self.n_sectors]
         Mout_ss = policies_ss_levels[5 * self.n_sectors : 6 * self.n_sectors]
         M_ss = policies_ss_levels[4 * self.n_sectors : 5 * self.n_sectors]
 
         # Expenditure-based steady states
-        Cagg_exp_ss = jnp.sum(P_ss * C_ss)
-        Iagg_exp_ss = jnp.sum(P_ss * Iout_ss)
-        GDPagg_exp_ss = jnp.sum(P_ss * (Q_ss - Mout_ss))
+        Cagg_exp_ss = jnp.sum(P_weights_levels * C_ss)
+        Iagg_exp_ss = jnp.sum(P_weights_levels * Iout_ss)
+        GDPagg_exp_ss = jnp.sum(P_weights_levels * (Q_ss - Mout_ss))
+        Lagg_headcount = jnp.sum(L)
+        Lagg_headcount_ss = jnp.sum(L_ss)
 
         # Other aggregate steady states used for diagnostics
         Magg_ss = M_ss @ Pm_weights_levels
@@ -437,6 +441,9 @@ class Model:
         Cagg_exp_logdev = jnp.log(jnp.maximum(Cagg_exp, epsilon)) - jnp.log(jnp.maximum(Cagg_exp_ss, epsilon))
         Iagg_exp_logdev = jnp.log(jnp.maximum(Iagg_exp, epsilon)) - jnp.log(jnp.maximum(Iagg_exp_ss, epsilon))
         GDPagg_exp_logdev = jnp.log(jnp.maximum(GDPagg_exp, epsilon)) - jnp.log(jnp.maximum(GDPagg_exp_ss, epsilon))
+        Lagg_headcount_logdev = jnp.log(jnp.maximum(Lagg_headcount, epsilon)) - jnp.log(
+            jnp.maximum(Lagg_headcount_ss, epsilon)
+        )
         Magg_logdev = jnp.log(Magg) - jnp.log(Magg_ss)
 
         # Calculate utility and its deviation
@@ -448,7 +455,8 @@ class Model:
         return {
             "Agg. Consumption": Cagg_exp_logdev,
             "Agg. Consumption (Utility)": Cagg_logdev,
-            "Agg. Labor": Lagg_logdev,
+            "Agg. Labor": Lagg_headcount_logdev,
+            "Agg. Labor (CES)": Lagg_logdev,
             "Agg. Capital": Kagg_logdev,
             "Agg. Output": GDPagg_exp_logdev,
             "Agg. GDP": GDPagg_exp_logdev,

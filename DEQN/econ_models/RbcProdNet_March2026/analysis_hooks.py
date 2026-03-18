@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from DEQN.econ_models.RbcProdNet_March2026.aggregation import (
+    compute_model_moments_with_consistent_aggregation,
     compute_ergodic_prices_from_simulation,
     compute_ergodic_steady_state,
     create_perfect_foresight_descriptive_stats,
@@ -20,7 +21,7 @@ from DEQN.econ_models.RbcProdNet_March2026.plots import (
     plot_sectoral_variable_stochss,
 )
 
-EXTRA_SECTORAL_IR_LABELS = [
+CORE_SECTORAL_IR_LABELS = [
     "Cj",
     "Ioutj",
     "Yj",
@@ -28,6 +29,54 @@ EXTRA_SECTORAL_IR_LABELS = [
     "Lj",
     "Qj",
 ]
+
+SUPPORTED_SECTORAL_IR_LABELS = [
+    "Cj",
+    "Pj",
+    "Ioutj",
+    "Moutj",
+    "Lj",
+    "Ij",
+    "Mj",
+    "Yj",
+    "Qj",
+    "Kj",
+    "Cj_client",
+    "Pj_client",
+    "Ioutj_client",
+    "Moutj_client",
+    "Lj_client",
+    "Ij_client",
+    "Mj_client",
+    "Yj_client",
+    "Qj_client",
+    "Pmj_client",
+    "gammaij_client",
+]
+
+_SECTORAL_POLICY_BLOCKS = {
+    "Cj": 0,
+    "Lj": 1,
+    "Pj": 8,
+    "Mj": 4,
+    "Moutj": 5,
+    "Ij": 6,
+    "Ioutj": 7,
+    "Qj": 9,
+    "Yj": 10,
+    "Pmj_client": 3,
+    "Cj_client": 0,
+    "Lj_client": 1,
+    "Pj_client": 8,
+    "Mj_client": 4,
+    "Moutj_client": 5,
+    "Ij_client": 6,
+    "Ioutj_client": 7,
+    "Qj_client": 9,
+    "Yj_client": 10,
+}
+
+_WARNED_UNSUPPORTED_IR_LABELS: set[str] = set()
 
 SECTORAL_VAR_DESC = {
     "Cj": ("Row  3", "Consumption (own sector)"),
@@ -82,31 +131,101 @@ def get_states_to_shock(config, econ_model) -> list[int]:
     return list(range(econ_model.n_sectors, 2 * econ_model.n_sectors))
 
 
+def _get_requested_sectoral_ir_variables(config) -> list[str]:
+    requested = config.get("sectoral_ir_variables_to_plot", CORE_SECTORAL_IR_LABELS)
+    if isinstance(requested, str):
+        return [requested]
+    return list(requested)
+
+
+def _warn_unsupported_sectoral_ir_variables(requested_labels) -> None:
+    unsupported = [label for label in requested_labels if label not in SUPPORTED_SECTORAL_IR_LABELS]
+    new_labels = [label for label in unsupported if label not in _WARNED_UNSUPPORTED_IR_LABELS]
+    if new_labels:
+        _WARNED_UNSUPPORTED_IR_LABELS.update(new_labels)
+        print(
+            "  Warning: skipping unsupported sectoral IR variables "
+            f"{new_labels}. Supported labels: {SUPPORTED_SECTORAL_IR_LABELS}"
+        )
+
+
+def _get_client_indices(econ_model) -> list[int]:
+    gamma_m = np.asarray(econ_model.Gamma_M, dtype=float)
+    client_indices = []
+    for sector_idx in range(econ_model.n_sectors):
+        row = gamma_m[sector_idx].copy()
+        row[sector_idx] = -np.inf
+        client_indices.append(int(np.argmax(row)))
+    return client_indices
+
+
+def _policy_value_for_sector(policy_logdev, block_idx, sector_idx, n_sectors):
+    return policy_logdev[block_idx * n_sectors + sector_idx]
+
+
 def extend_gir_var_labels(var_labels, econ_model, config) -> list[str]:
     del econ_model
     extended = list(var_labels)
-    requested_labels = config.get("sectoral_ir_variables_to_plot", EXTRA_SECTORAL_IR_LABELS)
+    requested_labels = _get_requested_sectoral_ir_variables(config)
+    _warn_unsupported_sectoral_ir_variables(requested_labels)
     for label in requested_labels:
-        if label in EXTRA_SECTORAL_IR_LABELS and label not in extended:
+        if label in SUPPORTED_SECTORAL_IR_LABELS and label not in extended:
             extended.append(label)
     return extended
 
 
 def augment_gir_analysis_variables(analysis_vars_dict, obs_logdev, policy_logdev, state_idx, econ_model, config):
-    del config
     sector_idx = state_idx - econ_model.n_sectors
     if sector_idx < 0 or sector_idx >= econ_model.n_sectors:
         return analysis_vars_dict
 
+    requested_labels = _get_requested_sectoral_ir_variables(config)
+    _warn_unsupported_sectoral_ir_variables(requested_labels)
+
     n = econ_model.n_sectors
     j = sector_idx
-    analysis_vars_dict["Cj"] = policy_logdev[j]
-    analysis_vars_dict["Ioutj"] = policy_logdev[7 * n + j]
-    analysis_vars_dict["Yj"] = policy_logdev[10 * n + j]
-    analysis_vars_dict["Kj"] = obs_logdev[j]
-    analysis_vars_dict["Lj"] = policy_logdev[n + j]
-    analysis_vars_dict["Qj"] = policy_logdev[9 * n + j]
+    client_idx = _get_client_indices(econ_model)[j]
+
+    supported_requested = [label for label in requested_labels if label in SUPPORTED_SECTORAL_IR_LABELS]
+    if not supported_requested:
+        return analysis_vars_dict
+
+    own_sector_values = {
+        "Kj": obs_logdev[j],
+    }
+    client_sector_values = {}
+
+    for label, block_idx in _SECTORAL_POLICY_BLOCKS.items():
+        if label.endswith("_client"):
+            client_sector_values[label] = _policy_value_for_sector(policy_logdev, block_idx, client_idx, n)
+        elif label != "Pmj_client":
+            own_sector_values[label] = _policy_value_for_sector(policy_logdev, block_idx, j, n)
+
+    client_sector_values["gammaij_client"] = (1 - econ_model.sigma_m) * (
+        own_sector_values["Pj"] - client_sector_values["Pmj_client"]
+    )
+
+    for label in supported_requested:
+        if label in own_sector_values:
+            analysis_vars_dict[label] = own_sector_values[label]
+        elif label in client_sector_values:
+            analysis_vars_dict[label] = client_sector_values[label]
+
     return analysis_vars_dict
+
+
+def _resolve_reference_experiment_label(config, raw_simulation_data) -> str:
+    configured_label = config.get("aggregation_reference_experiment")
+    if configured_label is not None:
+        if configured_label not in raw_simulation_data:
+            available = list(raw_simulation_data.keys())
+            raise ValueError(
+                "aggregation_reference_experiment must match an analyzed experiment label. "
+                f"Got '{configured_label}', available labels: {available}"
+            )
+        return configured_label
+
+    return next(iter(raw_simulation_data))
 
 
 def postprocess_analysis(
@@ -136,9 +255,13 @@ def postprocess_analysis(
     theoretical_stats: Dict[str, Any] = {}
     histogram_theo_params: Dict[str, Any] = {}
 
-    first_experiment_label = list(analysis_variables_data.keys())[0]
-    first_sim_data = raw_simulation_data[first_experiment_label]
-    simul_policies = first_sim_data["simul_policies"]
+    reference_experiment_label = _resolve_reference_experiment_label(config, raw_simulation_data)
+    print(
+        f"  Using '{reference_experiment_label}' as the fixed-price aggregation reference.",
+        flush=True,
+    )
+    reference_sim_data = raw_simulation_data[reference_experiment_label]
+    simul_policies = reference_sim_data["simul_policies"]
 
     P_ergodic, Pk_ergodic, Pm_ergodic = compute_ergodic_prices_from_simulation(simul_policies, policies_ss, n_sectors)
 
@@ -171,7 +294,7 @@ def postprocess_analysis(
             Pk_ergodic=Pk_ergodic,
             Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
-            burn_in=config["burn_in_periods"],
+            burn_in=0,
             source_label="First-Order (Dynare)",
         )
 
@@ -191,7 +314,7 @@ def postprocess_analysis(
             Pk_ergodic=Pk_ergodic,
             Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
-            burn_in=config["burn_in_periods"],
+            burn_in=0,
             source_label="Second-Order",
         )
         analysis_variables_data["SecondOrder"] = secondorder_analysis_vars
@@ -247,7 +370,10 @@ def postprocess_analysis(
                 n = n_sectors
                 if len(policies_std) > 11 * n + 1:
                     print(f"    Agg. Consumption (utility): sigma={float(policies_std[11*n])*100:.4f}%", flush=True)
-                    print(f"    Agg. Labor: sigma={float(policies_std[11*n+1])*100:.4f}%", flush=True)
+                    print(
+                        f"    Agg. Labor (CES fallback): sigma={float(policies_std[11*n+1])*100:.4f}%",
+                        flush=True,
+                    )
         else:
             print("  Perfect Foresight moments will use Perfect Foresight (Dynare) simulation series.")
 
@@ -260,7 +386,7 @@ def postprocess_analysis(
             Pk_ergodic=Pk_ergodic,
             Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
-            burn_in=min(config["burn_in_periods"], dynare_simul_pf.shape[1] // 10),
+            burn_in=0,
             source_label="Perfect Foresight",
         )
         analysis_variables_data["PerfectForesight"] = pf_analysis_vars
@@ -279,6 +405,19 @@ def postprocess_analysis(
         )
         analysis_variables_data["MITShocks"] = mit_analysis_vars
         print("  Loaded MITShocks simulation series.")
+
+    calibration_method_stats = _build_calibration_method_stats(
+        stats=stats,
+        analysis_variables_data=analysis_variables_data,
+        raw_simulation_data=raw_simulation_data,
+        reference_experiment_label=reference_experiment_label,
+        policies_ss=policies_ss,
+        state_ss=state_ss,
+        P_ergodic=P_ergodic,
+        Pk_ergodic=Pk_ergodic,
+        Pm_ergodic=Pm_ergodic,
+        n_sectors=n_sectors,
+    )
 
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
     matlab_ir_data = load_matlab_irs(
@@ -302,8 +441,14 @@ def postprocess_analysis(
         )
     ir_variables = filtered_ir_variables
 
-    sectoral_ir_variables = config.get("sectoral_ir_variables_to_plot", [])
+    sectoral_ir_variables = [
+        label
+        for label in _get_requested_sectoral_ir_variables(config)
+        if label in SUPPORTED_SECTORAL_IR_LABELS
+    ]
     shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
+    if not shock_sizes:
+        raise ValueError("ir_shock_sizes must contain at least one shock size.")
     max_periods = config.get("ir_max_periods", 80)
     configured_ir_methods = config.get("ir_methods", ["IR_stoch_ss"])
     if isinstance(configured_ir_methods, str):
@@ -315,7 +460,7 @@ def postprocess_analysis(
     else:
         ir_response_source = "IR_stoch_ss"
 
-    largest_shock = shock_sizes[-1]
+    largest_shock = max(shock_sizes)
     policies_ss_np = np.asarray(policies_ss)
     P_ergodic_np = np.asarray(P_ergodic)
 
@@ -404,9 +549,118 @@ def postprocess_analysis(
 
     return {
         "analysis_variables_data": analysis_variables_data,
+        "calibration_method_stats": calibration_method_stats,
         "theoretical_stats": theoretical_stats,
         "histogram_theo_params": histogram_theo_params,
         "matlab_ir_data": matlab_ir_data,
         "upstreamness_data": upstreamness_data,
         "stochastic_ss_data": stochastic_ss_data,
     }
+
+
+# Legacy long-ergodic price averaging path kept for later reuse:
+# first_sim_data = raw_simulation_data[first_experiment_label]
+# simul_policies = first_sim_data.get("simul_policies_full", first_sim_data["simul_policies"])
+# P_ergodic, Pk_ergodic, Pm_ergodic = compute_ergodic_prices_from_simulation(
+#     simul_policies,
+#     policies_ss,
+#     n_sectors,
+# )
+
+
+def _build_calibration_method_stats(
+    *,
+    stats,
+    analysis_variables_data,
+    raw_simulation_data,
+    reference_experiment_label,
+    policies_ss,
+    state_ss,
+    P_ergodic,
+    Pk_ergodic,
+    Pm_ergodic,
+    n_sectors,
+):
+    method_stats = {
+        "1st": _copy_model_stats((stats.get("FirstOrder") or {}).get("ModelStats")),
+        "2nd": _copy_model_stats((stats.get("SecondOrder") or {}).get("ModelStats")),
+        "PF": _copy_model_stats((stats.get("PerfectForesight") or stats.get("Determ") or {}).get("ModelStats")),
+        "MITShocks": _copy_model_stats((stats.get("MITShocks") or stats.get("MITShock") or {}).get("ModelStats")),
+    }
+
+    aggregate_method_map = {
+        "1st": "Log-Linear",
+        "2nd": "SecondOrder",
+        "PF": "PerfectForesight",
+        "MITShocks": "MITShocks",
+    }
+    for column_label, method_name in aggregate_method_map.items():
+        stats_dict = method_stats.get(column_label)
+        analysis_vars = analysis_variables_data.get(method_name)
+        if stats_dict is not None and analysis_vars is not None:
+            _override_aggregate_rows_from_analysis_vars(stats_dict, analysis_vars)
+
+    nonlinear_sim_data = raw_simulation_data[reference_experiment_label]
+    method_stats["Nonlinear"] = compute_model_moments_with_consistent_aggregation(
+        simul_obs=nonlinear_sim_data["simul_obs"],
+        simul_policies=nonlinear_sim_data["simul_policies"],
+        policies_ss=policies_ss,
+        state_ss=state_ss,
+        P_ergodic=P_ergodic,
+        Pk_ergodic=Pk_ergodic,
+        Pm_ergodic=Pm_ergodic,
+        n_sectors=n_sectors,
+    )
+
+    return {label: stats_dict for label, stats_dict in method_stats.items() if stats_dict is not None}
+
+
+def _copy_model_stats(model_stats):
+    if not isinstance(model_stats, dict):
+        return None
+    return dict(model_stats)
+
+
+def _override_aggregate_rows_from_analysis_vars(model_stats, analysis_vars):
+    required_keys = {"Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Labor"}
+    if not required_keys.issubset(analysis_vars):
+        return
+
+    c_series = _as_float_array(analysis_vars.get("Agg. Consumption"))
+    i_series = _as_float_array(analysis_vars.get("Agg. Investment"))
+    y_series = _as_float_array(analysis_vars.get("Agg. GDP"))
+    l_series = _as_float_array(analysis_vars.get("Agg. Labor"))
+
+    if c_series.size:
+        model_stats["sigma_C_agg"] = float(np.std(c_series))
+    if i_series.size:
+        model_stats["sigma_I_agg"] = float(np.std(i_series))
+    if y_series.size:
+        model_stats["sigma_VA_agg"] = float(np.std(y_series))
+    if l_series.size:
+        labor_sigma = float(np.std(l_series))
+        model_stats["sigma_L_agg"] = labor_sigma
+        model_stats["sigma_L_hc_agg"] = labor_sigma
+    if c_series.size and l_series.size:
+        model_stats["corr_L_C_agg"] = _safe_corr(l_series, c_series)
+    if c_series.size and i_series.size:
+        model_stats["corr_I_C_agg"] = _safe_corr(i_series, c_series)
+
+
+def _as_float_array(values):
+    if values is None:
+        return np.array([], dtype=float)
+    return np.asarray(values, dtype=float).reshape(-1)
+
+
+def _safe_corr(x, y):
+    x = np.asarray(x, dtype=float).reshape(-1)
+    y = np.asarray(y, dtype=float).reshape(-1)
+    mask = np.isfinite(x) & np.isfinite(y)
+    if np.count_nonzero(mask) < 2:
+        return float("nan")
+    x = x[mask]
+    y = y[mask]
+    if np.std(x) == 0 or np.std(y) == 0:
+        return float("nan")
+    return float(np.corrcoef(x, y)[0, 1])

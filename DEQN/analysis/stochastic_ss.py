@@ -2,6 +2,8 @@ import jax
 from jax import lax, random
 from jax import numpy as jnp
 
+from DEQN.analysis.model_hooks import get_shock_dimension
+
 
 def create_stochss_loss_fn(econ_model, mc_draws=32):
     """
@@ -67,7 +69,7 @@ def create_stochss_loss_fn(econ_model, mc_draws=32):
     return compute_loss_at_point
 
 
-def create_stochss_fn(econ_model, config):
+def create_stochss_fn(econ_model, config, analysis_hooks=None):
     """
     Create stochastic steady state function.
 
@@ -76,10 +78,12 @@ def create_stochss_fn(econ_model, config):
     """
 
     def random_draws(simul_obs, n_draws, seed=0):
-        """Sample random points from simulation observations (in logdev form)."""
+        """Sample random points from the active simulation sample (in logdev form)."""
         n_simul = simul_obs.shape[0]
         key = random.PRNGKey(seed)
-        indices = random.choice(key, n_simul, shape=(n_draws,), replace=False)
+        replace = bool(n_draws > n_simul)
+        draw_count = n_draws if replace else min(n_draws, n_simul)
+        indices = random.choice(key, n_simul, shape=(draw_count,), replace=replace)
         obs_draws = simul_obs[indices, :]
         return obs_draws
 
@@ -110,12 +114,14 @@ def create_stochss_fn(econ_model, config):
         final_obs_logdev, _ = lax.scan(step, obs_init_logdev, shocks)
         return final_obs_logdev
 
+    shock_dimension = get_shock_dimension(econ_model, analysis_hooks)
+
     def stochss_fn(simul_obs, train_state):
         """
         Compute stochastic steady state.
 
         Args:
-            simul_obs: Simulation observations in log deviation form
+            simul_obs: Active simulation observations in log deviation form
             train_state: Trained neural network state
 
         Returns:
@@ -124,7 +130,10 @@ def create_stochss_fn(econ_model, config):
             stoch_ss_std: Standard deviation of states (logdev form)
         """
         sample_fromdist = random_draws(simul_obs, config["n_draws"], config["seed"])
-        zero_shocks = jnp.zeros(shape=(config["time_to_converge"], econ_model.n_sectors))
+        zero_shocks = jnp.zeros(
+            shape=(config["time_to_converge"], shock_dimension),
+            dtype=simul_obs.dtype,
+        )
         stoch_ss = jax.vmap(simul_traject_lastobs, in_axes=(None, None, None, 0))(
             econ_model, train_state, zero_shocks, sample_fromdist
         )

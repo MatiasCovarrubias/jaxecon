@@ -8,8 +8,9 @@ Current aggregate definitions used for moments/IRs:
 
 where P_j^{erg} are fixed ergodic-mean output prices from the nonlinear simulation.
 
-All are returned as log deviations from deterministic steady state:
-    log(X_t) - log(X_ss)
+All are returned as log deviations from a fixed-price steady state built with
+ergodic-mean simulated prices:
+    log(X_t) - log(X_ss^erg)
 
 Utility aggregate consumption Cagg is still available as a separate object
 for welfare purposes, but it is not used as the main aggregate consumption
@@ -17,6 +18,7 @@ series for moments/IR comparisons.
 """
 
 import jax.numpy as jnp
+import numpy as np
 from jax import random
 
 
@@ -32,8 +34,8 @@ def compute_ergodic_steady_state(
     Compute steady-state auxiliary aggregates/corrections.
 
     Expenditure aggregates (C_exp, I_exp, GDP_exp) are now computed using
-    current prices and deterministic steady-state references directly in
-    model/analysis pipelines, so no recentering correction is needed for them.
+    fixed ergodic-mean prices in both the simulated aggregate levels and the
+    steady-state reference, so no recentering correction is needed for them.
 
     Args:
         policies_ss: Steady state policies in log (from MATLAB)
@@ -109,8 +111,8 @@ def recenter_analysis_variables(
 
     The correction is: x_logdev_corrected = x_logdev + log(SS_old) - log(SS_new)
 
-    This ensures that when SS_old prices are used in the simulation but we want
-    the reference to be SS_new (ergodic prices), the log deviations are properly shifted.
+    This ensures that when legacy deterministic-price aggregates are compared
+    to ergodic-price diagnostics, the log deviations are properly shifted.
 
     Args:
         analysis_vars: Dictionary of analysis variables (log deviations from SS)
@@ -192,10 +194,11 @@ def process_simulation_with_consistent_aggregation(
     - C_exp(t)   = sum_j P_j^{erg} * C_j(t)
     - I_exp(t)   = sum_j P_j^{erg} * I_j^{out}(t)
     - GDP_exp(t) = sum_j P_j^{erg} * [Q_j(t) - M_j^{out}(t)]
-    and their log deviations from deterministic SS.
+    and their log deviations from the same ergodic-price steady-state reference.
 
     Utility aggregate consumption Cagg and CES labor aggregate Lagg are kept as
-    separate diagnostic series.
+    separate diagnostic series, while the main labor aggregate is exact headcount
+    labor to match the MATLAB `ModelStats` convention.
 
     Args:
         simul_data: (n_vars, T) log deviations from SS (ModelData_simulation full_simul)
@@ -242,12 +245,12 @@ def process_simulation_with_consistent_aggregation(
 
     policies_ss_levels = jnp.exp(policies_ss)
     K_ss = jnp.exp(state_ss[:n])
-    Y_ss = policies_ss_levels[10 * n : 11 * n]
     I_ss = policies_ss_levels[6 * n : 7 * n]
     M_ss = policies_ss_levels[4 * n : 5 * n]
 
     log_dev_k = simul[idx["k"][0] : idx["k"][1], :]
     log_dev_c = simul[idx["c"][0] : idx["c"][1], :]
+    log_dev_l = simul[idx["l"][0] : idx["l"][1], :]
     log_dev_iout = simul[idx["iout"][0] : idx["iout"][1], :]
     log_dev_q = simul[idx["q"][0] : idx["q"][1], :]
     log_dev_mout = simul[idx["mout"][0] : idx["mout"][1], :]
@@ -255,12 +258,12 @@ def process_simulation_with_consistent_aggregation(
 
     K_levels = K_ss[:, None] * jnp.exp(log_dev_k)
     C_ss = policies_ss_levels[0:n]
+    L_ss = policies_ss_levels[n : 2 * n]
     Iout_ss = policies_ss_levels[7 * n : 8 * n]
     Q_ss = policies_ss_levels[9 * n : 10 * n]
     Mout_ss = policies_ss_levels[5 * n : 6 * n]
-    P_ss = policies_ss_levels[8 * n : 9 * n]
-
     C_levels = C_ss[:, None] * jnp.exp(log_dev_c)
+    L_levels = L_ss[:, None] * jnp.exp(log_dev_l)
     Iout_levels = Iout_ss[:, None] * jnp.exp(log_dev_iout)
     Q_levels = Q_ss[:, None] * jnp.exp(log_dev_q)
     Mout_levels = Mout_ss[:, None] * jnp.exp(log_dev_mout)
@@ -272,12 +275,14 @@ def process_simulation_with_consistent_aggregation(
     Iagg_exp = jnp.sum(P_ergodic[:, None] * Iout_levels, axis=0)
     GDPagg_exp = jnp.sum(P_ergodic[:, None] * (Q_levels - Mout_levels), axis=0)
     Magg = M_levels.T @ Pm_ergodic
+    Lagg_headcount = jnp.sum(L_levels, axis=0)
 
     Kagg_ss = K_ss @ Pk_ergodic
-    Cagg_exp_ss = jnp.sum(P_ss * C_ss)
-    Iagg_exp_ss = jnp.sum(P_ss * Iout_ss)
-    GDPagg_exp_ss = jnp.sum(P_ss * (Q_ss - Mout_ss))
+    Cagg_exp_ss = jnp.sum(P_ergodic * C_ss)
+    Iagg_exp_ss = jnp.sum(P_ergodic * Iout_ss)
+    GDPagg_exp_ss = jnp.sum(P_ergodic * (Q_ss - Mout_ss))
     Magg_ss = M_ss @ Pm_ergodic
+    Lagg_headcount_ss = jnp.sum(L_ss)
 
     cagg_logdev = jnp.ravel(simul[idx["cagg"], :])
     lagg_logdev = jnp.ravel(simul[idx["lagg"], :])
@@ -287,7 +292,8 @@ def process_simulation_with_consistent_aggregation(
     result = {
         "Agg. Consumption": jnp.log(jnp.maximum(Cagg_exp, epsilon)) - jnp.log(jnp.maximum(Cagg_exp_ss, epsilon)),
         "Agg. Consumption (Utility)": cagg_logdev,
-        "Agg. Labor": lagg_logdev,
+        "Agg. Labor": jnp.log(jnp.maximum(Lagg_headcount, epsilon)) - jnp.log(jnp.maximum(Lagg_headcount_ss, epsilon)),
+        "Agg. Labor (CES)": lagg_logdev,
         "Agg. Capital": jnp.log(Kagg) - jnp.log(Kagg_ss),
         "Agg. Output": jnp.log(jnp.maximum(GDPagg_exp, epsilon)) - jnp.log(jnp.maximum(GDPagg_exp_ss, epsilon)),
         "Agg. GDP": jnp.log(jnp.maximum(GDPagg_exp, epsilon)) - jnp.log(jnp.maximum(GDPagg_exp_ss, epsilon)),
@@ -296,6 +302,165 @@ def process_simulation_with_consistent_aggregation(
     }
 
     return result
+
+
+def compute_model_moments_with_consistent_aggregation(
+    simul_obs: jnp.ndarray,
+    simul_policies: jnp.ndarray,
+    policies_ss: jnp.ndarray,
+    state_ss: jnp.ndarray,
+    P_ergodic: jnp.ndarray,
+    Pk_ergodic: jnp.ndarray,
+    Pm_ergodic: jnp.ndarray,
+    n_sectors: int,
+) -> dict:
+    """
+    Compute MATLAB-style `ModelStats` moments for a nonlinear simulation path.
+
+    Aggregate moments use the same fixed-price aggregation as the Python analysis
+    pipeline, while sectoral/comovement moments mirror MATLAB's stored
+    `ModelStats` definitions.
+    """
+    n = n_sectors
+
+    obs_np = np.asarray(simul_obs, dtype=float)
+    policies_np = np.asarray(simul_policies, dtype=float)
+    policies_ss_np = np.asarray(policies_ss, dtype=float)
+    state_ss_np = np.asarray(state_ss, dtype=float)
+    P_ergodic_np = np.asarray(P_ergodic, dtype=float)
+    Pk_ergodic_np = np.asarray(Pk_ergodic, dtype=float)
+    Pm_ergodic_np = np.asarray(Pm_ergodic, dtype=float)
+
+    policies_ss_levels = np.exp(policies_ss_np)
+    state_ss_levels = np.exp(state_ss_np[:n])
+
+    C_ss = policies_ss_levels[:n]
+    L_ss = policies_ss_levels[n : 2 * n]
+    Pk_ss = policies_ss_levels[2 * n : 3 * n]
+    M_ss = policies_ss_levels[4 * n : 5 * n]
+    Mout_ss = policies_ss_levels[5 * n : 6 * n]
+    I_ss = policies_ss_levels[6 * n : 7 * n]
+    Iout_ss = policies_ss_levels[7 * n : 8 * n]
+    Q_ss = policies_ss_levels[9 * n : 10 * n]
+    Y_ss = policies_ss_levels[10 * n : 11 * n]
+
+    C_levels = C_ss[None, :] * np.exp(policies_np[:, :n])
+    L_levels = L_ss[None, :] * np.exp(policies_np[:, n : 2 * n])
+    M_levels = M_ss[None, :] * np.exp(policies_np[:, 4 * n : 5 * n])
+    Mout_levels = Mout_ss[None, :] * np.exp(policies_np[:, 5 * n : 6 * n])
+    Iout_levels = Iout_ss[None, :] * np.exp(policies_np[:, 7 * n : 8 * n])
+    Q_levels = Q_ss[None, :] * np.exp(policies_np[:, 9 * n : 10 * n])
+    K_levels = state_ss_levels[None, :] * np.exp(obs_np[:, :n])
+
+    c_logdev = policies_np[:, :n].T
+    y_logdev = policies_np[:, 10 * n : 11 * n].T
+    l_logdev = policies_np[:, n : 2 * n].T
+    i_logdev = policies_np[:, 6 * n : 7 * n].T
+    a_logdev = obs_np[:, n : 2 * n].T
+    q_logdev = policies_np[:, 9 * n : 10 * n].T
+
+    Cagg_exp = C_levels @ P_ergodic_np
+    Iagg_exp = Iout_levels @ P_ergodic_np
+    GDPagg_exp = (Q_levels - Mout_levels) @ P_ergodic_np
+    Magg = M_levels @ Pm_ergodic_np
+    Kagg = K_levels @ Pk_ergodic_np
+    L_hc = np.sum(L_levels, axis=1)
+
+    Cagg_exp_ss = np.sum(P_ergodic_np * C_ss)
+    Iagg_exp_ss = np.sum(P_ergodic_np * Iout_ss)
+    GDPagg_exp_ss = np.sum(P_ergodic_np * (Q_ss - Mout_ss))
+    Magg_ss = M_ss @ Pm_ergodic_np
+    Kagg_ss = state_ss_levels @ Pk_ergodic_np
+    L_hc_ss = np.sum(L_ss)
+
+    eps = 1e-12
+    C_logdev = np.log(np.maximum(Cagg_exp, eps)) - np.log(np.maximum(Cagg_exp_ss, eps))
+    I_logdev = np.log(np.maximum(Iagg_exp, eps)) - np.log(np.maximum(Iagg_exp_ss, eps))
+    GDP_logdev = np.log(np.maximum(GDPagg_exp, eps)) - np.log(np.maximum(GDPagg_exp_ss, eps))
+    M_logdev = np.log(np.maximum(Magg, eps)) - np.log(np.maximum(Magg_ss, eps))
+    K_logdev = np.log(np.maximum(Kagg, eps)) - np.log(np.maximum(Kagg_ss, eps))
+    L_hc_logdev = np.log(np.maximum(L_hc, eps)) - np.log(np.maximum(L_hc_ss, eps))
+
+    va_weights = Y_ss / np.sum(Y_ss)
+    go_weights = Q_ss / np.sum(Q_ss)
+    go_share_weights = (P_ergodic_np * Q_ss) / np.sum(P_ergodic_np * Q_ss)
+    emp_weights = L_ss / np.sum(L_ss)
+    inv_weights = (I_ss * Pk_ss) / np.sum(I_ss * Pk_ss)
+
+    aggregate_moments = {
+        "C": _compute_univariate_moments(C_logdev),
+        "I": _compute_univariate_moments(I_logdev),
+        "GDP": _compute_univariate_moments(GDP_logdev),
+        "L": _compute_univariate_moments(L_hc_logdev),
+        "M": _compute_univariate_moments(M_logdev),
+        "K": _compute_univariate_moments(K_logdev),
+    }
+
+    corr_matrix_C, avg_pairwise_corr_C = _safe_corr_matrix_rows(c_logdev)
+    corr_matrix_VA, avg_pairwise_corr_VA = _safe_corr_matrix_rows(y_logdev)
+    corr_matrix_L, avg_pairwise_corr_L = _safe_corr_matrix_rows(l_logdev)
+    corr_matrix_I, avg_pairwise_corr_I = _safe_corr_matrix_rows(i_logdev)
+
+    sigma_VA_sectoral = np.std(y_logdev, axis=1)
+    sigma_L_sectoral = np.std(l_logdev, axis=1)
+    sigma_I_sectoral = np.std(i_logdev, axis=1)
+
+    yagg_legacy_logdev = policies_np[:, 11 * n + 2]
+    domar_simul = q_logdev - yagg_legacy_logdev[None, :]
+    sigma_Domar_sectoral = np.std(domar_simul, axis=1)
+
+    A_VA_logdev = va_weights @ a_logdev
+    omega_Q = (P_ergodic_np * Q_ss) / np.sum(P_ergodic_np * (Q_ss - Mout_ss))
+    A_GO_logdev = omega_Q @ a_logdev
+    corr_L_TFP_sectoral = np.array([_safe_corr(l_logdev[j], a_logdev[j]) for j in range(n)])
+
+    return {
+        "sigma_VA_agg": float(np.std(GDP_logdev)),
+        "sigma_C_agg": float(np.std(C_logdev)),
+        "sigma_L_agg": float(np.std(L_hc_logdev)),
+        "sigma_L_hc_agg": float(np.std(L_hc_logdev)),
+        "sigma_I_agg": float(np.std(I_logdev)),
+        "sigma_K_agg": float(np.std(K_logdev)),
+        "sigma_M_agg": float(np.std(M_logdev)),
+        "aggregate_definition": "consistent_fixed_price_aggregation",
+        "sample_window": "shocks_simul",
+        "aggregate_moments": aggregate_moments,
+        "share_C": float(Cagg_exp_ss / GDPagg_exp_ss),
+        "share_I": float(Iagg_exp_ss / GDPagg_exp_ss),
+        "corr_CI_agg": _safe_corr(C_logdev, I_logdev),
+        "corr_L_C_agg": _safe_corr(L_hc_logdev, C_logdev),
+        "corr_I_C_agg": _safe_corr(I_logdev, C_logdev),
+        "rho_VA_agg": _safe_corr(GDP_logdev[:-1], GDP_logdev[1:]) if GDP_logdev.size >= 2 else float("nan"),
+        "avg_pairwise_corr_C": avg_pairwise_corr_C,
+        "avg_pairwise_corr_VA": avg_pairwise_corr_VA,
+        "avg_pairwise_corr_L": avg_pairwise_corr_L,
+        "avg_pairwise_corr_I": avg_pairwise_corr_I,
+        "sigma_VA_avg": float(np.sum(va_weights * sigma_VA_sectoral)),
+        "sigma_VA_sectoral": sigma_VA_sectoral,
+        "sigma_L_avg": float(np.sum(va_weights * sigma_L_sectoral)),
+        "sigma_I_avg": float(np.sum(va_weights * sigma_I_sectoral)),
+        "sigma_L_avg_empweighted": float(np.sum(emp_weights * sigma_L_sectoral)),
+        "sigma_I_avg_invweighted": float(np.sum(inv_weights * sigma_I_sectoral)),
+        "sigma_Domar_avg": float(np.sum(go_weights * sigma_Domar_sectoral)),
+        "corr_matrix_C": corr_matrix_C,
+        "sigma_L_sectoral": sigma_L_sectoral,
+        "sigma_I_sectoral": sigma_I_sectoral,
+        "sigma_Domar_sectoral": sigma_Domar_sectoral,
+        "corr_matrix_VA": corr_matrix_VA,
+        "corr_matrix_L": corr_matrix_L,
+        "corr_matrix_I": corr_matrix_I,
+        "corr_L_TFP_agg": _safe_corr(L_hc_logdev, A_VA_logdev),
+        "corr_L_TFP_GO_agg": _safe_corr(L_hc_logdev, A_GO_logdev),
+        "corr_L_TFP_sectoral": corr_L_TFP_sectoral,
+        "corr_L_TFP_sectoral_avg_vashare": _weighted_mean_ignore_nan(corr_L_TFP_sectoral, va_weights),
+        "corr_L_TFP_sectoral_avg_goshare": _weighted_mean_ignore_nan(corr_L_TFP_sectoral, go_share_weights),
+        "corr_L_TFP_sectoral_avg_empshare": _weighted_mean_ignore_nan(corr_L_TFP_sectoral, emp_weights),
+        "va_weights": va_weights,
+        "go_weights": go_weights,
+        "go_share_weights": go_share_weights,
+        "emp_weights": emp_weights,
+        "inv_weights": inv_weights,
+    }
 
 
 def _get_variable_indices(n_sectors: int) -> dict:
@@ -321,6 +486,73 @@ def _get_variable_indices(n_sectors: int) -> dict:
         "iagg": 13 * n + 3,
         "magg": 13 * n + 4,
     }
+
+
+def _compute_univariate_moments(x: np.ndarray) -> dict:
+    x = np.asarray(x, dtype=float).reshape(-1)
+    x = x[np.isfinite(x)]
+    moments = {"mean": float("nan"), "std": float("nan"), "skewness": float("nan"), "kurtosis": float("nan")}
+    if x.size == 0:
+        return moments
+
+    mu = float(np.mean(x))
+    sigma = float(np.std(x))
+    moments["mean"] = mu
+    moments["std"] = sigma
+    if sigma == 0:
+        return moments
+
+    z = (x - mu) / sigma
+    moments["skewness"] = float(np.mean(z**3))
+    moments["kurtosis"] = float(np.mean(z**4))
+    return moments
+
+
+def _safe_corr(x: np.ndarray, y: np.ndarray) -> float:
+    x = np.asarray(x, dtype=float).reshape(-1)
+    y = np.asarray(y, dtype=float).reshape(-1)
+    mask = np.isfinite(x) & np.isfinite(y)
+    if np.count_nonzero(mask) < 2:
+        return float("nan")
+
+    x = x[mask]
+    y = y[mask]
+    if np.std(x) == 0 or np.std(y) == 0:
+        return float("nan")
+
+    return float(np.corrcoef(x, y)[0, 1])
+
+
+def _weighted_mean_ignore_nan(values: np.ndarray, weights: np.ndarray) -> float:
+    values = np.asarray(values, dtype=float).reshape(-1)
+    weights = np.asarray(weights, dtype=float).reshape(-1)
+    mask = np.isfinite(values) & np.isfinite(weights)
+    if not np.any(mask):
+        return float("nan")
+
+    values = values[mask]
+    weights = weights[mask]
+    weights = weights / np.sum(weights)
+    return float(np.sum(weights * values))
+
+
+def _safe_corr_matrix_rows(data: np.ndarray) -> tuple[np.ndarray, float]:
+    data = np.asarray(data, dtype=float)
+    n_rows = data.shape[0]
+    corr_matrix = np.full((n_rows, n_rows), np.nan, dtype=float)
+    for i in range(n_rows):
+        corr_matrix[i, i] = 1.0
+        for j in range(i + 1, n_rows):
+            rho = _safe_corr(data[i], data[j])
+            corr_matrix[i, j] = rho
+            corr_matrix[j, i] = rho
+
+    upper = np.triu(np.ones((n_rows, n_rows), dtype=bool), 1)
+    values = corr_matrix[upper]
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return corr_matrix, float("nan")
+    return corr_matrix, float(np.mean(values))
 
 
 def generate_loglinear_samples_from_theostats(
@@ -495,8 +727,8 @@ def create_perfect_foresight_descriptive_stats(
     2. New format (Feb 2026+): policies_mean, policies_std, and optionally ModelStats
 
     When model_stats is provided (Statistics.PerfectForesight.ModelStats), aggregate volatilities
-    are taken from it when available (sigma_VA_agg, sigma_L_agg, sigma_I_agg, sigma_M_agg).
-    ModelStats does not include sigma_C_agg; Consumption Sd is taken from policies_std.
+    are taken from it when available (sigma_C_agg, sigma_VA_agg, sigma_L_agg, sigma_I_agg, sigma_M_agg).
+    When model_stats is provided, all main aggregate volatilities should come from it.
 
     policies_mean in MATLAB is the mean over time of log levels; mean log deviation in percent
     is (policies_mean - policies_ss) * 100. When policies_ss is provided, Mean is computed that way.
@@ -510,7 +742,7 @@ def create_perfect_foresight_descriptive_stats(
         label: Label for this experiment in the output
         n_sectors: Number of sectors (default 37)
         model_stats: Optional ModelStats struct (Statistics.PerfectForesight.ModelStats).
-                     When present, used for sigma_VA_agg, sigma_L_agg, sigma_I_agg, sigma_M_agg.
+                     When present, used for sigma_C_agg, sigma_VA_agg, sigma_L_agg, sigma_I_agg, sigma_M_agg.
         policies_ss: Optional steady-state policies (log levels). When provided, Mean for
                      aggregates is (policies_mean - policies_ss) * 100 (mean log deviation in %).
 
@@ -523,6 +755,7 @@ def create_perfect_foresight_descriptive_stats(
     ms = model_stats if model_stats else {}
 
     model_stats_sd_map = {
+        "Agg. Consumption": "sigma_C_agg",
         "Agg. Output": "sigma_VA_agg",
         "Agg. Labor": "sigma_L_agg",
         "Agg. Investment": "sigma_I_agg",

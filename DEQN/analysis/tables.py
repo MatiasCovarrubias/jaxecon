@@ -35,6 +35,48 @@ _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
     "σ(I^exp_agg)",
 ]
 
+_MODEL_VS_DATA_ROW_DEFS = [
+    ("$\\sigma(Y_{\\mathrm{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
+    ("$\\sigma(C_{\\mathrm{agg}})$", "sigma_C_agg", "sigma_C_agg"),
+    ("$\\sigma(I_{\\mathrm{agg}})$", "sigma_I_agg", "sigma_I_agg"),
+    ("$\\sigma(L^{hc}_{\\mathrm{agg}})$", "sigma_L_hc_agg", "sigma_L_agg"),
+    ("$\\mathrm{corr}(L,C)_{\\mathrm{agg}}$", "corr_L_C_agg", ("correlations", "L_C_agg")),
+    ("$\\mathrm{corr}(I,C)_{\\mathrm{agg}}$", "corr_I_C_agg", ("correlations", "I_C_agg")),
+    ("$\\sigma(VA)$ avg", "sigma_VA_avg", "sigma_VA_avg"),
+    ("$\\sigma(L)$ avg", "sigma_L_avg", "sigma_L_avg"),
+    ("$\\sigma(I)$ avg", "sigma_I_avg", "sigma_I_avg"),
+    ("$\\sigma(L)$ emp-wgt", "sigma_L_avg_empweighted", "sigma_L_avg_empweighted"),
+    ("$\\sigma(I)$ inv-wgt", "sigma_I_avg_invweighted", "sigma_I_avg_invweighted"),
+    ("$\\sigma(Domar)$ avg", "sigma_Domar_avg", "sigma_Domar_avg"),
+    ("avg corr$(C,C)$", "avg_pairwise_corr_C", "avg_pairwise_corr_C"),
+    ("avg corr$(VA,VA)$", "avg_pairwise_corr_VA", "avg_pairwise_corr_VA"),
+    ("avg corr$(L,L)$", "avg_pairwise_corr_L", "avg_pairwise_corr_L"),
+    ("avg corr$(I,I)$", "avg_pairwise_corr_I", "avg_pairwise_corr_I"),
+    ("$\\mathrm{corr}(L,A)_{\\mathrm{agg}}$", "corr_L_TFP_agg", ("correlations", "L_TFP_agg")),
+    ("avg corr$(L,A)$", "corr_L_TFP_sectoral_avg_vashare", ("correlations", "L_TFP_sectoral_avg_vashare")),
+]
+
+_MODEL_VS_DATA_CONSOLE_LABELS = [
+    "σ(Y_agg)",
+    "σ(C_agg)",
+    "σ(I_agg)",
+    "σ(L_hc_agg)",
+    "corr(L,C)_agg",
+    "corr(I,C)_agg",
+    "σ(VA) avg",
+    "σ(L) avg",
+    "σ(I) avg",
+    "σ(L) emp-wgt",
+    "σ(I) inv-wgt",
+    "σ(Domar) avg",
+    "avg corr(C,C)",
+    "avg corr(VA,VA)",
+    "avg corr(L,L)",
+    "avg corr(I,I)",
+    "corr(L,A)_agg",
+    "avg corr(L,A)",
+]
+
 
 def _scalar_from_matlab_value(x: Any) -> Optional[float]:
     if x is None:
@@ -60,6 +102,7 @@ def _first_available_scalar(source: Optional[Dict[str, Any]], keys: list[str]) -
 def create_calibration_table(
     empirical_targets: Dict[str, Any],
     first_order_model_stats: Optional[Dict[str, Any]] = None,
+    method_model_stats: Optional[Dict[str, Dict[str, Any]]] = None,
     save_path: Optional[str] = None,
     analysis_name: Optional[str] = None,
 ) -> str:
@@ -84,6 +127,30 @@ def create_calibration_table(
     --------
     str : The LaTeX table code
     """
+    if method_model_stats:
+        latex_code = _create_model_vs_data_moments_table(
+            empirical_targets=empirical_targets,
+            method_model_stats=method_model_stats,
+        )
+        console_output = _generate_model_vs_data_console_table(
+            empirical_targets=empirical_targets,
+            method_model_stats=method_model_stats,
+            analysis_name=analysis_name,
+        )
+        if save_path:
+            if analysis_name:
+                save_dir = os.path.dirname(save_path)
+                ext = os.path.splitext(os.path.basename(save_path))[1] or ".tex"
+                new_filename = f"calibration_table_{analysis_name}{ext}"
+                final_save_path = os.path.join(save_dir, new_filename)
+            else:
+                final_save_path = save_path
+            with open(final_save_path, "w") as f:
+                f.write(latex_code)
+
+        print(console_output)
+        return latex_code
+
     model_key_aliases = {
         "sigma_VA_agg": ["sigma_VA_agg", "sigma_GDP_agg"],
         "sigma_C_agg": ["sigma_C_agg", "sigma_C_exp_agg", "sigma_C_expenditure_agg"],
@@ -130,6 +197,146 @@ def create_calibration_table(
 
     print(console_output)
     return latex_code
+
+
+def _nested_lookup(source: Optional[Dict[str, Any]], path: tuple[str, str]) -> Optional[float]:
+    if source is None:
+        return None
+    block = source.get(path[0])
+    if isinstance(block, dict):
+        return _scalar_from_matlab_value(block.get(path[1]))
+    return None
+
+
+def _resolve_empirical_value(empirical_targets: Dict[str, Any], data_key: Any) -> Optional[float]:
+    if isinstance(data_key, tuple):
+        nested_val = _nested_lookup(empirical_targets, data_key)
+        if nested_val is not None:
+            return nested_val
+        if data_key[1] == "L_TFP_sectoral_avg_vashare":
+            sectoral = _nested_lookup_array(empirical_targets, ("correlations", "L_TFP_sectoral"))
+            weights = _array_from_value(empirical_targets.get("va_weights"))
+            if sectoral is not None and weights is not None and sectoral.size == weights.size:
+                return _weighted_mean_ignore_nan(sectoral, weights)
+        return _first_available_scalar(
+            empirical_targets,
+            [data_key[1], f"corr_{data_key[1]}", f"avg_{data_key[1]}"],
+        )
+    return _first_available_scalar(
+        empirical_targets,
+        [data_key, f"corr_{data_key}", f"avg_{data_key}"],
+    )
+
+
+def _nested_lookup_array(source: Optional[Dict[str, Any]], path: tuple[str, str]) -> Optional[np.ndarray]:
+    if source is None:
+        return None
+    block = source.get(path[0])
+    if not isinstance(block, dict):
+        return None
+    return _array_from_value(block.get(path[1]))
+
+
+def _array_from_value(x: Any) -> Optional[np.ndarray]:
+    if x is None:
+        return None
+    arr = np.asarray(x, dtype=float).reshape(-1)
+    if arr.size == 0:
+        return None
+    return arr
+
+
+def _weighted_mean_ignore_nan(values: np.ndarray, weights: np.ndarray) -> Optional[float]:
+    values = np.asarray(values, dtype=float).reshape(-1)
+    weights = np.asarray(weights, dtype=float).reshape(-1)
+    mask = np.isfinite(values) & np.isfinite(weights)
+    if not np.any(mask):
+        return None
+    values = values[mask]
+    weights = weights[mask]
+    weights = weights / np.sum(weights)
+    return float(np.sum(weights * values))
+
+
+def _create_model_vs_data_moments_table(
+    empirical_targets: Dict[str, Any],
+    method_model_stats: Dict[str, Dict[str, Any]],
+) -> str:
+    method_order = [name for name in ["1st", "2nd", "PF", "MITShocks", "Nonlinear"] if name in method_model_stats]
+    n_methods = len(method_order)
+    latex_code = (
+        r"\begin{table}[htbp]" + "\n"
+        r"\centering" + "\n"
+        r"\caption{Model vs. data business-cycle moments}" + "\n"
+        r"\label{tab:model_vs_data_moments}" + "\n"
+        + f"\\begin{{tabular}}{{l *{{{n_methods + 1}}}{{r}}}}\n"
+        + r"\toprule"
+        + "\n"
+        + r"\textbf{Moment}"
+    )
+    for method_name in method_order:
+        latex_code += f" & \\textbf{{{method_name}}}"
+    latex_code += r" & \textbf{Data} \\" + "\n" + r"\midrule" + "\n"
+
+    for row_label, model_key, data_key in _MODEL_VS_DATA_ROW_DEFS:
+        latex_code += row_label
+        for method_name in method_order:
+            method_stats = method_model_stats.get(method_name)
+            value = _first_available_scalar(method_stats, [model_key]) if method_stats else None
+            latex_code += f" & {value:.4f}" if value is not None else " & ---"
+        data_value = _resolve_empirical_value(empirical_targets, data_key)
+        latex_code += f" & {data_value:.4f}" if data_value is not None else " & ---"
+        latex_code += r" \\" + "\n"
+
+    latex_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
+    latex_code += (
+        r"\begin{minipage}{0.92\textwidth}" + "\n"
+        r"\vspace{0.5em}" + "\n"
+        r"\footnotesize" + "\n"
+        r"\textit{Notes:} Columns 1st, 2nd, PF, and MITShocks use the MATLAB/Dynare business-cycle objects for sectoral and comovement moments."
+        r" Aggregate moments are re-aggregated in Python using the nonlinear average-price weights for consistency across methods."
+        r" The Nonlinear column uses the neural-network simulation run on the same MATLAB shock path and reports moments on the active shock window only."
+        + "\n"
+        r"\end{minipage}" + "\n"
+    )
+    latex_code += r"\end{table}" + "\n"
+    return latex_code
+
+
+def _generate_model_vs_data_console_table(
+    empirical_targets: Dict[str, Any],
+    method_model_stats: Dict[str, Dict[str, Any]],
+    analysis_name: Optional[str] = None,
+) -> str:
+    method_order = [name for name in ["1st", "2nd", "PF", "MITShocks", "Nonlinear"] if name in method_model_stats]
+    output = []
+    output.append("")
+    output.append("[1] MODEL VS DATA MOMENTS")
+    output.append("")
+    if analysis_name:
+        output.append(f"Analysis: {analysis_name}")
+        output.append("")
+
+    header = "Moment".ljust(22)
+    for method_name in method_order:
+        header += f"{method_name:>11}"
+    header += f"{'Data':>11}"
+    output.append(header)
+    output.append("-" * len(header))
+
+    for (row_label, model_key, data_key), console_label in zip(_MODEL_VS_DATA_ROW_DEFS, _MODEL_VS_DATA_CONSOLE_LABELS):
+        del row_label
+        row = console_label.ljust(22)
+        for method_name in method_order:
+            method_stats = method_model_stats.get(method_name)
+            value = _first_available_scalar(method_stats, [model_key]) if method_stats else None
+            row += f"{value:11.4f}" if value is not None else f"{'---':>11}"
+        data_value = _resolve_empirical_value(empirical_targets, data_key)
+        row += f"{data_value:11.4f}" if data_value is not None else f"{'---':>11}"
+        output.append(row)
+
+    output.append("")
+    return "\n".join(output)
 
 
 def _generate_calibration_console_table(

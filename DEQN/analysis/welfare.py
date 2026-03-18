@@ -14,27 +14,27 @@ def get_welfare_fn(econ_model, config_analysis):
         return present_value
 
     def welfare_fn(utilities_simul, welfare_ss, rng_key):
-        # Generate random start indices for sampling
+        sample_length = utilities_simul.shape[0]
+        trajectory_length = min(config_analysis["welfare_traject_length"], sample_length)
+        max_start = sample_length - trajectory_length + 1
+
+        # Sample discounted utility paths from the active simulation window.
         start_indices = jax.random.randint(
             rng_key,
             (config_analysis["welfare_n_trajects"],),
             0,
-            utilities_simul.shape[0] - config_analysis["welfare_traject_length"] + 1,
+            max_start,
         )
 
-        # Use lax.dynamic_slice to extract trajectories in a vectorized way
         def extract_trajectory(start_idx):
-            return lax.dynamic_slice(utilities_simul, (start_idx,), (config_analysis["welfare_traject_length"],))
+            return lax.dynamic_slice(utilities_simul, (start_idx,), (trajectory_length,))
 
-        # Extract all trajectories using vmap
         utility_trajects = jax.vmap(extract_trajectory)(start_indices)
 
-        # Calculate discounted welfare for each trajectory
         welfares = jax.vmap(lambda utilities: discounted_utility(utilities, econ_model.beta, welfare_ss))(
             utility_trajects
         )
 
-        # Average across trajectories
         mean_welfare = jnp.mean(welfares)
 
         return mean_welfare

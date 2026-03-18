@@ -172,17 +172,155 @@ def _parse_shock_label_to_key(label: str, shock_value: float) -> str:
     return f"{sign}_{pct}"
 
 
+def _to_1d_array(value: Any) -> Optional[np.ndarray]:
+    """Convert MATLAB-loaded vectors/scalars to a flat numpy array."""
+    if value is None:
+        return None
+
+    arr = np.asarray(value)
+    if arr.size == 0:
+        return None
+    if arr.ndim == 0:
+        return np.atleast_1d(arr.item())
+    return np.atleast_1d(arr).ravel()
+
+
+def _extract_shock_config(shock_artifact: Dict[str, Any], idx: int) -> Dict[str, Any]:
+    """Get a normalized shock configuration from the canonical artifact."""
+    metadata = _coerce_mat_struct(shock_artifact.get("metadata", {}))
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    shock_config = shock_artifact.get("shock_config")
+    if shock_config is None:
+        shock_config = metadata.get("shock_config", {})
+    shock_config = _coerce_mat_struct(shock_config)
+    if not isinstance(shock_config, dict):
+        shock_config = {}
+
+    label = (
+        shock_artifact.get("label")
+        or shock_config.get("label")
+        or metadata.get("label")
+        or metadata.get("shock_label")
+        or f"shock_{idx}"
+    )
+    description = (
+        shock_artifact.get("description")
+        or shock_config.get("description")
+        or metadata.get("shock_description")
+        or ""
+    )
+
+    raw_value = shock_artifact.get("value")
+    if raw_value is None:
+        raw_value = shock_config.get("value")
+    if raw_value is None:
+        raw_value = 0.0
+    shock_value = float(np.asarray(raw_value).item()) if np.asarray(raw_value).size == 1 else float(raw_value)
+
+    return {
+        "label": label,
+        "description": description,
+        "value": shock_value,
+    }
+
+
+def _extract_sectoral_dict(sectoral_data: Any) -> Optional[Dict[str, np.ndarray]]:
+    sectoral_dict = _coerce_mat_struct(sectoral_data)
+    if not isinstance(sectoral_dict, dict):
+        return None
+
+    parsed = {}
+    for field in ("C_all", "Iout_all", "Q_all", "Mout_all"):
+        arr = sectoral_dict.get(field)
+        if arr is not None:
+            parsed[field] = np.array(arr)
+
+    return parsed or None
+
+
+def _process_canonical_shock(shock_artifact: Dict[str, Any]) -> Dict[str, Any]:
+    """Process one shock from the current ModelData_IRs.shocks schema."""
+    processed = {
+        "sectors": {},
+        "peak_values_loglin": None,
+        "peak_values_determ": None,
+        "amplifications": None,
+        "half_lives_loglin": None,
+        "half_lives_determ": None,
+    }
+
+    summary_stats = _coerce_mat_struct(shock_artifact.get("summary_stats", {}))
+    if not isinstance(summary_stats, dict):
+        summary_stats = {}
+
+    peaks = _coerce_mat_struct(summary_stats.get("peaks", {}))
+    if not isinstance(peaks, dict):
+        peaks = {}
+    half_lives = _coerce_mat_struct(summary_stats.get("half_lives", {}))
+    if not isinstance(half_lives, dict):
+        half_lives = {}
+    amplifications = _coerce_mat_struct(summary_stats.get("amplifications", {}))
+    if not isinstance(amplifications, dict):
+        amplifications = {}
+
+    processed["peak_values_loglin"] = _to_1d_array(peaks.get("first_order"))
+    processed["peak_values_determ"] = _to_1d_array(peaks.get("perfect_foresight"))
+    processed["half_lives_loglin"] = _to_1d_array(half_lives.get("first_order"))
+    processed["half_lives_determ"] = _to_1d_array(half_lives.get("perfect_foresight"))
+    processed["amplifications"] = _to_1d_array(amplifications.get("abs"))
+
+    entries = _as_struct_list(shock_artifact.get("entries", []))
+    for irf_data in entries:
+        sector_idx = _to_python_sector_idx(irf_data.get("sector_idx", 0))
+        if sector_idx < 0:
+            continue
+
+        irs_first_order = irf_data.get("first_order", irf_data.get("IRSFirstOrder"))
+        irs_second_order = irf_data.get("second_order", irf_data.get("IRSSecondOrder"))
+        irs_pf = irf_data.get("perfect_foresight", irf_data.get("IRSPerfectForesight"))
+        if irs_pf is None:
+            irs_pf = irf_data.get("IRSPF", irf_data.get("IRSDeterm"))
+
+        if irs_first_order is None and irs_pf is None:
+            continue
+
+        sector_entry = {
+            "IRSFirstOrder": np.array(irs_first_order) if irs_first_order is not None else None,
+            "IRSSecondOrder": np.array(irs_second_order) if irs_second_order is not None else None,
+            "IRSPerfectForesight": np.array(irs_pf) if irs_pf is not None else None,
+            "IRSLoglin": np.array(irs_first_order) if irs_first_order is not None else None,
+            "IRSDeterm": np.array(irs_pf) if irs_pf is not None else None,
+        }
+
+        sectoral_first = _extract_sectoral_dict(irf_data.get("sectoral_loglin"))
+        if sectoral_first is not None:
+            sector_entry["sectoral_first_order"] = sectoral_first
+
+        sectoral_pf = _extract_sectoral_dict(irf_data.get("sectoral_determ"))
+        if sectoral_pf is not None:
+            sector_entry["sectoral_perfect_foresight"] = sectoral_pf
+
+        processed["sectors"][sector_idx] = sector_entry
+
+    return processed
+
+
 def _load_new_format(filepath: str) -> Dict[str, Any]:
     """
     Load IR data from ModelData_IRs.mat produced by main.m.
 
     Supports both "new format" variants used by MATLAB:
-    1) Flat structure (current main.m):
+    1) Canonical current format:
+       - ModelData_IRs.shocks: struct array, one processed artifact per shock
+       - each shock has .entries and .summary_stats
+    2) Flat transitional format:
        - ModelData_IRs.shocks: struct array with .value/.label/.size_pct/.sign/...
        - ModelData_IRs.irfs: cell {n_shocks}, each element is struct array over sectors
          with fields .sector_idx, .first_order, .second_order, .perfect_foresight
        - ModelData_IRs.peaks / half_lives / amplifications: [n_shocks x n_sectors] matrices
-    2) Nested structure (older transitional format):
+    3) Nested structure (older transitional format):
        - ModelData_IRs.shock_configs + ModelData_IRs.by_shock
 
     Args:
@@ -201,24 +339,39 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
         print(f"    ✗ 'ModelData_IRs' key not found in {filepath}")
         return {}
 
-    md_irs = mat_data["ModelData_IRs"]
+    md_irs = _coerce_mat_struct(mat_data["ModelData_IRs"])
+    if not isinstance(md_irs, dict):
+        print(f"    ✗ Could not normalize ModelData_IRs in {filepath}")
+        return {}
     ir_data = {}
+
+    shocks = _as_struct_list(md_irs.get("shocks", []))
+    if shocks and all(isinstance(shock, dict) and "entries" in shock for shock in shocks):
+        print(f"    Found {len(shocks)} shock configurations (canonical format)")
+        for i, shock_artifact in enumerate(shocks):
+            shock_cfg = _extract_shock_config(shock_artifact, i)
+            key = _parse_shock_label_to_key(shock_cfg["label"], shock_cfg["value"])
+            print(f"    Processing: {shock_cfg['label']} ({shock_cfg['description']}) → key={key}")
+
+            processed = _process_canonical_shock(shock_artifact)
+            if processed:
+                ir_data[key] = processed
+                print(f"      ✓ Loaded {len(processed.get('sectors', {}))} sectors")
+
+        return ir_data
 
     # Variant A: flat structure from current main.m
     if "irfs" in md_irs:
-        shocks = _coerce_mat_struct(md_irs.get("shocks", []))
         irfs_by_shock = _coerce_mat_struct(md_irs.get("irfs", []))
 
-        if not isinstance(shocks, (list, np.ndarray)):
-            shocks = [shocks]
         if not isinstance(irfs_by_shock, (list, np.ndarray)):
             irfs_by_shock = [irfs_by_shock]
 
-        n_shocks = min(len(shocks), len(irfs_by_shock))
+        n_shocks = len(irfs_by_shock) if not shocks else min(len(shocks), len(irfs_by_shock))
         print(f"    Found {n_shocks} shock configurations (flat format)")
 
         for i in range(n_shocks):
-            shock_cfg = _coerce_mat_struct(shocks[i])
+            shock_cfg = _coerce_mat_struct(shocks[i]) if i < len(shocks) else {}
             if not isinstance(shock_cfg, dict):
                 shock_cfg = {}
 

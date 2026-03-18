@@ -80,8 +80,8 @@ from DEQN.analysis.model_hooks import (  # noqa: E402
     load_model_analysis_hooks,
     run_model_postprocess,
 )
-from DEQN.analysis.plots import plot_ergodic_histograms  # noqa: E402
 from DEQN.analysis.simul_analysis import (  # noqa: E402
+    compute_analysis_dataset_with_context,
     create_episode_simulation_fn_verbose,
     create_shock_path_simulation_fn,
     simulation_analysis,
@@ -259,22 +259,51 @@ def _resolve_data_file(model_dir, configured_name, fallback_names, *, label, req
     return None, None
 
 
-def _create_nonlinear_simulation_runner(
+def _create_nonlinear_simulation_runners(
     *,
     econ_model,
     config_dict,
     analysis_hooks,
     matlab_common_shock_schedule,
 ):
+    ergodic_simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config_dict))
+    print("  Nonlinear simulation mode: long ergodic simulation")
+
+    def run_ergodic_simulation(train_state):
+        simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
+            train_state=train_state,
+            econ_model=econ_model,
+            analysis_config=config_dict,
+            simulation_fn=ergodic_simulation_fn,
+            analysis_hooks=analysis_hooks,
+        )
+        return {
+            "simul_obs": simul_obs,
+            "simul_policies": simul_policies,
+            "simul_analysis_variables": simul_analysis_variables,
+            "analysis_context": analysis_context,
+            "simul_obs_full": simul_obs,
+            "simul_policies_full": simul_policies,
+            "simulation_kind": "ergodic",
+        }
+
+    common_shock_runner = None
     if matlab_common_shock_schedule is not None:
         shock_path_simulation_fn = jax.jit(create_shock_path_simulation_fn(econ_model))
         print(
-            "  Nonlinear simulation mode: shared MATLAB shock path "
+            "  Nonlinear simulation mode: shared MATLAB shock path kept as auxiliary run "
             f"({matlab_common_shock_schedule['reference_method']})"
         )
 
-        def run_simulation(train_state):
-            return simulation_analysis_with_shocks(
+        def run_common_shock_simulation(train_state):
+            (
+                simul_obs,
+                simul_policies,
+                simul_analysis_variables,
+                analysis_context,
+                simul_obs_full,
+                simul_policies_full,
+            ) = simulation_analysis_with_shocks(
                 train_state=train_state,
                 econ_model=econ_model,
                 shock_path=matlab_common_shock_schedule["full_shocks"],
@@ -285,39 +314,94 @@ def _create_nonlinear_simulation_runner(
                 analysis_hooks=analysis_hooks,
                 label=(f"Common-shock nonlinear simulation ({matlab_common_shock_schedule['reference_method']})"),
             )
+            return {
+                "simul_obs": simul_obs,
+                "simul_policies": simul_policies,
+                "simul_analysis_variables": simul_analysis_variables,
+                "analysis_context": analysis_context,
+                "simul_obs_full": simul_obs_full,
+                "simul_policies_full": simul_policies_full,
+                "simulation_kind": "common_shock",
+            }
 
-        return run_simulation
+        common_shock_runner = run_common_shock_simulation
+    else:
+        print("  No MATLAB common-shock schedule found; only long ergodic simulation will be used.")
 
-    simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config_dict))
-    print("  Nonlinear simulation mode: ergodic fallback (no MATLAB common-shock schedule found)")
+    return {
+        "ergodic": run_ergodic_simulation,
+        "common_shock": common_shock_runner,
+    }
 
-    def run_simulation(train_state):
-        simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
-            train_state=train_state,
+
+def _common_shock_label(experiment_label: str) -> str:
+    return f"{experiment_label} (common shocks)"
+
+
+def _compute_welfare_cost_from_sample(*, econ_model, welfare_fn, welfare_ss, policies_logdev, config_dict):
+    simul_utilities = jax.vmap(econ_model.utility_from_policies)(policies_logdev)
+    welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config_dict["welfare_seed"]))
+    return -econ_model.consumption_equivalent(welfare) * 100
+
+
+def _compute_stochastic_ss_from_sample(
+    *,
+    sample_label,
+    simul_obs,
+    train_state,
+    stoch_ss_fn,
+    stoch_ss_loss_fn,
+    analysis_context,
+    econ_model,
+    analysis_hooks,
+    config_dict,
+    required,
+):
+    try:
+        stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
+        if stoch_ss_obs_std.max() > 0.001:
+            raise ValueError("Stochastic steady state standard deviation too large")
+
+        stoch_ss_analysis_variables = compute_analysis_variables(
             econ_model=econ_model,
-            analysis_config=config_dict,
-            simulation_fn=simulation_fn,
+            state_logdev=stoch_ss_obs,
+            policy_logdev=stoch_ss_policy,
+            analysis_context=analysis_context,
             analysis_hooks=analysis_hooks,
         )
-        return (
-            simul_obs,
-            simul_policies,
-            simul_analysis_variables,
-            analysis_context,
-            simul_obs,
-            simul_policies,
-        )
 
-    return run_simulation
+        loss_results = stoch_ss_loss_fn(
+            stoch_ss_obs,
+            stoch_ss_policy,
+            train_state,
+            random.PRNGKey(config_dict["seed"]),
+        )
+        print(
+            f"    {sample_label}: equilibrium accuracy {loss_results['mean_accuracy']:.4f} "
+            f"(min: {loss_results['min_accuracy']:.4f})",
+            flush=True,
+        )
+        return {
+            "stochastic_ss_state": stoch_ss_obs,
+            "stochastic_ss_policy": stoch_ss_policy,
+            "stochastic_ss_data": stoch_ss_analysis_variables,
+            "stochastic_ss_loss": loss_results,
+        }
+    except Exception:
+        if required:
+            raise
+        print(f"    Warning: stochastic steady state failed for {sample_label}; skipping this variant.", flush=True)
+        return None
 
 
 def _run_experiment_analysis(
     *,
+    experiment_label,
     exp_data,
     save_dir,
     nn_config_base,
     econ_model,
-    run_nonlinear_simulation,
+    nonlinear_simulation_runners,
     welfare_fn,
     welfare_ss,
     stoch_ss_fn,
@@ -334,56 +418,97 @@ def _run_experiment_analysis(
 
     train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
 
-    (
-        simul_obs,
-        simul_policies,
-        simul_analysis_variables,
-        analysis_context,
-        simul_obs_full,
-        simul_policies_full,
-    ) = run_nonlinear_simulation(train_state)
+    ergodic_results = nonlinear_simulation_runners["ergodic"](train_state)
+    ergodic_analysis_context = ergodic_results["analysis_context"]
 
-    simul_utilities = jax.vmap(econ_model.utility_from_policies)(simul_policies)
-    welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config_dict["welfare_seed"]))
-    welfare_cost_ce = -econ_model.consumption_equivalent(welfare) * 100
+    welfare_costs = {}
+    raw_simulation_data = {}
+    analysis_variables = {}
+    stochastic_ss_states = {}
+    stochastic_ss_policies = {}
+    stochastic_ss_data = {}
+    stochastic_ss_loss = {}
+    method_labels = []
 
-    stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
-    if stoch_ss_obs_std.max() > 0.001:
-        raise ValueError("Stochastic steady state standard deviation too large")
+    def store_variant(label, sample_results, *, analysis_context_for_reporting, required_stochss):
+        welfare_cost_ce = _compute_welfare_cost_from_sample(
+            econ_model=econ_model,
+            welfare_fn=welfare_fn,
+            welfare_ss=welfare_ss,
+            policies_logdev=sample_results["simul_policies"],
+            config_dict=config_dict,
+        )
+        welfare_costs[label] = welfare_cost_ce
+        print(f"    {label}: welfare cost (CE) {welfare_cost_ce:.4f}%")
 
-    stoch_ss_analysis_variables = compute_analysis_variables(
-        econ_model=econ_model,
-        state_logdev=stoch_ss_obs,
-        policy_logdev=stoch_ss_policy,
-        analysis_context=analysis_context,
-        analysis_hooks=analysis_hooks,
+        raw_entry = dict(sample_results)
+        raw_entry["analysis_context"] = analysis_context_for_reporting
+        raw_simulation_data[label] = raw_entry
+        analysis_variables[label] = sample_results["simul_analysis_variables"]
+        method_labels.append(label)
+
+        stochss_results = _compute_stochastic_ss_from_sample(
+            sample_label=label,
+            simul_obs=sample_results["simul_obs"],
+            train_state=train_state,
+            stoch_ss_fn=stoch_ss_fn,
+            stoch_ss_loss_fn=stoch_ss_loss_fn,
+            analysis_context=analysis_context_for_reporting,
+            econ_model=econ_model,
+            analysis_hooks=analysis_hooks,
+            config_dict=config_dict,
+            required=required_stochss,
+        )
+        if stochss_results is not None:
+            stochastic_ss_states[label] = stochss_results["stochastic_ss_state"]
+            stochastic_ss_policies[label] = stochss_results["stochastic_ss_policy"]
+            stochastic_ss_data[label] = stochss_results["stochastic_ss_data"]
+            stochastic_ss_loss[label] = stochss_results["stochastic_ss_loss"]
+        return welfare_cost_ce
+
+    store_variant(
+        experiment_label,
+        ergodic_results,
+        analysis_context_for_reporting=ergodic_analysis_context,
+        required_stochss=True,
     )
 
-    loss_results = stoch_ss_loss_fn(stoch_ss_obs, stoch_ss_policy, train_state, random.PRNGKey(config_dict["seed"]))
-    gir_results = gir_fn(simul_obs, train_state, simul_policies, stoch_ss_obs)
+    common_shock_runner = nonlinear_simulation_runners.get("common_shock")
+    if common_shock_runner is not None:
+        common_shock_results = common_shock_runner(train_state)
+        common_shock_analysis_variables, _ = compute_analysis_dataset_with_context(
+            econ_model=econ_model,
+            simul_obs=common_shock_results["simul_obs"],
+            simul_policies=common_shock_results["simul_policies"],
+            analysis_config=config_dict,
+            analysis_context=ergodic_analysis_context,
+            analysis_hooks=analysis_hooks,
+        )
+        common_shock_results["simul_analysis_variables"] = common_shock_analysis_variables
+        store_variant(
+            _common_shock_label(experiment_label),
+            common_shock_results,
+            analysis_context_for_reporting=ergodic_analysis_context,
+            required_stochss=False,
+        )
 
-    print(f"    Welfare cost (CE): {welfare_cost_ce:.4f}%")
-    print(
-        f"    Equilibrium accuracy: {loss_results['mean_accuracy']:.4f} (min: {loss_results['min_accuracy']:.4f})",
-        flush=True,
+    gir_results = gir_fn(
+        ergodic_results["simul_obs"],
+        train_state,
+        ergodic_results["simul_policies"],
+        stochastic_ss_states[experiment_label],
     )
 
     return {
-        "raw_simulation_data": {
-            "simul_obs": simul_obs,
-            "simul_obs_full": simul_obs_full,
-            "simul_policies": simul_policies,
-            "simul_policies_full": simul_policies_full,
-            "simul_analysis_variables": simul_analysis_variables,
-            "analysis_context": analysis_context,
-        },
-        "analysis_variables": simul_analysis_variables,
-        "welfare_cost": welfare_cost_ce,
-        "stochastic_ss_state": stoch_ss_obs,
-        "stochastic_ss_policy": stoch_ss_policy,
-        "stochastic_ss_data": stoch_ss_analysis_variables,
-        "stochastic_ss_loss": loss_results,
+        "raw_simulation_data": raw_simulation_data,
+        "analysis_variables": analysis_variables,
+        "welfare_costs": welfare_costs,
+        "stochastic_ss_states": stochastic_ss_states,
+        "stochastic_ss_policies": stochastic_ss_policies,
+        "stochastic_ss_data": stochastic_ss_data,
+        "stochastic_ss_loss": stochastic_ss_loss,
         "gir_data": gir_results,
+        "nonlinear_method_labels": method_labels,
     }
 
 
@@ -669,10 +794,6 @@ def main():
     expected_n_vars = state_ss.shape[0] + policies_ss.shape[0]
 
     # Load simulation data (optional - for Dynare comparison)
-    dynare_simul_1storder = None
-    dynare_simul_so = None
-    dynare_simul_pf = None
-    dynare_simul_mit = None
     matlab_common_shock_schedule = None
     matlab_simulation_block = None
     dynare_1st_artifact = {"active_simul": None, "full_simul": None}
@@ -697,11 +818,6 @@ def main():
         dynare_mit_artifact = _extract_dynare_simulation_artifact(
             matlab_simulation_block, ["MITShocks", "MITShock"], expected_n_vars, precision
         )
-
-        dynare_simul_1storder = dynare_1st_artifact["active_simul"]
-        dynare_simul_pf = dynare_pf_artifact["active_simul"]
-        dynare_simul_so = dynare_so_artifact["active_simul"]
-        dynare_simul_mit = dynare_mit_artifact["active_simul"]
 
     if irs_path:
         print(f"  Found IRs file: {model_data_irs_file}")
@@ -763,7 +879,7 @@ def main():
     stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, config, analysis_hooks=analysis_hooks))
     stoch_ss_loss_fn = create_stochss_loss_fn(econ_model, mc_draws=32)
     gir_fn = jax.jit(create_GIR_fn(econ_model, config, analysis_hooks=analysis_hooks))
-    run_nonlinear_simulation = _create_nonlinear_simulation_runner(
+    nonlinear_simulation_runners = _create_nonlinear_simulation_runners(
         econ_model=econ_model,
         config_dict=config,
         analysis_hooks=analysis_hooks,
@@ -779,6 +895,7 @@ def main():
     stochastic_ss_policies = {}
     stochastic_ss_loss = {}
     gir_data = {}
+    nonlinear_method_labels = []
 
     # ═══════════════════════════════════════════════════════════════════════════
     # SIMULATION & WELFARE RESULTS
@@ -795,11 +912,12 @@ def main():
     for experiment_label, exp_data in experiments_data.items():
         print(f"\n  ▶ {experiment_label}", flush=True)
         experiment_results = _run_experiment_analysis(
+            experiment_label=experiment_label,
             exp_data=exp_data,
             save_dir=save_dir,
             nn_config_base=nn_config_base,
             econ_model=econ_model,
-            run_nonlinear_simulation=run_nonlinear_simulation,
+            nonlinear_simulation_runners=nonlinear_simulation_runners,
             welfare_fn=welfare_fn,
             welfare_ss=welfare_ss,
             stoch_ss_fn=stoch_ss_fn,
@@ -809,14 +927,15 @@ def main():
             analysis_hooks=analysis_hooks,
         )
 
-        raw_simulation_data[experiment_label] = experiment_results["raw_simulation_data"]
-        analysis_variables_data[experiment_label] = experiment_results["analysis_variables"]
-        welfare_costs[experiment_label] = experiment_results["welfare_cost"]
-        stochastic_ss_states[experiment_label] = experiment_results["stochastic_ss_state"]
-        stochastic_ss_policies[experiment_label] = experiment_results["stochastic_ss_policy"]
-        stochastic_ss_data[experiment_label] = experiment_results["stochastic_ss_data"]
-        stochastic_ss_loss[experiment_label] = experiment_results["stochastic_ss_loss"]
+        raw_simulation_data.update(experiment_results["raw_simulation_data"])
+        analysis_variables_data.update(experiment_results["analysis_variables"])
+        welfare_costs.update(experiment_results["welfare_costs"])
+        stochastic_ss_states.update(experiment_results["stochastic_ss_states"])
+        stochastic_ss_policies.update(experiment_results["stochastic_ss_policies"])
+        stochastic_ss_data.update(experiment_results["stochastic_ss_data"])
+        stochastic_ss_loss.update(experiment_results["stochastic_ss_loss"])
         gir_data[experiment_label] = experiment_results["gir_data"]
+        nonlinear_method_labels.extend(experiment_results.get("nonlinear_method_labels", []))
 
     # Add welfare costs from Dynare simulation methods (if available).
     dynare_welfare_inputs = {
@@ -841,42 +960,67 @@ def main():
             print(f"    Welfare cost ({method_name}): {float(welfare_cost):.4f}%")
 
     theoretical_stats = {}
-    histogram_theo_params = {}
     matlab_ir_data = None
     upstreamness_data = None
+    postprocess_context = None
 
-    model_postprocess = run_model_postprocess(
-        analysis_hooks=analysis_hooks,
-        config=config,
-        model_dir=model_dir,
-        analysis_dir=analysis_dir,
-        simulation_dir=simulation_dir,
-        irs_dir=irs_dir,
-        econ_model=econ_model,
-        model_data=md,
-        stats=stats,
-        policies_ss=policies_ss,
-        state_ss=state_ss,
-        raw_simulation_data=raw_simulation_data,
-        analysis_variables_data=analysis_variables_data,
-        stochastic_ss_states=stochastic_ss_states,
-        stochastic_ss_policies=stochastic_ss_policies,
-        stochastic_ss_data=stochastic_ss_data,
-        gir_data=gir_data,
-        dynare_simulations=dynare_welfare_inputs,
-        irs_path=irs_path,
-    )
+    if analysis_hooks is not None and hasattr(analysis_hooks, "prepare_postprocess_analysis"):
+        model_postprocess = analysis_hooks.prepare_postprocess_analysis(
+            config=config,
+            model_dir=model_dir,
+            analysis_dir=analysis_dir,
+            simulation_dir=simulation_dir,
+            irs_dir=irs_dir,
+            econ_model=econ_model,
+            model_data=md,
+            stats=stats,
+            policies_ss=policies_ss,
+            state_ss=state_ss,
+            raw_simulation_data=raw_simulation_data,
+            analysis_variables_data=analysis_variables_data,
+            stochastic_ss_states=stochastic_ss_states,
+            stochastic_ss_policies=stochastic_ss_policies,
+            stochastic_ss_data=stochastic_ss_data,
+            gir_data=gir_data,
+            dynare_simulations=dynare_welfare_inputs,
+            irs_path=irs_path,
+        )
+    else:
+        model_postprocess = run_model_postprocess(
+            analysis_hooks=analysis_hooks,
+            config=config,
+            model_dir=model_dir,
+            analysis_dir=analysis_dir,
+            simulation_dir=simulation_dir,
+            irs_dir=irs_dir,
+            econ_model=econ_model,
+            model_data=md,
+            stats=stats,
+            policies_ss=policies_ss,
+            state_ss=state_ss,
+            raw_simulation_data=raw_simulation_data,
+            analysis_variables_data=analysis_variables_data,
+            stochastic_ss_states=stochastic_ss_states,
+            stochastic_ss_policies=stochastic_ss_policies,
+            stochastic_ss_data=stochastic_ss_data,
+            gir_data=gir_data,
+            dynare_simulations=dynare_welfare_inputs,
+            irs_path=irs_path,
+        )
 
     analysis_variables_data = model_postprocess.get("analysis_variables_data", analysis_variables_data)
     calibration_method_stats = model_postprocess.get("calibration_method_stats")
     theoretical_stats = model_postprocess.get("theoretical_stats", theoretical_stats)
-    histogram_theo_params = model_postprocess.get("histogram_theo_params", histogram_theo_params)
     matlab_ir_data = model_postprocess.get("matlab_ir_data", matlab_ir_data)
     upstreamness_data = model_postprocess.get("upstreamness_data", upstreamness_data)
+    postprocess_context = model_postprocess.get("postprocess_context")
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # CALIBRATION TABLE (First-Order Model vs Empirical Targets)
+    # MODEL VS DATA MOMENTS TABLE
     # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  MODEL VS DATA MOMENTS TABLE")
+    print("═" * 72, flush=True)
     calibration_emp = (
         md.get("EmpiricalTargets")
         or (md.get("Calibration") or md.get("calibration") or {}).get("empirical_targets")
@@ -900,8 +1044,42 @@ def main():
         )
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # STOCHASTIC STEADY STATE
+    # AGGREGATE IMPULSE RESPONSES
     # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  AGGREGATE IMPULSE RESPONSES")
+    print("═" * 72, flush=True)
+    if analysis_hooks is not None and hasattr(analysis_hooks, "render_aggregate_ir_outputs") and postprocess_context:
+        analysis_hooks.render_aggregate_ir_outputs(
+            config=config,
+            irs_dir=irs_dir,
+            econ_model=econ_model,
+            gir_data=gir_data,
+            postprocess_context=postprocess_context,
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SECTORAL VARIABLES IN STOCHASTIC SS
+    # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  SECTORAL VARIABLES IN STOCHASTIC SS")
+    print("═" * 72, flush=True)
+    if analysis_hooks is not None and hasattr(analysis_hooks, "render_sectoral_stochss_outputs") and postprocess_context:
+        analysis_hooks.render_sectoral_stochss_outputs(
+            config=config,
+            simulation_dir=simulation_dir,
+            econ_model=econ_model,
+            stochastic_ss_states=stochastic_ss_states,
+            stochastic_ss_policies=stochastic_ss_policies,
+            postprocess_context=postprocess_context,
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AGGREGATE STOCHASTIC STEADY STATE
+    # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  AGGREGATE STOCHASTIC STEADY STATE")
+    print("═" * 72, flush=True)
     create_stochastic_ss_aggregates_table(
         stochastic_ss_data=stochastic_ss_data,
         save_path=os.path.join(analysis_dir, "stochastic_ss_aggregates_table.tex"),
@@ -916,8 +1094,11 @@ def main():
     )
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # ERGODIC DISTRIBUTION MOMENTS
+    # DESCRIPTIVE STATISTICS
     # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  DESCRIPTIVE STATISTICS")
+    print("═" * 72, flush=True)
     method_aliases = {
         "FirstOrder": "Log-Linear",
         "LogLinear": "Log-Linear",
@@ -946,7 +1127,7 @@ def main():
 
     selected_methods = set(available_methods) if benchmark_methods is None else set(benchmark_methods)
     if config.get("always_include_nonlinear_methods", True):
-        selected_methods.update(experiments_to_analyze.keys())
+        selected_methods.update(_normalize_method_name(label) for label in nonlinear_method_labels)
 
     filtered_analysis_variables_data = {
         _normalize_method_name(k): v
@@ -1008,34 +1189,41 @@ def main():
             analysis_name=config["analysis_name"],
         )
 
-    # Generate histograms:
-    # - keep model simulation distributions
-    # - keep theoretical log-linear distribution
-    histogram_data = {k: v for k, v in filtered_analysis_variables_data.items() if "Deterministic" not in k}
-    histogram_data = {
-        k: {var: arr for var, arr in v.items() if var in aggregate_vars} for k, v in histogram_data.items()
-    }
-    histogram_data = {k: v for k, v in histogram_data.items() if v}
-    filtered_histogram_theo_params = {
-        _normalize_method_name(k): v
-        for k, v in histogram_theo_params.items()
-        if _normalize_method_name(k) in selected_methods
-    }
-    plot_ergodic_histograms(
-        analysis_variables_data=histogram_data,
-        save_dir=simulation_dir,
-        analysis_name=config["analysis_name"],
-        theo_dist_params=filtered_histogram_theo_params if filtered_histogram_theo_params else None,
-    )
-
     # ═══════════════════════════════════════════════════════════════════════════
     # WELFARE COSTS
     # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  WELFARE COSTS")
+    print("═" * 72, flush=True)
     create_welfare_table(
         welfare_data=welfare_costs,
         save_path=os.path.join(analysis_dir, "welfare_table.tex"),
         analysis_name=config["analysis_name"],
     )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SECTORAL IMPULSE RESPONSES
+    # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  SECTORAL IMPULSE RESPONSES")
+    print("═" * 72, flush=True)
+    if analysis_hooks is not None and hasattr(analysis_hooks, "render_sectoral_ir_outputs") and postprocess_context:
+        analysis_hooks.render_sectoral_ir_outputs(
+            config=config,
+            irs_dir=irs_dir,
+            econ_model=econ_model,
+            gir_data=gir_data,
+            postprocess_context=postprocess_context,
+        )
+
+    if analysis_hooks is not None and hasattr(analysis_hooks, "render_ergodic_sectoral_outputs") and postprocess_context:
+        analysis_hooks.render_ergodic_sectoral_outputs(
+            config=config,
+            simulation_dir=simulation_dir,
+            econ_model=econ_model,
+            raw_simulation_data=raw_simulation_data,
+            postprocess_context=postprocess_context,
+        )
 
     # Model-specific plots
     if MODEL_SPECIFIC_PLOTS:
@@ -1044,6 +1232,8 @@ def main():
             plot_function = plot_spec["function"]
 
             for experiment_label, sim_data in raw_simulation_data.items():
+                if sim_data.get("simulation_kind", "ergodic") != "ergodic":
+                    continue
                 try:
                     plot_function(
                         simul_obs=sim_data["simul_obs"],

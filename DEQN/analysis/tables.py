@@ -262,7 +262,9 @@ def _create_model_vs_data_moments_table(
     empirical_targets: Dict[str, Any],
     method_model_stats: Dict[str, Dict[str, Any]],
 ) -> str:
-    method_order = [name for name in ["1st", "2nd", "PF", "MITShocks", "Nonlinear"] if name in method_model_stats]
+    preferred_order = ["1st", "2nd", "PF", "MITShocks", "Nonlinear", "Nonlinear-CS"]
+    method_order = [name for name in preferred_order if name in method_model_stats]
+    method_order.extend(name for name in method_model_stats if name not in method_order)
     n_methods = len(method_order)
     latex_code = (
         r"\begin{table}[htbp]" + "\n"
@@ -289,13 +291,20 @@ def _create_model_vs_data_moments_table(
         latex_code += r" \\" + "\n"
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
+    nonlinear_note = r" The Nonlinear column uses the long ergodic neural-network simulation."
+    if "Nonlinear-CS" in method_order:
+        nonlinear_note += (
+            r" The Nonlinear-CS column uses the short common-shock neural-network simulation, "
+            r"but aggregates it with the ergodic-price weights from the long run."
+        )
+
     latex_code += (
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
         r"\textit{Notes:} Columns 1st, 2nd, PF, and MITShocks use the MATLAB/Dynare business-cycle objects for sectoral and comovement moments."
         r" Aggregate moments are re-aggregated in Python using the nonlinear average-price weights for consistency across methods."
-        r" The Nonlinear column uses the neural-network simulation run on the same MATLAB shock path and reports moments on the active shock window only."
+        + nonlinear_note
         + "\n"
         r"\end{minipage}" + "\n"
     )
@@ -308,7 +317,9 @@ def _generate_model_vs_data_console_table(
     method_model_stats: Dict[str, Dict[str, Any]],
     analysis_name: Optional[str] = None,
 ) -> str:
-    method_order = [name for name in ["1st", "2nd", "PF", "MITShocks", "Nonlinear"] if name in method_model_stats]
+    preferred_order = ["1st", "2nd", "PF", "MITShocks", "Nonlinear", "Nonlinear-CS"]
+    method_order = [name for name in preferred_order if name in method_model_stats]
+    method_order.extend(name for name in method_model_stats if name not in method_order)
     output = []
     output.append("")
     output.append("[1] MODEL VS DATA MOMENTS")

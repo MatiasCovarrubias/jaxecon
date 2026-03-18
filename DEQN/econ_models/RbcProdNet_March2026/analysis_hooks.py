@@ -224,18 +224,81 @@ def augment_gir_analysis_variables(analysis_vars_dict, obs_logdev, policy_logdev
 def _resolve_reference_experiment_label(config, raw_simulation_data) -> str:
     configured_label = config.get("aggregation_reference_experiment")
     if configured_label is not None:
-        if configured_label not in raw_simulation_data:
-            available = list(raw_simulation_data.keys())
-            raise ValueError(
-                "aggregation_reference_experiment must match an analyzed experiment label. "
-                f"Got '{configured_label}', available labels: {available}"
-            )
-        return configured_label
+        if configured_label in raw_simulation_data:
+            return configured_label
+        ergodic_alias = f"{configured_label} (ergodic)"
+        if ergodic_alias in raw_simulation_data:
+            return ergodic_alias
+        available = list(raw_simulation_data.keys())
+        raise ValueError(
+            "aggregation_reference_experiment must match an analyzed experiment label. "
+            f"Got '{configured_label}', available labels: {available}"
+        )
 
+    for label, sim_data in raw_simulation_data.items():
+        if sim_data.get("simulation_kind") == "ergodic":
+            return label
     return next(iter(raw_simulation_data))
 
 
-def postprocess_analysis(
+def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, P_ergodic, econ_model, n_sectors):
+    matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
+    matlab_ir_data = load_matlab_irs(
+        matlab_ir_dir=matlab_ir_dir,
+        shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
+        irs_file_path=irs_path,
+    )
+
+    sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
+    ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
+    if isinstance(ir_variables, str):
+        ir_variables = [ir_variables]
+
+    unsupported_aggregate_ir_vars = {"Agg. Capital"}
+    filtered_ir_variables = [v for v in ir_variables if v not in unsupported_aggregate_ir_vars]
+    dropped_ir_variables = [v for v in ir_variables if v in unsupported_aggregate_ir_vars]
+    if dropped_ir_variables:
+        print(
+            "  Note: aggregate capital IR benchmark is not available; "
+            f"skipping {dropped_ir_variables} from ir_variables_to_plot."
+        )
+    ir_variables = filtered_ir_variables
+
+    sectoral_ir_variables = [
+        label
+        for label in _get_requested_sectoral_ir_variables(config)
+        if label in SUPPORTED_SECTORAL_IR_LABELS
+    ]
+    shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
+    if not shock_sizes:
+        raise ValueError("ir_shock_sizes must contain at least one shock size.")
+    max_periods = config.get("ir_max_periods", 80)
+    configured_ir_methods = config.get("ir_methods", ["IR_stoch_ss"])
+    if isinstance(configured_ir_methods, str):
+        configured_ir_methods = [configured_ir_methods]
+    if "GIR" in configured_ir_methods and "IR_stoch_ss" in configured_ir_methods:
+        ir_response_source = "both"
+    elif "GIR" in configured_ir_methods:
+        ir_response_source = "GIR"
+    else:
+        ir_response_source = "IR_stoch_ss"
+
+    return {
+        "matlab_ir_data": matlab_ir_data,
+        "sectors_to_plot": sectors_to_plot,
+        "ir_variables": ir_variables,
+        "sectoral_ir_variables": sectoral_ir_variables,
+        "shock_sizes": shock_sizes,
+        "largest_shock": max(shock_sizes),
+        "max_periods": max_periods,
+        "ir_response_source": ir_response_source,
+        "policies_ss_np": np.asarray(policies_ss),
+        "P_ergodic_np": np.asarray(P_ergodic),
+        "n_sectors": n_sectors,
+    }
+
+
+def prepare_postprocess_analysis(
     *,
     config,
     model_dir,
@@ -268,7 +331,7 @@ def postprocess_analysis(
         flush=True,
     )
     reference_sim_data = raw_simulation_data[reference_experiment_label]
-    simul_policies = reference_sim_data["simul_policies"]
+    simul_policies = reference_sim_data.get("simul_policies_full", reference_sim_data["simul_policies"])
 
     P_ergodic, Pk_ergodic, Pm_ergodic = compute_ergodic_prices_from_simulation(simul_policies, policies_ss, n_sectors)
 
@@ -426,92 +489,103 @@ def postprocess_analysis(
         n_sectors=n_sectors,
     )
 
-    matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
-    matlab_ir_data = load_matlab_irs(
-        matlab_ir_dir=matlab_ir_dir,
-        shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
-        irs_file_path=irs_path,
+    upstreamness_data = econ_model.upstreamness()
+    ir_render_context = _build_ir_render_context(
+        config=config,
+        model_dir=model_dir,
+        irs_path=irs_path,
+        policies_ss=policies_ss,
+        P_ergodic=P_ergodic,
+        econ_model=econ_model,
+        n_sectors=n_sectors,
     )
 
-    sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
-    ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
-    if isinstance(ir_variables, str):
-        ir_variables = [ir_variables]
+    return {
+        "analysis_variables_data": analysis_variables_data,
+        "calibration_method_stats": calibration_method_stats,
+        "theoretical_stats": theoretical_stats,
+        "histogram_theo_params": histogram_theo_params,
+        "matlab_ir_data": ir_render_context["matlab_ir_data"],
+        "upstreamness_data": upstreamness_data,
+        "stochastic_ss_data": stochastic_ss_data,
+        "postprocess_context": {
+            "ir_render_context": ir_render_context,
+            "upstreamness_data": upstreamness_data,
+        },
+    }
 
-    unsupported_aggregate_ir_vars = {"Agg. Capital"}
-    filtered_ir_variables = [v for v in ir_variables if v not in unsupported_aggregate_ir_vars]
-    dropped_ir_variables = [v for v in ir_variables if v in unsupported_aggregate_ir_vars]
-    if dropped_ir_variables:
-        print(
-            "  Note: aggregate capital IR benchmark is not available; "
-            f"skipping {dropped_ir_variables} from ir_variables_to_plot."
+
+def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postprocess_context):
+    ir_render_context = postprocess_context.get("ir_render_context") if postprocess_context else None
+    if not ir_render_context:
+        return
+
+    for sector_idx in ir_render_context["sectors_to_plot"]:
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
         )
-    ir_variables = filtered_ir_variables
-
-    sectoral_ir_variables = [
-        label
-        for label in _get_requested_sectoral_ir_variables(config)
-        if label in SUPPORTED_SECTORAL_IR_LABELS
-    ]
-    shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
-    if not shock_sizes:
-        raise ValueError("ir_shock_sizes must contain at least one shock size.")
-    max_periods = config.get("ir_max_periods", 80)
-    configured_ir_methods = config.get("ir_methods", ["IR_stoch_ss"])
-    if isinstance(configured_ir_methods, str):
-        configured_ir_methods = [configured_ir_methods]
-    if "GIR" in configured_ir_methods and "IR_stoch_ss" in configured_ir_methods:
-        ir_response_source = "both"
-    elif "GIR" in configured_ir_methods:
-        ir_response_source = "GIR"
-    else:
-        ir_response_source = "IR_stoch_ss"
-
-    largest_shock = max(shock_sizes)
-    policies_ss_np = np.asarray(policies_ss)
-    P_ergodic_np = np.asarray(P_ergodic)
-
-    for sector_idx in sectors_to_plot:
-        sector_label = econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
-        for ir_variable in ir_variables:
+        for ir_variable in ir_render_context["ir_variables"]:
             is_agg_consumption = ir_variable == "Agg. Consumption"
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
-                matlab_ir_data=matlab_ir_data,
+                matlab_ir_data=ir_render_context["matlab_ir_data"],
                 sector_idx=sector_idx,
                 sector_label=sector_label,
                 variable_to_plot=ir_variable,
-                shock_sizes=shock_sizes if is_agg_consumption else [largest_shock],
+                shock_sizes=(
+                    ir_render_context["shock_sizes"] if is_agg_consumption else [ir_render_context["largest_shock"]]
+                ),
                 save_dir=irs_dir,
                 analysis_name=config["analysis_name"],
-                max_periods=max_periods,
-                n_sectors=n_sectors,
+                max_periods=ir_render_context["max_periods"],
+                n_sectors=ir_render_context["n_sectors"],
                 benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
-                response_source=ir_response_source,
+                response_source=ir_render_context["ir_response_source"],
                 agg_consumption_mode=is_agg_consumption,
                 negative_only=not is_agg_consumption,
-                policies_ss=policies_ss_np,
-                P_ergodic=P_ergodic_np,
+                policies_ss=ir_render_context["policies_ss_np"],
+                P_ergodic=ir_render_context["P_ergodic_np"],
             )
 
-    upstreamness_data = econ_model.upstreamness()
-    if stochastic_ss_policies:
-        for var_name in ["K", "L", "Y", "M", "Q"]:
-            try:
-                plot_sectoral_variable_stochss(
-                    stochastic_ss_states=stochastic_ss_states,
-                    stochastic_ss_policies=stochastic_ss_policies,
-                    variable_name=var_name,
-                    save_dir=simulation_dir,
-                    analysis_name=config["analysis_name"],
-                    econ_model=econ_model,
-                    upstreamness_data=upstreamness_data,
-                )
-            except Exception as exc:
-                print(f"    Failed to create stochastic SS {var_name} plot: {exc}", flush=True)
 
-    for sector_idx in sectors_to_plot:
-        sector_label = econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+def render_sectoral_stochss_outputs(
+    *,
+    config,
+    simulation_dir,
+    econ_model,
+    stochastic_ss_states,
+    stochastic_ss_policies,
+    postprocess_context,
+):
+    if not stochastic_ss_policies:
+        return
+
+    upstreamness_data = postprocess_context.get("upstreamness_data") if postprocess_context else None
+    for var_name in ["K", "L", "Y", "M", "Q"]:
+        try:
+            plot_sectoral_variable_stochss(
+                stochastic_ss_states=stochastic_ss_states,
+                stochastic_ss_policies=stochastic_ss_policies,
+                variable_name=var_name,
+                save_dir=simulation_dir,
+                analysis_name=config["analysis_name"],
+                econ_model=econ_model,
+                upstreamness_data=upstreamness_data,
+            )
+        except Exception as exc:
+            print(f"    Failed to create stochastic SS {var_name} plot: {exc}", flush=True)
+
+
+def render_sectoral_ir_outputs(*, config, irs_dir, econ_model, gir_data, postprocess_context):
+    ir_render_context = postprocess_context.get("ir_render_context") if postprocess_context else None
+    if not ir_render_context:
+        return
+
+    sectoral_ir_variables = ir_render_context["sectoral_ir_variables"]
+    for sector_idx in ir_render_context["sectors_to_plot"]:
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+        )
         if sectoral_ir_variables:
             print(f"\n  Sectoral IRs: {sector_label} (sector {sector_idx + 1})")
             for variable_name in sectoral_ir_variables:
@@ -524,45 +598,124 @@ def postprocess_analysis(
             print(f"    Plotting [{row_ref}] {ir_variable}: {desc} | {sector_label}")
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
-                matlab_ir_data=matlab_ir_data,
+                matlab_ir_data=ir_render_context["matlab_ir_data"],
                 sector_idx=sector_idx,
                 sector_label=sector_label,
                 variable_to_plot=ir_variable,
-                shock_sizes=[largest_shock],
+                shock_sizes=[ir_render_context["largest_shock"]],
                 save_dir=irs_dir,
                 analysis_name=config["analysis_name"],
-                max_periods=max_periods,
-                n_sectors=n_sectors,
+                max_periods=ir_render_context["max_periods"],
+                n_sectors=ir_render_context["n_sectors"],
                 benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
-                response_source=ir_response_source,
+                response_source=ir_render_context["ir_response_source"],
                 negative_only=True,
-                policies_ss=policies_ss_np,
-                P_ergodic=P_ergodic_np,
+                policies_ss=ir_render_context["policies_ss_np"],
+                P_ergodic=ir_render_context["P_ergodic_np"],
             )
 
-    if raw_simulation_data:
-        for var_name in ["K", "L", "Y", "M", "Q"]:
-            try:
-                plot_sectoral_variable_ergodic(
-                    raw_simulation_data=raw_simulation_data,
-                    variable_name=var_name,
-                    save_dir=simulation_dir,
-                    analysis_name=config["analysis_name"],
-                    econ_model=econ_model,
-                    upstreamness_data=upstreamness_data,
-                )
-            except Exception as exc:
-                print(f"    Failed to create ergodic {var_name} plot: {exc}", flush=True)
 
-    return {
-        "analysis_variables_data": analysis_variables_data,
-        "calibration_method_stats": calibration_method_stats,
-        "theoretical_stats": theoretical_stats,
-        "histogram_theo_params": histogram_theo_params,
-        "matlab_ir_data": matlab_ir_data,
-        "upstreamness_data": upstreamness_data,
-        "stochastic_ss_data": stochastic_ss_data,
+def render_ergodic_sectoral_outputs(*, config, simulation_dir, econ_model, raw_simulation_data, postprocess_context):
+    if not raw_simulation_data:
+        return
+
+    upstreamness_data = postprocess_context.get("upstreamness_data") if postprocess_context else None
+    ergodic_raw_simulation_data = {
+        label: sim_data
+        for label, sim_data in raw_simulation_data.items()
+        if sim_data.get("simulation_kind", "ergodic") == "ergodic"
     }
+    if not ergodic_raw_simulation_data:
+        return
+
+    for var_name in ["K", "L", "Y", "M", "Q"]:
+        try:
+            plot_sectoral_variable_ergodic(
+                raw_simulation_data=ergodic_raw_simulation_data,
+                variable_name=var_name,
+                save_dir=simulation_dir,
+                analysis_name=config["analysis_name"],
+                econ_model=econ_model,
+                upstreamness_data=upstreamness_data,
+            )
+        except Exception as exc:
+            print(f"    Failed to create ergodic {var_name} plot: {exc}", flush=True)
+
+
+def postprocess_analysis(
+    *,
+    config,
+    model_dir,
+    analysis_dir,
+    simulation_dir,
+    irs_dir,
+    econ_model,
+    model_data,
+    stats,
+    policies_ss,
+    state_ss,
+    raw_simulation_data,
+    analysis_variables_data,
+    stochastic_ss_states,
+    stochastic_ss_policies,
+    stochastic_ss_data,
+    gir_data,
+    dynare_simulations,
+    irs_path,
+):
+    prepared = prepare_postprocess_analysis(
+        config=config,
+        model_dir=model_dir,
+        analysis_dir=analysis_dir,
+        simulation_dir=simulation_dir,
+        irs_dir=irs_dir,
+        econ_model=econ_model,
+        model_data=model_data,
+        stats=stats,
+        policies_ss=policies_ss,
+        state_ss=state_ss,
+        raw_simulation_data=raw_simulation_data,
+        analysis_variables_data=analysis_variables_data,
+        stochastic_ss_states=stochastic_ss_states,
+        stochastic_ss_policies=stochastic_ss_policies,
+        stochastic_ss_data=stochastic_ss_data,
+        gir_data=gir_data,
+        dynare_simulations=dynare_simulations,
+        irs_path=irs_path,
+    )
+    postprocess_context = prepared.get("postprocess_context")
+
+    render_aggregate_ir_outputs(
+        config=config,
+        irs_dir=irs_dir,
+        econ_model=econ_model,
+        gir_data=gir_data,
+        postprocess_context=postprocess_context,
+    )
+    render_sectoral_stochss_outputs(
+        config=config,
+        simulation_dir=simulation_dir,
+        econ_model=econ_model,
+        stochastic_ss_states=stochastic_ss_states,
+        stochastic_ss_policies=stochastic_ss_policies,
+        postprocess_context=postprocess_context,
+    )
+    render_sectoral_ir_outputs(
+        config=config,
+        irs_dir=irs_dir,
+        econ_model=econ_model,
+        gir_data=gir_data,
+        postprocess_context=postprocess_context,
+    )
+    render_ergodic_sectoral_outputs(
+        config=config,
+        simulation_dir=simulation_dir,
+        econ_model=econ_model,
+        raw_simulation_data=raw_simulation_data,
+        postprocess_context=postprocess_context,
+    )
+
+    return prepared
 
 
 # Legacy long-ergodic price averaging path kept for later reuse:
@@ -618,6 +771,23 @@ def _build_calibration_method_stats(
         Pm_ergodic=Pm_ergodic,
         n_sectors=n_sectors,
     )
+
+    if reference_experiment_label.endswith(" (ergodic)"):
+        common_shock_label = reference_experiment_label[: -len(" (ergodic)")] + " (common shocks)"
+    else:
+        common_shock_label = f"{reference_experiment_label} (common shocks)"
+    common_shock_sim_data = raw_simulation_data.get(common_shock_label)
+    if common_shock_sim_data is not None:
+        method_stats["Nonlinear-CS"] = compute_model_moments_with_consistent_aggregation(
+            simul_obs=common_shock_sim_data["simul_obs"],
+            simul_policies=common_shock_sim_data["simul_policies"],
+            policies_ss=policies_ss,
+            state_ss=state_ss,
+            P_ergodic=P_ergodic,
+            Pk_ergodic=Pk_ergodic,
+            Pm_ergodic=Pm_ergodic,
+            n_sectors=n_sectors,
+        )
 
     return {label: stats_dict for label, stats_dict in method_stats.items() if stats_dict is not None}
 

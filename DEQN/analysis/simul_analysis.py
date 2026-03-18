@@ -12,18 +12,22 @@ def _compute_analysis_dataset(
     simul_policies,
     analysis_config,
     analysis_hooks=None,
+    analysis_context_override=None,
 ):
     """Build model-specific analysis variables for a simulation sample."""
     if simul_obs.shape[0] == 0:
         raise ValueError("Cannot compute analysis variables for an empty simulation sample.")
 
-    analysis_context = prepare_analysis_context(
-        econ_model=econ_model,
-        simul_obs=simul_obs,
-        simul_policies=simul_policies,
-        config=analysis_config,
-        analysis_hooks=analysis_hooks,
-    )
+    if analysis_context_override is None:
+        analysis_context = prepare_analysis_context(
+            econ_model=econ_model,
+            simul_obs=simul_obs,
+            simul_policies=simul_policies,
+            config=analysis_config,
+            analysis_hooks=analysis_hooks,
+        )
+    else:
+        analysis_context = analysis_context_override
 
     first_analysis_vars = compute_analysis_variables(
         econ_model=econ_model,
@@ -47,6 +51,26 @@ def _compute_analysis_dataset(
     simul_analysis_vars_array = jax.vmap(get_vars_as_array)(simul_obs, simul_policies)
     simul_analysis_variables = {label: simul_analysis_vars_array[:, i] for i, label in enumerate(var_labels)}
     return simul_analysis_variables, analysis_context
+
+
+def compute_analysis_dataset_with_context(
+    *,
+    econ_model,
+    simul_obs,
+    simul_policies,
+    analysis_config,
+    analysis_context,
+    analysis_hooks=None,
+):
+    """Build analysis variables using a caller-supplied aggregation context."""
+    return _compute_analysis_dataset(
+        econ_model=econ_model,
+        simul_obs=simul_obs,
+        simul_policies=simul_policies,
+        analysis_config=analysis_config,
+        analysis_hooks=analysis_hooks,
+        analysis_context_override=analysis_context,
+    )
 
 
 def create_episode_simulation_fn_verbose(econ_model, config):

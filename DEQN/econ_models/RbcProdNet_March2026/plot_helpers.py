@@ -895,6 +895,15 @@ def plot_sector_ir_by_shock_size(
         get_matlab_ir_for_analysis_variable,
     )
 
+    def _format_solution_ir_label(exp_name: str, response_kind: str, distinguish_response_kinds: bool) -> str:
+        response_labels = {
+            "GIR": "GIR",
+            "IR_stoch_ss": "Stochastic SS IR",
+        }
+        if not distinguish_response_kinds:
+            return exp_name
+        return f"{exp_name} ({response_labels.get(response_kind, response_kind)})"
+
     benchmark_key_map = {
         "FirstOrder": "first_order",
         "SecondOrder": "second_order",
@@ -920,6 +929,7 @@ def plot_sector_ir_by_shock_size(
     fig, axes = plt.subplots(n_sizes, n_cols, figsize=figsize, dpi=display_dpi, sharex=True, squeeze=False)
 
     experiment_names = list(gir_data.keys()) if gir_data else []
+    distinguish_response_kinds = response_source == "both"
     first_exp_data = gir_data[experiment_names[0]] if experiment_names else {}
     all_state_names = list(first_exp_data.keys()) if first_exp_data else []
 
@@ -1088,7 +1098,11 @@ def plot_sector_ir_by_shock_size(
                             color=colors[k % len(colors)],
                             linewidth=2.5,
                             alpha=0.9,
-                            label=f"GIR ({exp_name})" if j == 0 else None,
+                            label=(
+                                _format_solution_ir_label(exp_name, "GIR", distinguish_response_kinds)
+                                if j == 0
+                                else None
+                            ),
                         )
 
                 if response_source in ["IR_stoch_ss", "both"] and pos_stochss_key in state_gir_data:
@@ -1114,7 +1128,11 @@ def plot_sector_ir_by_shock_size(
                             color=colors[k % len(colors)],
                             linewidth=2.5,
                             alpha=0.9,
-                            label=f"IR_stoch_ss ({exp_name})" if j == 0 else None,
+                            label=(
+                                _format_solution_ir_label(exp_name, "IR_stoch_ss", distinguish_response_kinds)
+                                if j == 0
+                                else None
+                            ),
                         )
 
         if row_abs_max <= 0 or not np.isfinite(row_abs_max):

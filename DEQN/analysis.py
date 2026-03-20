@@ -338,6 +338,51 @@ def _common_shock_label(experiment_label: str) -> str:
     return f"{experiment_label} (common shocks)"
 
 
+def _build_output_display_label_map(config_dict):
+    experiment_labels = list((config_dict.get("experiments_to_analyze") or {}).keys())
+    if len(experiment_labels) != 1:
+        return {}
+
+    experiment_label = experiment_labels[0]
+    return {
+        experiment_label: "Global Solution",
+        _common_shock_label(experiment_label): "Global Solution (Common Shocks)",
+    }
+
+
+def _apply_display_labels_to_mapping(values_by_label, label_map):
+    if not label_map:
+        return dict(values_by_label)
+
+    relabeled = {}
+    for label, value in values_by_label.items():
+        relabeled[label_map.get(label, label)] = value
+    return relabeled
+
+
+def _apply_display_labels_to_postprocess_context(postprocess_context, label_map):
+    if not postprocess_context or not label_map:
+        return postprocess_context
+
+    relabeled_context = dict(postprocess_context)
+
+    ergodic_labels = postprocess_context.get("ergodic_experiment_labels")
+    if ergodic_labels is not None:
+        relabeled_context["ergodic_experiment_labels"] = [label_map.get(label, label) for label in ergodic_labels]
+
+    reference_label = postprocess_context.get("reference_experiment_label")
+    if reference_label is not None:
+        relabeled_context["reference_experiment_label"] = label_map.get(reference_label, reference_label)
+
+    return relabeled_context
+
+
+def _apply_display_labels_to_sequence(labels, label_map):
+    if labels is None:
+        return None
+    return [label_map.get(label, label) for label in labels]
+
+
 def _compute_welfare_cost_from_sample(*, econ_model, welfare_fn, welfare_ss, policies_logdev, config_dict):
     simul_utilities = jax.vmap(econ_model.utility_from_policies)(policies_logdev)
     welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config_dict["welfare_seed"]))
@@ -1014,6 +1059,21 @@ def main():
     matlab_ir_data = model_postprocess.get("matlab_ir_data", matlab_ir_data)
     upstreamness_data = model_postprocess.get("upstreamness_data", upstreamness_data)
     postprocess_context = model_postprocess.get("postprocess_context")
+    output_display_label_map = _build_output_display_label_map(config)
+    display_postprocess_context = _apply_display_labels_to_postprocess_context(
+        postprocess_context,
+        output_display_label_map,
+    )
+    display_gir_data = _apply_display_labels_to_mapping(gir_data, output_display_label_map)
+    display_stochastic_ss_states = _apply_display_labels_to_mapping(stochastic_ss_states, output_display_label_map)
+    display_stochastic_ss_policies = _apply_display_labels_to_mapping(stochastic_ss_policies, output_display_label_map)
+    display_stochastic_ss_data = _apply_display_labels_to_mapping(stochastic_ss_data, output_display_label_map)
+    display_welfare_costs = _apply_display_labels_to_mapping(welfare_costs, output_display_label_map)
+    display_raw_simulation_data = _apply_display_labels_to_mapping(raw_simulation_data, output_display_label_map)
+    display_stochss_methods_to_include = _apply_display_labels_to_sequence(
+        config.get("stochss_methods_to_include"),
+        output_display_label_map,
+    )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # MODEL VS DATA MOMENTS TABLE
@@ -1092,8 +1152,8 @@ def main():
             config=config,
             irs_dir=irs_dir,
             econ_model=econ_model,
-            gir_data=gir_data,
-            postprocess_context=postprocess_context,
+            gir_data=display_gir_data,
+            postprocess_context=display_postprocess_context,
         )
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1107,9 +1167,9 @@ def main():
             config=config,
             simulation_dir=simulation_dir,
             econ_model=econ_model,
-            stochastic_ss_states=stochastic_ss_states,
-            stochastic_ss_policies=stochastic_ss_policies,
-            postprocess_context=postprocess_context,
+            stochastic_ss_states=display_stochastic_ss_states,
+            stochastic_ss_policies=display_stochastic_ss_policies,
+            postprocess_context=display_postprocess_context,
         )
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1119,14 +1179,14 @@ def main():
     print("  AGGREGATE STOCHASTIC STEADY STATE")
     print("═" * 72, flush=True)
     create_stochastic_ss_aggregates_table(
-        stochastic_ss_data=stochastic_ss_data,
+        stochastic_ss_data=display_stochastic_ss_data,
         save_path=os.path.join(analysis_dir, "stochastic_ss_aggregates_table.tex"),
         analysis_name=config["analysis_name"],
-        methods_to_include=config.get("stochss_methods_to_include"),
+        methods_to_include=display_stochss_methods_to_include,
     )
 
     create_stochastic_ss_table(
-        stochastic_ss_data=stochastic_ss_data,
+        stochastic_ss_data=display_stochastic_ss_data,
         save_path=os.path.join(analysis_dir, "stochastic_ss_table.tex"),
         analysis_name=config["analysis_name"],
     )
@@ -1179,8 +1239,17 @@ def main():
     else:
         desc_analysis_data = filtered_analysis_variables_data
 
+    display_filtered_analysis_variables_data = _apply_display_labels_to_mapping(
+        filtered_analysis_variables_data,
+        output_display_label_map,
+    )
+    display_desc_analysis_data = _apply_display_labels_to_mapping(
+        desc_analysis_data,
+        output_display_label_map,
+    )
+
     create_descriptive_stats_table(
-        analysis_variables_data=desc_analysis_data,
+        analysis_variables_data=display_desc_analysis_data,
         save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
         analysis_name=config["analysis_name"],
     )
@@ -1195,16 +1264,25 @@ def main():
         if filtered:
             aggregate_ergodic_data[method_name] = filtered
 
+    display_aggregate_ergodic_data = _apply_display_labels_to_mapping(
+        aggregate_ergodic_data,
+        output_display_label_map,
+    )
+    display_selected_methods = _apply_display_labels_to_sequence(
+        list(selected_methods),
+        output_display_label_map,
+    )
+
     create_ergodic_aggregate_stats_table(
-        analysis_variables_data=aggregate_ergodic_data,
+        analysis_variables_data=display_aggregate_ergodic_data,
         save_path=os.path.join(simulation_dir, "ergodic_aggregate_stats_table.tex"),
         analysis_name=config["analysis_name"],
-        methods_to_include=list(selected_methods),
+        methods_to_include=display_selected_methods,
     )
 
     if len(filtered_analysis_variables_data) > 1:
         create_comparative_stats_table(
-            analysis_variables_data=filtered_analysis_variables_data,
+            analysis_variables_data=display_filtered_analysis_variables_data,
             save_path=os.path.join(simulation_dir, "descriptive_stats_comparative.tex"),
             analysis_name=config["analysis_name"],
         )
@@ -1216,7 +1294,7 @@ def main():
     print("  WELFARE COSTS")
     print("═" * 72, flush=True)
     create_welfare_table(
-        welfare_data=welfare_costs,
+        welfare_data=display_welfare_costs,
         save_path=os.path.join(analysis_dir, "welfare_table.tex"),
         analysis_name=config["analysis_name"],
     )
@@ -1232,8 +1310,8 @@ def main():
             config=config,
             irs_dir=irs_dir,
             econ_model=econ_model,
-            gir_data=gir_data,
-            postprocess_context=postprocess_context,
+            gir_data=display_gir_data,
+            postprocess_context=display_postprocess_context,
         )
 
     if analysis_hooks is not None and hasattr(analysis_hooks, "render_ergodic_sectoral_outputs") and postprocess_context:
@@ -1241,8 +1319,8 @@ def main():
             config=config,
             simulation_dir=simulation_dir,
             econ_model=econ_model,
-            raw_simulation_data=raw_simulation_data,
-            postprocess_context=postprocess_context,
+            raw_simulation_data=display_raw_simulation_data,
+            postprocess_context=display_postprocess_context,
         )
 
     # Model-specific plots

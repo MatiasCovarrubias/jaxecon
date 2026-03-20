@@ -857,7 +857,7 @@ def _generate_welfare_console_table(welfare_data: Dict[str, float]) -> str:
     output.append("\n" + "═" * 72)
     output.append("  WELFARE COSTS (consumption-equivalent %)")
     output.append("═" * 72)
-    output.append(f"\n    {'Experiment':<40} {'Welfare Cost':>15}")
+    output.append(f"\n    {'Method':<40} {'Welfare Cost':>15}")
     output.append("  " + "─" * 68)
 
     for exp_name, welfare_cost in welfare_data.items():
@@ -872,7 +872,7 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
     latex_code = (
         r"\begin{tabularx}{\textwidth}{l X}" + "\n"
         r"\toprule" + "\n"
-        r"\textbf{Experiment} & \textbf{Welfare Cost ($V_c$, \%)} \\" + "\n"
+        r"\textbf{Method} & \textbf{Welfare Cost ($V_c$, \%)} \\" + "\n"
         r"\midrule" + "\n"
     )
 

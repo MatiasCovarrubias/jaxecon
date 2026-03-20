@@ -352,6 +352,24 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
         "Agg. Labor": "Labor",
         "Agg. Capital": "Capital",
     }
+    aggregate_variable_note_labels = {
+        "Agg. Consumption": "consumption",
+        "Agg. Investment": "investment",
+        "Agg. GDP": "GDP",
+        "Agg. Labor": "labor",
+        "Agg. Capital": "capital",
+    }
+    ir_shock_sizes = list(config_dict.get("ir_shock_sizes", []))
+    largest_ir_shock = max(ir_shock_sizes) if ir_shock_sizes else None
+    benchmark_method_labels = {
+        "FirstOrder": "MATLAB first-order benchmark",
+        "SecondOrder": "MATLAB second-order benchmark",
+        "PerfectForesight": "MATLAB perfect-foresight benchmark",
+    }
+    aggregate_benchmark_label = benchmark_method_labels.get(
+        config_dict.get("ir_benchmark_method", "PerfectForesight"),
+        "MATLAB benchmark",
+    )
     for sector_idx in config_dict.get("ir_sectors_to_plot", []):
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
@@ -366,6 +384,7 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
             figure_spec = {
                 "path": _analysis_named_path(irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
                 "caption": aggregate_variable_captions.get(variable_name, variable_name),
+                "note_label": aggregate_variable_note_labels.get(variable_name, variable_name),
             }
             if variable_name == "Agg. Consumption":
                 consumption_specs.append(figure_spec)
@@ -390,7 +409,18 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                         f"Aggregate {_join_labels([_caption_label(subfigure['caption']) for subfigure in subfigures])} "
                         f"responses to a TFP shock in {sector_label}."
                     ),
-                    "note_text": "All panels use the same negative TFP shock and share the same time scale.",
+                    "note_builder": lambda subfigures,
+                    sector_label=sector_label,
+                    largest_ir_shock=largest_ir_shock,
+                    aggregate_benchmark_label=aggregate_benchmark_label: (
+                        f"The panels plot the responses of aggregate "
+                        f"{_join_labels([subfigure.get('note_label', _caption_label(subfigure['caption'])) for subfigure in subfigures])} "
+                        f"to a negative {largest_ir_shock} percent TFP shock in {sector_label}. "
+                        f"The horizontal axis reports periods after impact. "
+                        f"The vertical axis reports percent deviations from the deterministic steady state. "
+                        f"Solid lines report the DEQN stochastic-steady-state impulse response and dashed lines report the "
+                        f"{aggregate_benchmark_label}; both are aggregated with fixed ergodic-price weights."
+                    ),
                     "subfigures": other_aggregate_specs,
                 }
             )

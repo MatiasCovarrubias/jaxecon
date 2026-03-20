@@ -127,7 +127,7 @@ def _nonlinear_method_note(method_names: list[str]) -> str:
 
 def _wrap_table_environment(tabular_code: str, *, caption: str, label: str, note_text: str, note_width: str = "0.92") -> str:
     return (
-        r"\begin{table}[htbp]" + "\n"
+        r"\begin{table}[H]" + "\n"
         + r"\centering" + "\n"
         + rf"\caption{{{caption}}}" + "\n"
         + rf"\label{{{label}}}" + "\n"
@@ -332,7 +332,7 @@ def _create_model_vs_data_moments_table(
     method_order.extend(name for name in method_model_stats if name not in method_order)
     n_methods = len(method_order)
     latex_code = (
-        r"\begin{table}[htbp]" + "\n"
+        r"\begin{table}[H]" + "\n"
         r"\centering" + "\n"
         r"\caption{Model vs. data business-cycle moments}" + "\n"
         r"\label{tab:model_vs_data_moments}" + "\n"
@@ -477,7 +477,7 @@ def _generate_calibration_console_table(
 
 def _generate_calibration_latex_table(targeted_rows: list, untargeted_rows: list) -> str:
     latex_code = (
-        r"\begin{table}[htbp]" + "\n"
+        r"\begin{table}[H]" + "\n"
         r"\centering" + "\n"
         r"\caption{Model calibration: targeted and untargeted moments}" + "\n"
         r"\label{tab:calibration}" + "\n"
@@ -1107,12 +1107,21 @@ def create_stochastic_ss_aggregates_table(
         method_names = all_methods
 
     n_methods = len(method_names)
-    tabular_code = (
-        f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_methods}}}{{X}}}}\n"
-        + r"\toprule"
-        + "\n"
-        + r"\textbf{Aggregate}"
-    )
+    use_compact_layout = n_methods <= 2
+    if use_compact_layout:
+        tabular_code = (
+            f"\\begin{{tabular}}{{l *{{{n_methods}}}{{r}}}}\n"
+            + r"\toprule"
+            + "\n"
+            + r"\textbf{Aggregate}"
+        )
+    else:
+        tabular_code = (
+            f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_methods}}}{{X}}}}\n"
+            + r"\toprule"
+            + "\n"
+            + r"\textbf{Aggregate}"
+        )
     for method in method_names:
         method_display = _format_method_display_name(method, method_names).replace("_", r"\_")
         tabular_code += f" & \\textbf{{{method_display}}}"
@@ -1128,7 +1137,8 @@ def create_stochastic_ss_aggregates_table(
                 tabular_code += f" & {float(value) * 100:.3f}"
         tabular_code += r" \\" + "\n"
 
-    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    tabular_code += r"\bottomrule" + "\n"
+    tabular_code += (r"\end{tabular}" if use_compact_layout else r"\end{tabularx}") + "\n"
     latex_code = _wrap_table_environment(
         tabular_code,
         caption="Aggregate stochastic steady state",

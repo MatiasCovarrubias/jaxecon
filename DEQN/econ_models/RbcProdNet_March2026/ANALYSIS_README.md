@@ -170,6 +170,21 @@ Currently used helpers include:
 
 It also contains older or currently unused plotting helpers.
 
+## Where to edit presentation
+
+If you want to change the formatting of displayed tables, figures, or the combined LaTeX wrapper, use this map:
+
+- Edit `DEQN/analysis/tables.py` to change table layout, captions, notes, column labels, widths, and the LaTeX environments used by the generated tables.
+- Edit `plot_helpers.py` to change the appearance of PNG figures: subplot layout, legends, axis labels, annotation boxes, figure size, and note text written next to figures.
+- Edit `analysis_hooks.py` to change which model-specific figures are rendered, which variables are included, and which simulation objects feed each displayed figure.
+- Edit `DEQN/analysis.py` to change the top-level display order, which generated tables and figures are included in the master output, and how the combined `figures_tables_<analysis_name>.tex` wrapper is assembled.
+
+Operational rule:
+
+- If the issue is visual formatting, start in `tables.py` or `plot_helpers.py`.
+- If the wrong object is being shown, start in `analysis_hooks.py`.
+- If the wrapper includes the wrong sections or ordering, start in `DEQN/analysis.py`.
+
 ## Analysis outputs
 
 The Python layer writes outputs under:

@@ -1074,7 +1074,7 @@ def plot_sector_ir_by_shock_size(
 
     if figsize is None:
         if negative_only:
-            figsize = (8.2, 3.2 * n_sizes)
+            figsize = (5.2, 4.8 * n_sizes)
         else:
             figsize = (8.8, 3.6 * n_sizes)
 
@@ -1132,9 +1132,11 @@ def plot_sector_ir_by_shock_size(
                 skip_initial=skip_initial_matlab,
             )
         row_abs_max = 0.0
+        row_min = np.inf
+        row_max = -np.inf
 
         def _plot_line(ax, series, *, label=None, color=None, linewidth=1.5, linestyle="-", alpha=0.8):
-            nonlocal row_abs_max
+            nonlocal row_abs_max, row_min, row_max
             if series is None:
                 return
             arr = np.asarray(series)
@@ -1154,6 +1156,8 @@ def plot_sector_ir_by_shock_size(
             finite = np.isfinite(y)
             if np.any(finite):
                 row_abs_max = max(row_abs_max, float(np.max(np.abs(y[finite]))))
+                row_min = min(row_min, float(np.min(y[finite])))
+                row_max = max(row_max, float(np.max(y[finite])))
 
         if matlab_irs:
             pos_keys = [pos_key] if pos_key in matlab_irs else [k for k in matlab_irs if k.startswith("pos_")]
@@ -1292,8 +1296,7 @@ def plot_sector_ir_by_shock_size(
 
         ax_neg.axhline(y=0, color="black", linestyle="-", alpha=0.5, linewidth=1)
         ax_neg.grid(True, alpha=0.3)
-        if not negative_only:
-            ax_neg.set_box_aspect(1)
+        ax_neg.set_box_aspect(1)
 
         if agg_consumption_mode and not negative_only:
             # One-sided y-axis: derive magnitude from the data on each panel so
@@ -1314,6 +1317,23 @@ def plot_sector_ir_by_shock_size(
             ax_neg.set_ylim(-magnitude, 0)
             if ax_pos is not None:
                 ax_pos.set_ylim(0, magnitude)
+        elif negative_only:
+            if not np.isfinite(row_min) or not np.isfinite(row_max):
+                row_min, row_max = -0.1, 0.0
+            if row_max <= 0:
+                lower = row_min * 1.08 if row_min < 0 else -0.1
+                upper = 0.0
+            elif row_min >= 0:
+                lower = 0.0
+                upper = row_max * 1.08 if row_max > 0 else 0.1
+            else:
+                span = max(row_max - row_min, 0.1)
+                pad = 0.08 * span
+                lower = row_min - pad
+                upper = row_max + pad
+            if upper <= lower:
+                upper = lower + 0.1
+            ax_neg.set_ylim(lower, upper)
         else:
             y_lim_abs = row_abs_max * 1.08
             ax_neg.set_ylim(-y_lim_abs, y_lim_abs)
@@ -1733,10 +1753,11 @@ def plot_sectoral_variable_stochss(
             0.98,
             corr_text,
             transform=ax.transAxes,
-            fontsize=SMALL_SIZE - 1,
+            fontsize=SMALL_SIZE + 1,
             verticalalignment="top",
             horizontalalignment="right",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor="gray"),
+            linespacing=1.2,
+            bbox=dict(boxstyle="round,pad=0.55", facecolor="white", alpha=0.88, edgecolor="gray"),
         )
 
     if n_experiments > 1:
@@ -1906,10 +1927,11 @@ def plot_sectoral_variable_ergodic(
             0.98,
             corr_text,
             transform=ax.transAxes,
-            fontsize=SMALL_SIZE - 1,
+            fontsize=SMALL_SIZE + 1,
             verticalalignment="top",
             horizontalalignment="right",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor="gray"),
+            linespacing=1.2,
+            bbox=dict(boxstyle="round,pad=0.55", facecolor="white", alpha=0.88, edgecolor="gray"),
         )
 
     if n_experiments > 1:

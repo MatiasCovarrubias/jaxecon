@@ -27,10 +27,8 @@ Output roots:
 | 1 | Model vs data moments | Empirical targets vs model moments (MATLAB `ModelStats` + nonlinear moments from sim + optional Dynare sim aggregates) | `aggregation.py` + hooks `prepare_postprocess_analysis` → `_build_calibration_method_stats`; first-order stats from `md["Statistics"]` | LaTeX: `analysis_dir/calibration_table_<analysis_name>.tex` (console from `tables.create_calibration_table`) |
 | 2 | Aggregate IRs | Sector TFP shocks; DEQN IR (`GIR`/`IR_stoch_ss`) vs MATLAB benchmark (`ModelData_IRs`) | `GIR.py` (`create_GIR_fn`); MATLAB via `matlab_irs` + hooks `_build_ir_render_context` | PNG: `IRs/IR_<var>_<sector>_<analysis_name>.png` via `plot_helpers.plot_sector_ir_by_shock_size` |
 | 3 | Sectoral variables in stochastic SS | Bar charts of K,L,Y,M,Q (% dev from det. SS) at stochastic SS, optional upstreamness ρ. These plots are fed from the main long ergodic simulation, not from the common-shock auxiliary run. | `stochastic_ss.py` + hooks `render_sectoral_stochss_outputs` | PNG: `simulation/sectoral_<k|l|y|m|q>_stochss_<analysis_name>.png` |
-| 4 | Aggregate stochastic SS | Same four aggregates’ **levels** at stochastic SS (C,I,GDP,K) | `stochastic_ss.py` → `compute_analysis_variables` at SS | LaTeX: `stochastic_ss_aggregates_<analysis_name>.tex` **and** `stochastic_ss_<analysis_name>.tex` (both use the same four series; aggregates table respects `stochss_methods_to_include`) |
+| 4 | Aggregate stochastic SS | Aggregate stochastic steady state for the displayed nonlinear method(s) | `stochastic_ss.py` → `compute_analysis_variables` at SS | LaTeX: `stochastic_ss_aggregates_<analysis_name>.tex` |
 | 5 | Descriptive statistics (simulation) | Mean/sd/skew/excess kurt for configured variables on nonlinear and MATLAB benchmark series. Which benchmark methods appear depends on which method blocks are present in `ModelData_simulation.mat`. | Time series in `analysis_variables_data` after hooks (`process_simulation_with_consistent_aggregation`, NN sim) | LaTeX: `simulation/descriptive_stats_<analysis_name>.tex` |
-| 5b | Ergodic aggregate moments | Same four aggregates, stats table | From filtered `analysis_variables_data` | LaTeX: `simulation/ergodic_aggregate_stats_<analysis_name>.tex` |
-| 5c | Comparative descriptive (optional) | All variables side-by-side if **≥2** methods after filters | Same series as 5 | LaTeX: `simulation/descriptive_stats_comparative_<analysis_name>.tex` (only if `len(filtered...) > 1`) |
 | 6 | Welfare cost of BC | CE % from simulated utilities (NN + optional Dynare paths). The common-shock nonlinear run is kept for comparison here. | `welfare.py` + `_compute_welfare_cost_from_sample` / `_welfare_cost_from_dynare_simul` | LaTeX: `analysis_dir/welfare_<analysis_name>.tex` |
 | 7 | Sectoral IRs | Same IR machinery as (2), sectoral variable list from config | `GIR.py` + hooks `render_sectoral_ir_outputs` | PNG: `IRs/IR_<var>_<sector>_<analysis_name>.png` |
 | 8 | Ergodic mean sectoral levels | Time-mean sector K,L,Y,M,Q (% dev from det. SS), ergodic runs only | Raw sim in `raw_simulation_data` | PNG: `simulation/sectoral_<k|l|y|m|q>_ergodic_<analysis_name>.png` |
@@ -41,6 +39,23 @@ Output roots:
 - Ergodic sectoral bars (8) run after sectoral IRs (7), not before welfare.
 - GIRs and sectoral stochastic-SS plots are anchored to the main long ergodic run.
 - The common-shock nonlinear run is mainly a comparative object for descriptive tables and welfare.
+
+---
+
+## 1b. Where to edit formatting
+
+For another agent making presentation changes, use this shortcut:
+
+- `DEQN/analysis/tables.py`: edit table formatting, captions, notes, widths, labels, and LaTeX table environments.
+- `DEQN/econ_models/RbcProdNet_March2026/plot_helpers.py`: edit figure appearance, subplot layout, legends, annotations, figure size, and figure-note text.
+- `DEQN/econ_models/RbcProdNet_March2026/analysis_hooks.py`: edit which model-specific figures are rendered and which variables or simulation objects feed them.
+- `DEQN/analysis.py`: edit the display order, which generated outputs are included, and the assembly of the master `figures_tables_<analysis_name>.tex` file.
+
+Rule of thumb:
+
+- Wrong formatting: start in `tables.py` or `plot_helpers.py`.
+- Wrong content selected: start in `analysis_hooks.py`.
+- Wrong section order or wrong files included in the wrapper: start in `DEQN/analysis.py`.
 
 ---
 
@@ -55,10 +70,8 @@ Output roots:
 ### `DEQN/analysis/tables.py`
 
 - `create_calibration_table` → model vs data TeX + console.
-- `create_stochastic_ss_aggregates_table`, `create_stochastic_ss_table` → aggregate SS TeX.
+- `create_stochastic_ss_aggregates_table` → aggregate SS TeX.
 - `create_descriptive_stats_table` → variable-wise descriptive TeX + console.
-- `create_ergodic_aggregate_stats_table` → aggregate-only descriptive TeX.
-- `create_comparative_stats_table` → wide comparative TeX (conditional).
 - `create_welfare_table` → welfare TeX.
 
 ### `DEQN/analysis/simul_analysis.py`
@@ -121,7 +134,6 @@ Output roots:
 - Hook `postprocess_analysis` entrypoint (for this model): `analysis.py` uses `prepare_postprocess_analysis` + separate `render_*`; `postprocess_analysis` only runs if something calls it manually.
 - `theoretical_stats` in hooks: still returned but currently empty for March2026 after theoretical block removal — nothing consumes it in descriptive tables.
 - `DEQN/analysis/eval.py` — unused by main script.
-- Duplicate SS reporting: `stochastic_ss_aggregates_*` and `stochastic_ss_*` tables both cover C,I,GDP,K at stochastic SS (second filterable by `stochss_methods_to_include`).
 - The model-vs-data filter logic is still present in `analysis.py`, even if the config key is omitted from the current config block.
 
 **Tables / figures defined but not produced by `analysis.py` for March2026**

@@ -188,6 +188,12 @@ config = {
     # Aggregate reporting controls
     "aggregate_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
     "descriptive_stats_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
+    # Methods included in the model-vs-data moments table.
+    # Use [] to include all available methods.
+    # Supported names/aliases:
+    # "1st"/"FirstOrder", "2nd"/"SecondOrder", "PF"/"PerfectForesight",
+    # "MITShocks", "Nonlinear", "Nonlinear-CS"/"NonlinearCS".
+    "model_vs_data_methods_to_include": [],
     # Benchmark methods included in ergodic exercises (descriptive table, aggregate stats, histograms).
     # Nonlinear experiment methods are always included when always_include_nonlinear_methods=True.
     # Canonical names: "Log-Linear", "SecondOrder", "PerfectForesight", "MITShocks".
@@ -1030,11 +1036,49 @@ def main():
     calibration_model_stats = (
         (fo_stats.get("ModelStats") or fo_stats.get("modelstats")) if isinstance(fo_stats, dict) else None
     )
+    model_vs_data_aliases = {
+        "FirstOrder": "1st",
+        "Log-Linear": "1st",
+        "LogLinear": "1st",
+        "SecondOrder": "2nd",
+        "Second-Order": "2nd",
+        "PerfectForesight": "PF",
+        "Perfect Foresight": "PF",
+        "MITShock": "MITShocks",
+        "MIT Shocks": "MITShocks",
+        "MIT shocks": "MITShocks",
+        "NonlinearCS": "Nonlinear-CS",
+        "Nonlinear_CS": "Nonlinear-CS",
+    }
+
+    def _normalize_model_vs_data_method_name(method_name: str) -> str:
+        return model_vs_data_aliases.get(method_name, method_name)
+
+    model_vs_data_methods_cfg = config.get("model_vs_data_methods_to_include")
+    filtered_calibration_method_stats = calibration_method_stats
+    if model_vs_data_methods_cfg:
+        if isinstance(model_vs_data_methods_cfg, str):
+            model_vs_data_methods_cfg = [model_vs_data_methods_cfg]
+        requested_methods = [_normalize_model_vs_data_method_name(name) for name in model_vs_data_methods_cfg]
+        requested_method_set = set(requested_methods)
+        filtered_calibration_method_stats = {
+            method_name: stats_dict
+            for method_name, stats_dict in calibration_method_stats.items()
+            if method_name in requested_method_set
+        }
+        if filtered_calibration_method_stats:
+            print(f"  Model-vs-data methods: {list(filtered_calibration_method_stats.keys())}")
+        else:
+            print(
+                "  ⚠ model_vs_data_methods_to_include did not match any available methods; "
+                f"using all available methods {list(calibration_method_stats.keys())}."
+            )
+            filtered_calibration_method_stats = calibration_method_stats
     if calibration_emp is not None:
         create_calibration_table(
             empirical_targets=calibration_emp,
             first_order_model_stats=calibration_model_stats,
-            method_model_stats=calibration_method_stats,
+            method_model_stats=filtered_calibration_method_stats,
             save_path=os.path.join(analysis_dir, "calibration_table.tex"),
             analysis_name=config["analysis_name"],
         )
@@ -1112,10 +1156,7 @@ def main():
     def _normalize_method_name(method_name: str) -> str:
         return method_aliases.get(method_name, method_name)
 
-    available_methods = sorted(
-        {_normalize_method_name(k) for k in analysis_variables_data.keys()}
-        | {_normalize_method_name(k) for k in theoretical_stats.keys()}
-    )
+    available_methods = sorted({_normalize_method_name(k) for k in analysis_variables_data.keys()})
     print(f"  Available methods (canonical): {available_methods}")
 
     benchmark_methods_cfg = config.get("ergodic_methods_to_include")
@@ -1134,12 +1175,6 @@ def main():
         for k, v in analysis_variables_data.items()
         if _normalize_method_name(k) in selected_methods
     }
-    filtered_theoretical_stats = {
-        _normalize_method_name(k): v
-        for k, v in theoretical_stats.items()
-        if _normalize_method_name(k) in selected_methods
-    }
-
     desc_vars = config.get("descriptive_stats_variables")
     if desc_vars:
         desc_analysis_data = {
@@ -1147,22 +1182,13 @@ def main():
             for method, variables in filtered_analysis_variables_data.items()
         }
         desc_analysis_data = {k: v for k, v in desc_analysis_data.items() if v}
-        desc_theo_stats = None
-        if filtered_theoretical_stats:
-            desc_theo_stats = {
-                method: {k: v for k, v in variables.items() if k in desc_vars}
-                for method, variables in filtered_theoretical_stats.items()
-            }
-            desc_theo_stats = {k: v for k, v in desc_theo_stats.items() if v} or None
     else:
         desc_analysis_data = filtered_analysis_variables_data
-        desc_theo_stats = filtered_theoretical_stats if filtered_theoretical_stats else None
 
     create_descriptive_stats_table(
         analysis_variables_data=desc_analysis_data,
         save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
         analysis_name=config["analysis_name"],
-        theoretical_stats=desc_theo_stats,
     )
 
     # Aggregate-only ergodic descriptive statistics (C, I, GDP, K)

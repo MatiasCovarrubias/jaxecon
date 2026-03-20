@@ -35,46 +35,72 @@ _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
     "σ(I^exp_agg)",
 ]
 
+_MODEL_VS_DATA_PANELS = [
+    (
+        "Volatility of aggregates",
+        [
+            ("$\\sigma(Y_{\\mathrm{agg}})$", "sigma_VA_agg", "sigma_VA_agg", "σ(Y_agg)"),
+            ("$\\sigma(C_{\\mathrm{agg}})$", "sigma_C_agg", "sigma_C_agg", "σ(C_agg)"),
+            ("$\\sigma(I_{\\mathrm{agg}})$", "sigma_I_agg", "sigma_I_agg", "σ(I_agg)"),
+            ("$\\sigma(L^{hc}_{\\mathrm{agg}})$", "sigma_L_hc_agg", "sigma_L_agg", "σ(L_hc_agg)"),
+        ],
+    ),
+    (
+        "Correlation of aggregates",
+        [
+            ("$\\mathrm{corr}(L,C)_{\\mathrm{agg}}$", "corr_L_C_agg", ("correlations", "L_C_agg"), "corr(L,C)_agg"),
+            ("$\\mathrm{corr}(I,C)_{\\mathrm{agg}}$", "corr_I_C_agg", ("correlations", "I_C_agg"), "corr(I,C)_agg"),
+            (
+                "$\\mathrm{corr}(L,A)_{\\mathrm{agg}}$",
+                "corr_L_TFP_agg",
+                ("correlations", "L_TFP_agg"),
+                "corr(L,A)_agg",
+            ),
+        ],
+    ),
+    (
+        "Sectoral comovement",
+        [
+            ("avg corr$(C,C)$", "avg_pairwise_corr_C", "avg_pairwise_corr_C", "avg corr(C,C)"),
+            ("avg corr$(VA,VA)$", "avg_pairwise_corr_VA", "avg_pairwise_corr_VA", "avg corr(VA,VA)"),
+            ("avg corr$(L,L)$", "avg_pairwise_corr_L", "avg_pairwise_corr_L", "avg corr(L,L)"),
+            ("avg corr$(I,I)$", "avg_pairwise_corr_I", "avg_pairwise_corr_I", "avg corr(I,I)"),
+        ],
+    ),
+    (
+        "Average sectoral volatilities",
+        [
+            ("$\\sigma(VA)$ avg", "sigma_VA_avg", "sigma_VA_avg", "σ(VA) avg"),
+            ("$\\sigma(L)$ avg", "sigma_L_avg", "sigma_L_avg", "σ(L) avg"),
+            ("$\\sigma(I)$ avg", "sigma_I_avg", "sigma_I_avg", "σ(I) avg"),
+            ("$\\sigma(L)$ emp-wgt", "sigma_L_avg_empweighted", "sigma_L_avg_empweighted", "σ(L) emp-wgt"),
+            ("$\\sigma(Domar)$ avg", "sigma_Domar_avg", "sigma_Domar_avg", "σ(Domar) avg"),
+        ],
+    ),
+    (
+        "Targeted moments",
+        [
+            ("$\\sigma(I)$ inv-wgt", "sigma_I_avg_invweighted", "sigma_I_avg_invweighted", "σ(I) inv-wgt"),
+            (
+                "avg corr$(L,A)$",
+                "corr_L_TFP_sectoral_avg_vashare",
+                ("correlations", "L_TFP_sectoral_avg_vashare"),
+                "avg corr(L,A)",
+            ),
+        ],
+    ),
+]
+
 _MODEL_VS_DATA_ROW_DEFS = [
-    ("$\\sigma(Y_{\\mathrm{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
-    ("$\\sigma(C_{\\mathrm{agg}})$", "sigma_C_agg", "sigma_C_agg"),
-    ("$\\sigma(I_{\\mathrm{agg}})$", "sigma_I_agg", "sigma_I_agg"),
-    ("$\\sigma(L^{hc}_{\\mathrm{agg}})$", "sigma_L_hc_agg", "sigma_L_agg"),
-    ("$\\mathrm{corr}(L,C)_{\\mathrm{agg}}$", "corr_L_C_agg", ("correlations", "L_C_agg")),
-    ("$\\mathrm{corr}(I,C)_{\\mathrm{agg}}$", "corr_I_C_agg", ("correlations", "I_C_agg")),
-    ("$\\sigma(VA)$ avg", "sigma_VA_avg", "sigma_VA_avg"),
-    ("$\\sigma(L)$ avg", "sigma_L_avg", "sigma_L_avg"),
-    ("$\\sigma(I)$ avg", "sigma_I_avg", "sigma_I_avg"),
-    ("$\\sigma(L)$ emp-wgt", "sigma_L_avg_empweighted", "sigma_L_avg_empweighted"),
-    ("$\\sigma(I)$ inv-wgt", "sigma_I_avg_invweighted", "sigma_I_avg_invweighted"),
-    ("$\\sigma(Domar)$ avg", "sigma_Domar_avg", "sigma_Domar_avg"),
-    ("avg corr$(C,C)$", "avg_pairwise_corr_C", "avg_pairwise_corr_C"),
-    ("avg corr$(VA,VA)$", "avg_pairwise_corr_VA", "avg_pairwise_corr_VA"),
-    ("avg corr$(L,L)$", "avg_pairwise_corr_L", "avg_pairwise_corr_L"),
-    ("avg corr$(I,I)$", "avg_pairwise_corr_I", "avg_pairwise_corr_I"),
-    ("$\\mathrm{corr}(L,A)_{\\mathrm{agg}}$", "corr_L_TFP_agg", ("correlations", "L_TFP_agg")),
-    ("avg corr$(L,A)$", "corr_L_TFP_sectoral_avg_vashare", ("correlations", "L_TFP_sectoral_avg_vashare")),
+    (row_label, model_key, data_key)
+    for _, panel_rows in _MODEL_VS_DATA_PANELS
+    for row_label, model_key, data_key, _ in panel_rows
 ]
 
 _MODEL_VS_DATA_CONSOLE_LABELS = [
-    "σ(Y_agg)",
-    "σ(C_agg)",
-    "σ(I_agg)",
-    "σ(L_hc_agg)",
-    "corr(L,C)_agg",
-    "corr(I,C)_agg",
-    "σ(VA) avg",
-    "σ(L) avg",
-    "σ(I) avg",
-    "σ(L) emp-wgt",
-    "σ(I) inv-wgt",
-    "σ(Domar) avg",
-    "avg corr(C,C)",
-    "avg corr(VA,VA)",
-    "avg corr(L,L)",
-    "avg corr(I,I)",
-    "corr(L,A)_agg",
-    "avg corr(L,A)",
+    console_label
+    for _, panel_rows in _MODEL_VS_DATA_PANELS
+    for _, _, _, console_label in panel_rows
 ]
 
 
@@ -280,15 +306,25 @@ def _create_model_vs_data_moments_table(
         latex_code += f" & \\textbf{{{method_name}}}"
     latex_code += r" & \textbf{Data} \\" + "\n" + r"\midrule" + "\n"
 
-    for row_label, model_key, data_key in _MODEL_VS_DATA_ROW_DEFS:
-        latex_code += row_label
-        for method_name in method_order:
-            method_stats = method_model_stats.get(method_name)
-            value = _first_available_scalar(method_stats, [model_key]) if method_stats else None
-            latex_code += f" & {value:.4f}" if value is not None else " & ---"
-        data_value = _resolve_empirical_value(empirical_targets, data_key)
-        latex_code += f" & {data_value:.4f}" if data_value is not None else " & ---"
-        latex_code += r" \\" + "\n"
+    total_columns = n_methods + 2
+    panel_labels = ["Panel A", "Panel B", "Panel C", "Panel D", "Panel E"]
+    for panel_index, (panel_title, panel_rows) in enumerate(_MODEL_VS_DATA_PANELS):
+        panel_prefix = panel_labels[panel_index] if panel_index < len(panel_labels) else f"Panel {panel_index + 1}"
+        latex_code += (
+            rf"\multicolumn{{{total_columns}}}{{l}}{{\textit{{{panel_prefix}. {panel_title}}}}} \\"
+            + "\n"
+        )
+        for row_label, model_key, data_key, _ in panel_rows:
+            latex_code += row_label
+            for method_name in method_order:
+                method_stats = method_model_stats.get(method_name)
+                value = _first_available_scalar(method_stats, [model_key]) if method_stats else None
+                latex_code += f" & {value:.4f}" if value is not None else " & ---"
+            data_value = _resolve_empirical_value(empirical_targets, data_key)
+            latex_code += f" & {data_value:.4f}" if data_value is not None else " & ---"
+            latex_code += r" \\" + "\n"
+        if panel_index < len(_MODEL_VS_DATA_PANELS) - 1:
+            latex_code += r"\addlinespace[0.4em]" + "\n"
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
     nonlinear_note = r" The Nonlinear column uses the long ergodic neural-network simulation."
@@ -320,6 +356,16 @@ def _generate_model_vs_data_console_table(
     preferred_order = ["1st", "2nd", "PF", "MITShocks", "Nonlinear", "Nonlinear-CS"]
     method_order = [name for name in preferred_order if name in method_model_stats]
     method_order.extend(name for name in method_model_stats if name not in method_order)
+    method_col_width = max(
+        11,
+        len("Data"),
+        *(len(method_name) for method_name in method_order),
+    )
+    row_label_width = max(
+        22,
+        len("Moment"),
+        *(len(label) for label in _MODEL_VS_DATA_CONSOLE_LABELS),
+    )
     output = []
     output.append("")
     output.append("[1] MODEL VS DATA MOMENTS")
@@ -328,22 +374,22 @@ def _generate_model_vs_data_console_table(
         output.append(f"Analysis: {analysis_name}")
         output.append("")
 
-    header = "Moment".ljust(22)
+    header = f"{'Moment':<{row_label_width}}"
     for method_name in method_order:
-        header += f"{method_name:>11}"
-    header += f"{'Data':>11}"
+        header += f"{method_name:>{method_col_width}}"
+    header += f"{'Data':>{method_col_width}}"
     output.append(header)
     output.append("-" * len(header))
 
     for (row_label, model_key, data_key), console_label in zip(_MODEL_VS_DATA_ROW_DEFS, _MODEL_VS_DATA_CONSOLE_LABELS):
         del row_label
-        row = console_label.ljust(22)
+        row = f"{console_label:<{row_label_width}}"
         for method_name in method_order:
             method_stats = method_model_stats.get(method_name)
             value = _first_available_scalar(method_stats, [model_key]) if method_stats else None
-            row += f"{value:11.4f}" if value is not None else f"{'---':>11}"
+            row += f"{value:{method_col_width}.4f}" if value is not None else f"{'---':>{method_col_width}}"
         data_value = _resolve_empirical_value(empirical_targets, data_key)
-        row += f"{data_value:11.4f}" if data_value is not None else f"{'---':>11}"
+        row += f"{data_value:{method_col_width}.4f}" if data_value is not None else f"{'---':>{method_col_width}}"
         output.append(row)
 
     output.append("")

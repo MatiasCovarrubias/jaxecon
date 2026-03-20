@@ -8,9 +8,6 @@ from DEQN.econ_models.RbcProdNet_March2026.aggregation import (
     compute_model_moments_with_consistent_aggregation,
     compute_ergodic_prices_from_simulation,
     compute_ergodic_steady_state,
-    create_perfect_foresight_descriptive_stats,
-    create_theoretical_descriptive_stats,
-    get_loglinear_distribution_params,
     process_simulation_with_consistent_aggregation,
     recenter_analysis_variables,
 )
@@ -323,7 +320,6 @@ def prepare_postprocess_analysis(
     n_sectors = econ_model.n_sectors
     analysis_variables_data = dict(analysis_variables_data)
     theoretical_stats: Dict[str, Any] = {}
-    histogram_theo_params: Dict[str, Any] = {}
 
     reference_experiment_label = _resolve_reference_experiment_label(config, raw_simulation_data)
     print(
@@ -390,41 +386,11 @@ def prepare_postprocess_analysis(
         analysis_variables_data["SecondOrder"] = secondorder_analysis_vars
         print("  Loaded Second-Order simulation series.")
 
-    if "TheoStats" in stats:
-        theo_stats = stats["TheoStats"]
-        print("  Using TheoStats for Log-Linear moments (mean=0, skew=0, kurt=0)", flush=True)
-
-        loglin_theo_stats = create_theoretical_descriptive_stats(theo_stats=theo_stats, label="Log-Linear")
-        theoretical_stats.update(loglin_theo_stats)
-
-        theo_dist_params = get_loglinear_distribution_params(theo_stats)
-        histogram_theo_params["Log-Linear"] = theo_dist_params
-
-        if "Log-Linear" not in analysis_variables_data:
-            analysis_variables_data["Log-Linear"] = {var_name: jnp.zeros(10) for var_name in theo_dist_params.keys()}
-
-        for var_name, params_dict in theo_dist_params.items():
-            print(f"    {var_name}: sigma={params_dict['std']*100:.4f}%", flush=True)
-
     pf_stats_key = "PerfectForesight" if "PerfectForesight" in stats else ("Determ" if "Determ" in stats else None)
     if pf_stats_key:
         pf_stats = stats[pf_stats_key]
         pf_model_stats = pf_stats.get("ModelStats") if isinstance(pf_stats, dict) else None
         if dynare_simul_pf is None:
-            if pf_model_stats is not None:
-                print(f"  Using Statistics.{pf_stats_key} (+ ModelStats) for Perfect Foresight moments", flush=True)
-            else:
-                print(f"  Using Statistics.{pf_stats_key} for Perfect Foresight moments", flush=True)
-
-            pf_theo_stats = create_perfect_foresight_descriptive_stats(
-                determ_stats=pf_stats,
-                label="PerfectForesight",
-                n_sectors=n_sectors,
-                model_stats=pf_model_stats,
-                policies_ss=policies_ss,
-            )
-            theoretical_stats.update(pf_theo_stats)
-
             if isinstance(pf_model_stats, dict):
                 c_sd = pf_model_stats.get("sigma_C_agg")
                 i_sd = pf_model_stats.get("sigma_I_agg")
@@ -504,7 +470,6 @@ def prepare_postprocess_analysis(
         "analysis_variables_data": analysis_variables_data,
         "calibration_method_stats": calibration_method_stats,
         "theoretical_stats": theoretical_stats,
-        "histogram_theo_params": histogram_theo_params,
         "matlab_ir_data": ir_render_context["matlab_ir_data"],
         "upstreamness_data": upstreamness_data,
         "stochastic_ss_data": stochastic_ss_data,

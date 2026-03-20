@@ -74,16 +74,16 @@ _MODEL_VS_DATA_PANELS = [
                 "avg corr across sectors in Y",
             ),
             (
-                "Average correlation across sectors in labor",
-                "avg_pairwise_corr_L",
-                "avg_pairwise_corr_L",
-                "avg corr across sectors in L",
-            ),
-            (
                 "Average correlation across sectors in investment",
                 "avg_pairwise_corr_I",
                 "avg_pairwise_corr_I",
                 "avg corr across sectors in I",
+            ),
+            (
+                "Average correlation across sectors in labor",
+                "avg_pairwise_corr_L",
+                "avg_pairwise_corr_L",
+                "avg corr across sectors in L",
             ),
         ],
     ),

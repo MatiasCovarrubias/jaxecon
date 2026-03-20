@@ -37,28 +37,11 @@ _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
 
 _MODEL_VS_DATA_PANELS = [
     (
-        "Targeted moments",
-        [
-            (
-                "$\\sum_j \\omega_j^{I}\\sigma(I_{jt})$",
-                "sigma_I_avg_invweighted",
-                "sigma_I_avg_invweighted",
-                "sum w^I sigma(I_jt)",
-            ),
-            (
-                "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt},A_{jt})$",
-                "corr_L_TFP_sectoral_avg_vashare",
-                ("correlations", "L_TFP_sectoral_avg_vashare"),
-                "sum w^VA corr(L_jt,A_jt)",
-            ),
-        ],
-    ),
-    (
         "Volatility of aggregates",
         [
-            ("$\\sigma(\\mathrm{GDP}_t)$", "sigma_VA_agg", "sigma_VA_agg", "sigma(GDP_t)"),
             ("$\\sigma(C_t)$", "sigma_C_agg", "sigma_C_agg", "sigma(C_t)"),
             ("$\\sigma(I_t)$", "sigma_I_agg", "sigma_I_agg", "sigma(I_t)"),
+            ("$\\sigma(\\mathrm{GDP}_t)$", "sigma_VA_agg", "sigma_VA_agg", "sigma(GDP_t)"),
             ("$\\sigma(L_t)$", "sigma_L_hc_agg", "sigma_L_agg", "sigma(L_t)"),
         ],
     ),
@@ -79,28 +62,28 @@ _MODEL_VS_DATA_PANELS = [
         "Sectoral comovement",
         [
             (
-                "avg pairwise $\\mathrm{corr}(\\mathbf{C}_t,\\mathbf{C}_t)$",
+                "Average correlation across sectors in consumption",
                 "avg_pairwise_corr_C",
                 "avg_pairwise_corr_C",
-                "avg pairwise corr(C_t,C_t)",
+                "avg corr across sectors in C",
             ),
             (
-                "avg pairwise $\\mathrm{corr}(\\mathbf{Y}_t,\\mathbf{Y}_t)$",
+                "Average correlation across sectors in value added",
                 "avg_pairwise_corr_VA",
                 "avg_pairwise_corr_VA",
-                "avg pairwise corr(Y_t,Y_t)",
+                "avg corr across sectors in Y",
             ),
             (
-                "avg pairwise $\\mathrm{corr}(\\mathbf{L}_t,\\mathbf{L}_t)$",
+                "Average correlation across sectors in labor",
                 "avg_pairwise_corr_L",
                 "avg_pairwise_corr_L",
-                "avg pairwise corr(L_t,L_t)",
+                "avg corr across sectors in L",
             ),
             (
-                "avg pairwise $\\mathrm{corr}(\\mathbf{I}_t,\\mathbf{I}_t)$",
+                "Average correlation across sectors in investment",
                 "avg_pairwise_corr_I",
                 "avg_pairwise_corr_I",
-                "avg pairwise corr(I_t,I_t)",
+                "avg corr across sectors in I",
             ),
         ],
     ),
@@ -124,6 +107,23 @@ _MODEL_VS_DATA_PANELS = [
             ),
         ],
     ),
+    (
+        "Targeted moments",
+        [
+            (
+                "$\\sum_j \\omega_j^{I}\\sigma(I_{jt})$",
+                "sigma_I_avg_invweighted",
+                "sigma_I_avg_invweighted",
+                "sum w^I sigma(I_jt)",
+            ),
+            (
+                "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt},A_{jt})$",
+                "corr_L_TFP_sectoral_avg_vashare",
+                ("correlations", "L_TFP_sectoral_avg_vashare"),
+                "sum w^VA corr(L_jt,A_jt)",
+            ),
+        ],
+    ),
 ]
 
 _MODEL_VS_DATA_ROW_DEFS = [
@@ -133,9 +133,7 @@ _MODEL_VS_DATA_ROW_DEFS = [
 ]
 
 _MODEL_VS_DATA_CONSOLE_LABELS = [
-    console_label
-    for _, panel_rows in _MODEL_VS_DATA_PANELS
-    for _, _, _, console_label in panel_rows
+    console_label for _, panel_rows in _MODEL_VS_DATA_PANELS for _, _, _, console_label in panel_rows
 ]
 
 _MODEL_VS_DATA_METHOD_ORDER = ["1st", "Nonlinear", "Nonlinear-CS"]
@@ -173,26 +171,37 @@ def _nonlinear_method_note(method_names: list[str]) -> str:
     if "Global Solution" in method_names and "Global Solution (Common Shocks)" in method_names:
         return (
             r" Global Solution (Long Simulation) uses the long ergodic simulation sample, while "
-            r"Global Solution (Common Shocks) uses the short simulation driven by the MATLAB common-shock path."
+            r"Global Solution (Common Shocks) uses the short common-shock simulation sample."
         )
     return ""
 
 
-def _wrap_table_environment(tabular_code: str, *, caption: str, label: str, note_text: str, note_width: str = "0.92") -> str:
+def _wrap_table_environment(
+    tabular_code: str, *, caption: str, label: str, note_text: str, note_width: str = "0.92"
+) -> str:
     return (
-        r"\begin{table}[H]" + "\n"
-        + r"\centering" + "\n"
-        + rf"\caption{{{caption}}}" + "\n"
-        + rf"\label{{{label}}}" + "\n"
+        r"\begin{table}[H]"
+        + "\n"
+        + r"\centering"
+        + "\n"
+        + rf"\caption{{{caption}}}"
+        + "\n"
+        + rf"\label{{{label}}}"
+        + "\n"
         + tabular_code
-        + rf"\begin{{minipage}}{{{note_width}\textwidth}}" + "\n"
-        + r"\vspace{0.5em}" + "\n"
-        + r"\footnotesize" + "\n"
+        + rf"\begin{{minipage}}{{{note_width}\textwidth}}"
+        + "\n"
+        + r"\vspace{0.5em}"
+        + "\n"
+        + r"\footnotesize"
+        + "\n"
         + r"\textit{Notes:} "
         + note_text
         + "\n"
-        + r"\end{minipage}" + "\n"
-        + r"\end{table}" + "\n"
+        + r"\end{minipage}"
+        + "\n"
+        + r"\end{table}"
+        + "\n"
     )
 
 
@@ -289,9 +298,7 @@ def create_calibration_table(
     def _resolve_rows(row_defs):
         rows = []
         for row_label, model_key, data_key in row_defs:
-            model_val = _first_available_scalar(
-                first_order_model_stats, model_key_aliases.get(model_key, [model_key])
-            )
+            model_val = _first_available_scalar(first_order_model_stats, model_key_aliases.get(model_key, [model_key]))
             data_val = _first_available_scalar(empirical_targets, data_key_aliases.get(data_key, [data_key]))
             rows.append((row_label, model_val, data_val))
         return rows
@@ -388,7 +395,8 @@ def _create_model_vs_data_moments_table(
         r"\begin{table}[H]" + "\n"
         r"\centering" + "\n"
         r"\caption{Model vs. data business-cycle moments}" + "\n"
-        r"\label{tab:model_vs_data_moments}" + "\n"
+        r"\label{tab:model_vs_data_moments}"
+        + "\n"
         + f"\\begin{{tabular}}{{l *{{{n_methods + 1}}}{{r}}}}\n"
         + r"\toprule"
         + "\n"
@@ -406,8 +414,7 @@ def _create_model_vs_data_moments_table(
         if panel_title == "Sectoral weighted-average volatilities":
             panel_title_display = panel_title + r"$^{a}$"
         latex_code += (
-            rf"\multicolumn{{{total_columns}}}{{l}}{{\textit{{{panel_prefix}. {panel_title_display}}}}} \\"
-            + "\n"
+            rf"\multicolumn{{{total_columns}}}{{c}}{{\textit{{{panel_prefix}. {panel_title_display}}}}} \\" + "\n"
         )
         for row_label, model_key, data_key, _ in panel_rows:
             latex_code += row_label
@@ -423,22 +430,26 @@ def _create_model_vs_data_moments_table(
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
     latex_code += (
-        r"\\" + "\n"
-        r"{\footnotesize $^{a}$ Panel E reports sectoral weighted averages."
+        r"\begin{minipage}{0.92\textwidth}" + "\n"
+        r"\vspace{0.5em}" + "\n"
+        r"\footnotesize" + "\n"
+        r"$^{a}$ Panel E reports sectoral weighted averages."
         r" Unless otherwise indicated, weights are value-added shares."
-        r" $\omega_j^{L,emp}$ denotes employment shares, and $\omega_j^{Q,ss}=Q_{j,ss}/\sum_i Q_{i,ss}$ denotes steady-state gross-output shares.}" + "\n"
+        r" $\omega_j^{L,emp}$ denotes employment shares, and $\omega_j^{Q,ss}=Q_{j,ss}/\sum_i Q_{i,ss}$ denotes steady-state gross-output shares."
+        + "\n"
+        r"\end{minipage}" + "\n"
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
         r"\textit{Notes:} Entries are business-cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
         r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
         r" Boldface objects such as $\mathbf{C}_t$ denote the full sectoral vector."
-        r" Comovement refers to the average pairwise correlation across sectors for the corresponding sectoral vector."
+        r" Comovement means the correlation between sectors in a specific variable; the reported rows summarize those sector-to-sector correlations by their average."
         r" Aggregate rows are re-aggregated in Python using fixed ergodic-price weights so the aggregate definition is consistent across methods."
         r" The 1st Order Approx. and Global Solution (common shocks) columns use simulations of 5{,}000 periods."
         r" The Global Solution (long simul) column uses 16 parallel simulations with 64{,}000 periods each."
         r" In targeted moments, $\omega_j^{I}$ denotes investment-expenditure weights."
-        + r" Data moments come from the empirical targets loaded with the MATLAB objects."
+        + r" Data moments come from the empirical targets used in the calibration."
         + "\n"
         r"\end{minipage}" + "\n"
     )
@@ -707,9 +718,7 @@ def _generate_console_table(stats_data: Dict[str, Dict[str, Dict[str, float]]], 
     return "\n".join(output)
 
 
-def _generate_single_method_console_table(
-    stats_data: Dict[str, Dict[str, Dict[str, float]]], method_name: str
-) -> str:
+def _generate_single_method_console_table(stats_data: Dict[str, Dict[str, Dict[str, float]]], method_name: str) -> str:
     """Console table for the single-method case: variables as rows, metrics as columns."""
     output = []
     output.append("\n" + "═" * 72)
@@ -731,9 +740,7 @@ def _generate_single_method_console_table(
     return "\n".join(output)
 
 
-def _generate_single_method_latex_table(
-    stats_data: Dict[str, Dict[str, Dict[str, float]]], method_name: str
-) -> str:
+def _generate_single_method_latex_table(stats_data: Dict[str, Dict[str, Dict[str, float]]], method_name: str) -> str:
     """LaTeX table for single-method case: variables as rows, metrics as columns."""
     tabular_code = (
         r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
@@ -810,7 +817,7 @@ def _generate_variable_organized_latex_table(
             + _DESCRIPTIVE_SHAPE_NOTE
             + r" The Log-Linear and Global Solution (Common Shocks) rows use simulation samples of 5{,}000 periods."
             + r" The Global Solution (Long Simulation) row uses 16 parallel simulations with 64{,}000 periods each."
-            r" For nonlinear methods the moments are computed from the Python simulation sample; for benchmark methods they use the simulation blocks loaded from \texttt{ModelData\_simulation.mat} when those blocks are available."
+            r" For nonlinear methods the moments are computed from the Python simulation sample; benchmark moments use the corresponding benchmark simulation series when those are available."
         ),
     )
 
@@ -1171,12 +1178,7 @@ def create_stochastic_ss_aggregates_table(
     n_methods = len(method_names)
     use_compact_layout = n_methods <= 2
     if use_compact_layout:
-        tabular_code = (
-            f"\\begin{{tabular}}{{l *{{{n_methods}}}{{r}}}}\n"
-            + r"\toprule"
-            + "\n"
-            + r"\textbf{Aggregate}"
-        )
+        tabular_code = f"\\begin{{tabular}}{{l *{{{n_methods}}}{{r}}}}\n" + r"\toprule" + "\n" + r"\textbf{Aggregate}"
     else:
         tabular_code = (
             f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_methods}}}{{X}}}}\n"

@@ -373,13 +373,13 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
     ir_shock_sizes = list(config_dict.get("ir_shock_sizes", []))
     largest_ir_shock = max(ir_shock_sizes) if ir_shock_sizes else None
     benchmark_method_labels = {
-        "FirstOrder": "MATLAB first-order benchmark",
-        "SecondOrder": "MATLAB second-order benchmark",
-        "PerfectForesight": "MATLAB perfect-foresight benchmark",
+        "FirstOrder": "first-order benchmark",
+        "SecondOrder": "second-order benchmark",
+        "PerfectForesight": "perfect-foresight benchmark",
     }
     aggregate_benchmark_label = benchmark_method_labels.get(
         config_dict.get("ir_benchmark_method", "PerfectForesight"),
-        "MATLAB benchmark",
+        "benchmark",
     )
     for sector_idx in config_dict.get("ir_sectors_to_plot", []):
         sector_label = (
@@ -548,7 +548,7 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                     {
                         "caption": f"{group_title} for {sector_label}.",
                         "note_text": (
-                            f"Follows the MATLAB grouping. {shock_text} "
+                            f"{shock_text} "
                             "Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
                             "while global-solution IRs start from and return to the stochastic steady state. "
                             "The horizontal axis reports periods after impact. "
@@ -613,10 +613,14 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
         r"\section*{Tables and Figures}",
     ]
 
-    for section in sections:
+    for section_idx, section in enumerate(sections):
+        if section_idx > 0:
+            lines.append(r"\clearpage")
         lines.append(rf"\subsection*{{{section['title']}}}")
 
-        for tex_path in section["tables"]:
+        total_section_items = len(section["tables"]) + len(section["figures"])
+
+        for table_idx, tex_path in enumerate(section["tables"]):
             relative_path = _latex_relative_path(tex_path, analysis_dir)
             if _tex_fragment_has_table_env(tex_path):
                 lines.append(rf"\input{{{relative_path}}}")
@@ -629,9 +633,10 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                         r"\end{table}",
                     ]
                 )
-            lines.append(r"\clearpage")
+            if table_idx < total_section_items - 1:
+                lines.append(r"\par\medskip")
 
-        for figure_path in section["figures"]:
+        for figure_idx, figure_path in enumerate(section["figures"]):
             if isinstance(figure_path, str) or "subfigures" not in figure_path:
                 single_figure = (
                     _build_simple_figure_spec(figure_path, "") if isinstance(figure_path, str) else figure_path
@@ -659,7 +664,9 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                             r"\end{minipage}",
                         ]
                     )
-                lines.extend([r"\end{figure}", r"\clearpage"])
+                lines.append(r"\end{figure}")
+                if len(section["tables"]) + figure_idx < total_section_items - 1:
+                    lines.append(r"\par\medskip")
                 continue
 
             subfigures = figure_path.get("subfigures", [])
@@ -668,7 +675,12 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
 
             lines.extend([r"\begin{figure}[H]", r"\centering"])
             for idx, subfigure in enumerate(subfigures):
-                width = "0.48\\textwidth" if len(subfigures) > 1 else "0.88\\textwidth"
+                if len(subfigures) >= 5:
+                    width = "0.43\\textwidth"
+                elif len(subfigures) > 1:
+                    width = "0.48\\textwidth"
+                else:
+                    width = "0.88\\textwidth"
                 lines.extend(
                     [
                         rf"\begin{{subfigure}}[t]{{{width}}}",
@@ -698,7 +710,9 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                         r"\end{minipage}",
                     ]
                 )
-            lines.extend([r"\end{figure}", r"\clearpage"])
+            lines.append(r"\end{figure}")
+            if len(section["tables"]) + figure_idx < total_section_items - 1:
+                lines.append(r"\par\medskip")
 
     lines.append(r"\end{document}")
 

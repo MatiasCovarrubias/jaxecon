@@ -120,11 +120,11 @@ def _describe_response_source(response_source: str) -> str:
 
 def _describe_benchmark_method(benchmark_method: str) -> str:
     benchmark_labels = {
-        "FirstOrder": "MATLAB first-order benchmark",
-        "SecondOrder": "MATLAB second-order benchmark",
-        "PerfectForesight": "MATLAB perfect-foresight benchmark",
+        "FirstOrder": "first-order benchmark",
+        "SecondOrder": "second-order benchmark",
+        "PerfectForesight": "perfect-foresight benchmark",
     }
-    return benchmark_labels.get(benchmark_method, f"MATLAB {benchmark_method} benchmark")
+    return benchmark_labels.get(benchmark_method, f"{benchmark_method} benchmark")
 
 
 def _write_figure_note_tex(figure_path: str, note_text: str) -> None:
@@ -185,7 +185,7 @@ def _build_ir_note(
     )
     if is_aggregate:
         benchmark_text += (
-            " For aggregate consumption, investment, labor, GDP, and capital, the MATLAB benchmark is re-aggregated with fixed "
+            " For aggregate consumption, investment, labor, GDP, and capital, the benchmark is re-aggregated with fixed "
             "ergodic prices so that the aggregate definition matches the nonlinear solution."
         )
     elif "_client" in variable_to_plot:

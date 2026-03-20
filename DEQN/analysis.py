@@ -117,15 +117,15 @@ jax_config.update("jax_debug_nans", True)
 config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_March2026",
-    "analysis_name": "benchmarkMarch",
+    "analysis_name": "basefinal",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
-    "model_data_file": "ModelData_benchMar.mat",
-    "model_data_irs_file": "ModelData_IRs_benchMar.mat",
-    "model_data_simulation_file": "ModelData_simulation_benchMar.mat",  # Set to None to skip MATLAB simulation comparison
+    "model_data_file": "ModelData_baselong.mat",
+    "model_data_irs_file": "ModelData_IRs_baselong.mat",
+    "model_data_simulation_file": "ModelData_simulation_baselong.mat",  # Set to None to skip MATLAB simulation comparison
     # Experiments to analyze
     "experiments_to_analyze": {
-        "Benchmark March": "sigl0dot5capadj3epsl0dot05",
+        "Benchmark March": "newbenchmark_March2026",
     },
     # Simulation configuration
     "init_range": 6,
@@ -188,12 +188,6 @@ config = {
     # Aggregate reporting controls
     "aggregate_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
     "descriptive_stats_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
-    # Methods included in the model-vs-data moments table.
-    # Use [] to include all available methods.
-    # Supported names/aliases:
-    # "1st"/"FirstOrder", "2nd"/"SecondOrder", "PF"/"PerfectForesight",
-    # "MITShocks", "Nonlinear", "Nonlinear-CS"/"NonlinearCS".
-    "model_vs_data_methods_to_include": [],
     # Benchmark methods included in ergodic exercises (descriptive table, aggregate stats, histograms).
     # Nonlinear experiment methods are always included when always_include_nonlinear_methods=True.
     # Canonical names: "Log-Linear", "SecondOrder", "PerfectForesight", "MITShocks".
@@ -1056,7 +1050,7 @@ def main():
 
     model_vs_data_methods_cfg = config.get("model_vs_data_methods_to_include")
     filtered_calibration_method_stats = calibration_method_stats
-    if model_vs_data_methods_cfg:
+    if model_vs_data_methods_cfg and calibration_method_stats is not None:
         if isinstance(model_vs_data_methods_cfg, str):
             model_vs_data_methods_cfg = [model_vs_data_methods_cfg]
         requested_methods = [_normalize_model_vs_data_method_name(name) for name in model_vs_data_methods_cfg]
@@ -1161,7 +1155,7 @@ def main():
 
     benchmark_methods_cfg = config.get("ergodic_methods_to_include")
     benchmark_methods = None
-    if benchmark_methods_cfg is not None:
+    if benchmark_methods_cfg:
         if isinstance(benchmark_methods_cfg, str):
             benchmark_methods_cfg = [benchmark_methods_cfg]
         benchmark_methods = {_normalize_method_name(m) for m in benchmark_methods_cfg}

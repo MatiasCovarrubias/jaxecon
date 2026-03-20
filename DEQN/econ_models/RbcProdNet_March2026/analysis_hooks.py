@@ -5,9 +5,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from DEQN.econ_models.RbcProdNet_March2026.aggregation import (
-    compute_model_moments_with_consistent_aggregation,
     compute_ergodic_prices_from_simulation,
     compute_ergodic_steady_state,
+    compute_model_moments_with_consistent_aggregation,
     process_simulation_with_consistent_aggregation,
     recenter_analysis_variables,
 )
@@ -262,9 +262,7 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, P_ergo
     ir_variables = filtered_ir_variables
 
     sectoral_ir_variables = [
-        label
-        for label in _get_requested_sectoral_ir_variables(config)
-        if label in SUPPORTED_SECTORAL_IR_LABELS
+        label for label in _get_requested_sectoral_ir_variables(config) if label in SUPPORTED_SECTORAL_IR_LABELS
     ]
     shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
     if not shock_sizes:
@@ -456,6 +454,9 @@ def prepare_postprocess_analysis(
     )
 
     upstreamness_data = econ_model.upstreamness()
+    ergodic_experiment_labels = [
+        label for label, sim_data in raw_simulation_data.items() if sim_data.get("simulation_kind", "ergodic") == "ergodic"
+    ]
     ir_render_context = _build_ir_render_context(
         config=config,
         model_dir=model_dir,
@@ -476,6 +477,8 @@ def prepare_postprocess_analysis(
         "postprocess_context": {
             "ir_render_context": ir_render_context,
             "upstreamness_data": upstreamness_data,
+            "ergodic_experiment_labels": ergodic_experiment_labels,
+            "reference_experiment_label": reference_experiment_label,
         },
     }
 
@@ -525,12 +528,24 @@ def render_sectoral_stochss_outputs(
     if not stochastic_ss_policies:
         return
 
+    ergodic_experiment_labels = postprocess_context.get("ergodic_experiment_labels") if postprocess_context else None
+    if not ergodic_experiment_labels:
+        return
+    long_simulation_stochastic_ss_states = {
+        label: stochastic_ss_states[label] for label in ergodic_experiment_labels if label in stochastic_ss_states
+    }
+    long_simulation_stochastic_ss_policies = {
+        label: stochastic_ss_policies[label] for label in ergodic_experiment_labels if label in stochastic_ss_policies
+    }
+    if not long_simulation_stochastic_ss_policies:
+        return
+
     upstreamness_data = postprocess_context.get("upstreamness_data") if postprocess_context else None
     for var_name in ["K", "L", "Y", "M", "Q"]:
         try:
             plot_sectoral_variable_stochss(
-                stochastic_ss_states=stochastic_ss_states,
-                stochastic_ss_policies=stochastic_ss_policies,
+                stochastic_ss_states=long_simulation_stochastic_ss_states,
+                stochastic_ss_policies=long_simulation_stochastic_ss_policies,
                 variable_name=var_name,
                 save_dir=simulation_dir,
                 analysis_name=config["analysis_name"],

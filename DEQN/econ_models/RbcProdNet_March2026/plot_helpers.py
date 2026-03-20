@@ -36,6 +36,50 @@ plt.rc("figure", titlesize=LARGE_SIZE)
 
 plt.rc("mathtext", fontset="dejavusans")
 
+LINESTYLES_RANKED = ["-", "--", "-.", ":"]
+MARKERS_RANKED = [None, None, None, None]
+
+
+def _ranked_linestyle(rank: int) -> str:
+    return LINESTYLES_RANKED[rank % len(LINESTYLES_RANKED)]
+
+
+def _ranked_marker(rank: int):
+    return MARKERS_RANKED[rank % len(MARKERS_RANKED)]
+
+
+def _ranked_color(rank: int):
+    return colors[rank % len(colors)]
+
+
+def _response_kind_rank(response_kind: str) -> int:
+    response_ranks = {
+        "IR_stoch_ss": 0,
+        "GIR": 1,
+    }
+    return response_ranks.get(response_kind, 0)
+
+
+def _benchmark_style(benchmark_rank: int = 0) -> dict[str, Any]:
+    benchmark_colors = ["black", "dimgray", "gray", "silver"]
+    return {
+        "color": benchmark_colors[benchmark_rank % len(benchmark_colors)],
+        "linewidth": 2.0,
+        "linestyle": _ranked_linestyle(benchmark_rank + 1),
+        "marker": _ranked_marker(benchmark_rank + 1),
+        "alpha": 0.9,
+    }
+
+
+def _experiment_style(experiment_rank: int, response_kind: str = "IR_stoch_ss") -> dict[str, Any]:
+    return {
+        "color": _ranked_color(experiment_rank),
+        "linewidth": 2.5 if response_kind == "IR_stoch_ss" else 2.2,
+        "linestyle": _ranked_linestyle(_response_kind_rank(response_kind)),
+        "marker": _ranked_marker(_response_kind_rank(response_kind)),
+        "alpha": 0.9,
+    }
+
 
 def _escape_latex(text: str) -> str:
     replacements = {
@@ -302,22 +346,16 @@ def plot_ergodic_histograms(
                 # PDF integrated over bin_width gives probability per bin
                 pdf_values = norm.pdf(x_smooth, loc=mean_pct, scale=std_pct) * bin_width
 
-                ax.plot(
-                    x_smooth,
-                    pdf_values,
-                    label=exp_name,
-                    color=plot_colors[i],
-                    linewidth=2,
-                    alpha=0.9,
-                    linestyle="-",
-                )
+                style = _experiment_style(i, "IR_stoch_ss")
+                ax.plot(x_smooth, pdf_values, label=exp_name, **style)
             else:
                 # Calculate histogram from samples
                 counts, _ = np.histogram(var_data[exp_name], bins=bins)
                 freqs = counts / len(var_data[exp_name])
 
                 # Plot the frequency line
-                ax.plot(bin_centers, freqs, label=exp_name, color=plot_colors[i], linewidth=2, alpha=0.9)
+                style = _experiment_style(i, "IR_stoch_ss")
+                ax.plot(bin_centers, freqs, label=exp_name, **style)
 
         # Add vertical line at deterministic steady state (x=0)
         ax.axvline(x=0, color="black", linestyle="--", linewidth=2, label="Deterministic SS", alpha=0.7)
@@ -484,22 +522,17 @@ def plot_gir_responses(
                 # Create label
                 if n_experiments > 1:
                     label = exp_name
-                    color = plot_colors[j % len(plot_colors)]
-                    linestyle = "-" if j == 0 else "--"
+                    style = _experiment_style(j, "IR_stoch_ss")
                 else:
                     label = f"{state_name} Response"
-                    color = plot_colors[0]
-                    linestyle = "-"
+                    style = _experiment_style(0, "IR_stoch_ss")
 
                 # Plot the impulse response
                 ax.plot(
                     time_periods[: len(response_pct)],
                     response_pct,
                     label=label,
-                    color=color,
-                    linewidth=2,
-                    linestyle=linestyle,
-                    alpha=0.8,
+                    **style,
                 )
 
             # Add horizontal line at zero
@@ -668,15 +701,7 @@ def plot_combined_impulse_responses(
                     pos_loglin = matlab_irs_pos[pk]["loglin"][:max_periods] * 100
                     pct = pk.replace("pos_", "")
                     t_loglin = np.arange(len(pos_loglin))
-                    ax.plot(
-                        t_loglin,
-                        pos_loglin,
-                        label=f"Loglinear (+{pct}%)",
-                        color=colors[4],
-                        linewidth=2,
-                        linestyle="--",
-                        alpha=0.8,
-                    )
+                    ax.plot(t_loglin, pos_loglin, label=f"Loglinear (+{pct}%)", **_benchmark_style(0))
                     pos_determ = matlab_irs_pos[pk].get("determ")
                     if pos_determ is not None:
                         pos_determ = pos_determ[:max_periods] * 100
@@ -684,25 +709,14 @@ def plot_combined_impulse_responses(
                             np.arange(len(pos_determ)),
                             pos_determ,
                             label=f"Perfect Foresight (+{pct}%)",
-                            color=colors[2],
-                            linewidth=2,
-                            linestyle="-.",
-                            alpha=0.8,
+                            **_benchmark_style(1),
                         )
 
                 for nk in neg_keys:
                     neg_loglin = matlab_irs_neg[nk]["loglin"][:max_periods] * 100
                     pct = nk.replace("neg_", "")
                     t_loglin = np.arange(len(neg_loglin))
-                    ax.plot(
-                        t_loglin,
-                        neg_loglin,
-                        label=f"Loglinear (-{pct}%)",
-                        color=colors[5],
-                        linewidth=2,
-                        linestyle="--",
-                        alpha=0.8,
-                    )
+                    ax.plot(t_loglin, neg_loglin, label=f"Loglinear (-{pct}%)", **_benchmark_style(0))
                     neg_determ = matlab_irs_neg[nk].get("determ")
                     if neg_determ is not None:
                         neg_determ = neg_determ[:max_periods] * 100
@@ -710,10 +724,7 @@ def plot_combined_impulse_responses(
                             np.arange(len(neg_determ)),
                             neg_determ,
                             label=f"Perfect Foresight (-{pct}%)",
-                            color=colors[3],
-                            linewidth=2,
-                            linestyle="-.",
-                            alpha=0.8,
+                            **_benchmark_style(1),
                         )
 
                 for j, exp_name in enumerate(experiment_names):
@@ -728,11 +739,8 @@ def plot_combined_impulse_responses(
                             ax.plot(
                                 time_periods[: len(response_pct)],
                                 response_pct,
-                                label=label,
-                                color=color,
-                                linewidth=2.5,
-                                linestyle="-",
-                                alpha=0.9,
+                            label=label,
+                            **_experiment_style(j, "GIR"),
                             )
 
                 ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
@@ -1139,7 +1147,7 @@ def plot_sector_ir_by_shock_size(
         row_min = np.inf
         row_max = -np.inf
 
-        def _plot_line(ax, series, *, label=None, color=None, linewidth=1.5, linestyle="-", alpha=0.8):
+        def _plot_line(ax, series, *, label=None, color=None, linewidth=1.5, linestyle="-", marker=None, alpha=0.8):
             nonlocal row_abs_max, row_min, row_max
             if series is None:
                 return
@@ -1154,6 +1162,7 @@ def plot_sector_ir_by_shock_size(
                 color=color,
                 linewidth=linewidth,
                 linestyle=linestyle,
+                marker=marker,
                 alpha=alpha,
                 label=label,
             )
@@ -1175,26 +1184,30 @@ def plot_sector_ir_by_shock_size(
                     pos_benchmark = matlab_irs[pk].get(benchmark_series_key)
                     if pos_benchmark is not None:
                         pos_benchmark = pos_benchmark[:max_periods] * 100
+                        style = _benchmark_style(0)
                         _plot_line(
                             ax_pos,
                             pos_benchmark,
-                            color=colors[4],
-                            linewidth=1.5,
-                            linestyle="--",
-                            alpha=0.8,
+                            color=style["color"],
+                            linewidth=style["linewidth"],
+                            linestyle=style["linestyle"],
+                            marker=style["marker"],
+                            alpha=style["alpha"],
                         )
 
             for nk in neg_keys:
                 neg_benchmark = matlab_irs[nk].get(benchmark_series_key)
                 if neg_benchmark is not None:
                     neg_benchmark = neg_benchmark[:max_periods] * 100
+                    style = _benchmark_style(0)
                     _plot_line(
                         ax_neg,
                         neg_benchmark,
-                        color=colors[4],
-                        linewidth=1.5,
-                        linestyle="--",
-                        alpha=0.8,
+                        color=style["color"],
+                        linewidth=style["linewidth"],
+                        linestyle=style["linestyle"],
+                        marker=style["marker"],
+                        alpha=style["alpha"],
                         label=benchmark_label if j == 0 else None,
                     )
 
@@ -1209,13 +1222,15 @@ def plot_sector_ir_by_shock_size(
                 generic_benchmark = matlab_irs[ok].get(benchmark_series_key)
                 if generic_benchmark is not None:
                     generic_benchmark = generic_benchmark[:max_periods] * 100
+                    style = _benchmark_style(0)
                     _plot_line(
                         target_ax,
                         generic_benchmark,
-                        color=colors[4],
-                        linewidth=1.5,
-                        linestyle="--",
-                        alpha=0.8,
+                        color=style["color"],
+                        linewidth=style["linewidth"],
+                        linestyle=style["linestyle"],
+                        marker=style["marker"],
+                        alpha=style["alpha"],
                         label=f"{benchmark_label} ({ok})" if (j == 0 and target_ax is ax_neg) else None,
                     )
         elif j == 0:
@@ -1240,24 +1255,30 @@ def plot_sector_ir_by_shock_size(
                         gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
                         if variable_to_plot in gir_vars_pos:
                             response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
+                            style = _experiment_style(k, "GIR")
                             _plot_line(
                                 ax_pos,
                                 response_pos,
-                                color=colors[k % len(colors)],
-                                linewidth=2.5,
-                                alpha=0.9,
+                                color=style["color"],
+                                linewidth=style["linewidth"],
+                                linestyle=style["linestyle"],
+                                marker=style["marker"],
+                                alpha=style["alpha"],
                             )
 
                 if response_source in ["GIR", "both"] and neg_key in state_gir_data:
                     gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg:
                         response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
+                        style = _experiment_style(k, "GIR")
                         _plot_line(
                             ax_neg,
                             response_neg,
-                            color=colors[k % len(colors)],
-                            linewidth=2.5,
-                            alpha=0.9,
+                            color=style["color"],
+                            linewidth=style["linewidth"],
+                            linestyle=style["linestyle"],
+                            marker=style["marker"],
+                            alpha=style["alpha"],
                             label=(
                                 _format_solution_ir_label(exp_name, "GIR", distinguish_response_kinds)
                                 if j == 0
@@ -1270,24 +1291,30 @@ def plot_sector_ir_by_shock_size(
                         gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
                         if variable_to_plot in gir_vars_pos_stochss:
                             response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
+                            style = _experiment_style(k, "IR_stoch_ss")
                             _plot_line(
                                 ax_pos,
                                 response_pos_stochss,
-                                color=colors[k % len(colors)],
-                                linewidth=2.5,
-                                alpha=0.9,
+                                color=style["color"],
+                                linewidth=style["linewidth"],
+                                linestyle=style["linestyle"],
+                                marker=style["marker"],
+                                alpha=style["alpha"],
                             )
 
                 if response_source in ["IR_stoch_ss", "both"] and neg_stochss_key in state_gir_data:
                     gir_vars_neg_stochss = state_gir_data[neg_stochss_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg_stochss:
                         response_neg_stochss = gir_vars_neg_stochss[variable_to_plot][:max_periods] * 100
+                        style = _experiment_style(k, "IR_stoch_ss")
                         _plot_line(
                             ax_neg,
                             response_neg_stochss,
-                            color=colors[k % len(colors)],
-                            linewidth=2.5,
-                            alpha=0.9,
+                            color=style["color"],
+                            linewidth=style["linewidth"],
+                            linestyle=style["linestyle"],
+                            marker=style["marker"],
+                            alpha=style["alpha"],
                             label=(
                                 _format_solution_ir_label(exp_name, "IR_stoch_ss", distinguish_response_kinds)
                                 if j == 0

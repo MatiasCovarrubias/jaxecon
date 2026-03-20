@@ -111,7 +111,7 @@ def _build_ir_note(
     shock_text = _format_number_list(shock_sizes)
     if negative_only:
         layout_text = (
-            f"The figure shows the negative {shock_text} percent TFP shock to {sector_label}."
+            f"The figure shows the response to a negative {shock_text} percent TFP shock to {sector_label}."
             if shock_text
             else f"The figure shows a negative TFP shock to {sector_label}."
         )
@@ -124,16 +124,13 @@ def _build_ir_note(
         )
 
     axis_text = (
-        "The horizontal axis reports model periods after impact. The vertical axis reports percent deviations "
-        "from the deterministic steady state, so a value of -0.1 should be read as roughly 0.1 percent below "
+        "The horizontal axis reports periods after impact. The vertical axis reports percent deviations from "
         "the deterministic steady state."
     )
     if variable_to_plot == "gammaij_client":
         axis_text = (
-            "The horizontal axis reports model periods after impact. The vertical axis reports the model-implied "
-            "deviation in the client expenditure-share object gammaij_client. From the current code alone I cannot "
-            "map this series cleanly into a level-percent interpretation, so it should be read as a share-deviation "
-            "measure rather than a standard log-percent response."
+            "The horizontal axis reports periods after impact. The vertical axis reports deviations in the client "
+            "sector expenditure share, so this panel should be read as a share response rather than a log-percent response."
         )
 
     benchmark_text = (
@@ -141,7 +138,7 @@ def _build_ir_note(
     )
     if is_aggregate:
         benchmark_text += (
-            " For aggregate consumption, investment, and GDP, the MATLAB benchmark is re-aggregated with fixed "
+            " For aggregate consumption, investment, labor, GDP, and capital, the MATLAB benchmark is re-aggregated with fixed "
             "ergodic prices so that the aggregate definition matches the nonlinear solution."
         )
     elif "_client" in variable_to_plot:
@@ -1077,9 +1074,9 @@ def plot_sector_ir_by_shock_size(
 
     if figsize is None:
         if negative_only:
-            figsize = (9, 3.5 * n_sizes)
+            figsize = (8.2, 3.2 * n_sizes)
         else:
-            figsize = (10, 5 * n_sizes)
+            figsize = (8.8, 3.6 * n_sizes)
 
     fig, axes = plt.subplots(n_sizes, n_cols, figsize=figsize, dpi=display_dpi, sharex=True, squeeze=False)
 
@@ -1341,15 +1338,6 @@ def plot_sector_ir_by_shock_size(
     if not negative_only:
         axes[0, 0].set_title("Negative shock", fontsize=SMALL_SIZE, color="gray")
         axes[0, 1].set_title("Positive shock", fontsize=SMALL_SIZE, color="gray")
-
-    # Footer: identification text for Python viewer only — not a figure title.
-    # Small and gray so it is clearly a label, not a panel title.
-    fig.text(
-        0.5, 0.005,
-        f"{variable_to_plot}  |  {sector_label} TFP shock",
-        ha="center", va="bottom",
-        fontsize=SMALL_SIZE - 1, color="#888888", style="italic",
-    )
 
     print(f"      IR plot: [{variable_to_plot}]  {sector_label} TFP Shock")
 
@@ -1741,17 +1729,18 @@ def plot_sectoral_variable_stochss(
 
         corr_text = "\n".join(corr_lines)
         ax.text(
-            0.02,
-            0.02,
+            0.98,
+            0.98,
             corr_text,
             transform=ax.transAxes,
             fontsize=SMALL_SIZE - 1,
-            verticalalignment="bottom",
-            horizontalalignment="left",
+            verticalalignment="top",
+            horizontalalignment="right",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor="gray"),
         )
 
-    ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+    if n_experiments > 1:
+        ax.legend(frameon=True, framealpha=0.9, loc="upper left", fontsize=SMALL_SIZE)
 
     ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
 
@@ -1913,17 +1902,18 @@ def plot_sectoral_variable_ergodic(
 
         corr_text = "\n".join(corr_lines)
         ax.text(
-            0.02,
-            0.02,
+            0.98,
+            0.98,
             corr_text,
             transform=ax.transAxes,
             fontsize=SMALL_SIZE - 1,
-            verticalalignment="bottom",
-            horizontalalignment="left",
+            verticalalignment="top",
+            horizontalalignment="right",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor="gray"),
         )
 
-    ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+    if n_experiments > 1:
+        ax.legend(frameon=True, framealpha=0.9, loc="upper left", fontsize=SMALL_SIZE)
 
     ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
 

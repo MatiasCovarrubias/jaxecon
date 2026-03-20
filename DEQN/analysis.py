@@ -64,6 +64,7 @@ else:
 
 import importlib  # noqa: E402
 import json  # noqa: E402
+from typing import cast  # noqa: E402
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
@@ -159,7 +160,7 @@ config = {
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0],
-    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
+    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Labor", "Agg. Capital"],
     "sectoral_ir_variables_to_plot": [
         "Cj",
         "Pj",
@@ -233,6 +234,434 @@ def _write_analysis_config(config_dict, analysis_dir):
     config_path = os.path.join(analysis_dir, "config.json")
     with open(config_path, "w") as f:
         json.dump(config_dict, f, indent=2)
+
+
+def _analysis_named_path(directory, stem, analysis_name, extension):
+    suffix = f"_{analysis_name}" if analysis_name else ""
+    return os.path.join(directory, f"{stem}{suffix}{extension}")
+
+
+def _escape_latex(text):
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    return "".join(replacements.get(char, char) for char in str(text))
+
+
+def _make_safe_plot_label(label):
+    return label.replace(" ", "_").replace(".", "").replace("/", "_")
+
+
+def _latex_relative_path(path, base_dir):
+    return os.path.relpath(path, base_dir).replace(os.sep, "/")
+
+
+def _tex_fragment_has_table_env(tex_path):
+    if not os.path.exists(tex_path):
+        return False
+    with open(tex_path) as tex_file:
+        return r"\begin{table}" in tex_file.read()
+
+
+def _figure_note_path(figure_path):
+    return os.path.splitext(figure_path)[0] + "_note.tex"
+
+
+def _join_labels(labels):
+    labels = [label for label in labels if label]
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} and {labels[1]}"
+    return ", ".join(labels[:-1]) + f", and {labels[-1]}"
+
+
+def _build_simple_figure_spec(path, caption, note_text=None, note_path=None):
+    return {
+        "path": path,
+        "caption": caption,
+        "note_text": note_text,
+        "note_path": note_path,
+    }
+
+
+def _caption_label(label):
+    return label if str(label).isupper() else str(label).lower()
+
+
+def _existing_subfigures(figure_specs):
+    return [figure_spec for figure_spec in figure_specs if os.path.exists(figure_spec["path"])]
+
+
+def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir, irs_dir, econ_model):
+    analysis_name = config_dict.get("analysis_name") or "analysis"
+    sections = []
+
+    def add_table_section(title, tex_paths):
+        existing_paths = [path for path in tex_paths if os.path.exists(path)]
+        if existing_paths:
+            sections.append({"title": title, "tables": existing_paths, "figures": []})
+
+    def add_figure_section(title, figure_paths):
+        existing_figures = []
+        for figure in figure_paths:
+            figure_path = figure["path"] if isinstance(figure, dict) else figure
+            if os.path.exists(figure_path):
+                existing_figures.append(figure)
+        if existing_figures:
+            sections.append({"title": title, "tables": [], "figures": existing_figures})
+
+    def add_grouped_figure_section(title, figure_groups):
+        existing_groups = []
+        for figure_group in figure_groups:
+            subfigures = _existing_subfigures(figure_group.get("subfigures", []))
+            if subfigures:
+                existing_group = dict(figure_group)
+                existing_group["subfigures"] = subfigures
+                caption_builder = existing_group.get("caption_builder")
+                if caption_builder is not None:
+                    existing_group["caption"] = caption_builder(subfigures)
+                note_builder = existing_group.get("note_builder")
+                if note_builder is not None:
+                    existing_group["note_text"] = note_builder(subfigures)
+                existing_groups.append(existing_group)
+        if existing_groups:
+            sections.append({"title": title, "tables": [], "figures": existing_groups})
+
+    add_table_section(
+        "1. Model vs. Data Moments",
+        [os.path.join(analysis_dir, f"calibration_table_{analysis_name}.tex")],
+    )
+
+    aggregate_ir_groups = []
+    aggregate_variable_captions = {
+        "Agg. Consumption": "Consumption",
+        "Agg. Investment": "Investment",
+        "Agg. GDP": "GDP",
+        "Agg. Labor": "Labor",
+        "Agg. Capital": "Capital",
+    }
+    for sector_idx in config_dict.get("ir_sectors_to_plot", []):
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+        )
+        safe_sector = _make_safe_plot_label(sector_label)
+        ir_variables = config_dict.get("ir_variables_to_plot", [])
+
+        consumption_specs = []
+        other_aggregate_specs = []
+        for variable_name in ir_variables:
+            safe_variable = _make_safe_plot_label(variable_name)
+            figure_spec = {
+                "path": _analysis_named_path(irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
+                "caption": aggregate_variable_captions.get(variable_name, variable_name),
+            }
+            if variable_name == "Agg. Consumption":
+                consumption_specs.append(figure_spec)
+            else:
+                other_aggregate_specs.append(figure_spec)
+
+        if consumption_specs:
+            aggregate_ir_groups.append(
+                {
+                    "caption": f"Aggregate consumption response to a TFP shock in {sector_label}.",
+                    "note_path": _figure_note_path(consumption_specs[0]["path"]),
+                    "note_text": (
+                        "Rows report the 10, 20, and 30 percent shocks; columns report negative and positive shocks."
+                    ),
+                    "subfigures": consumption_specs,
+                }
+            )
+        if other_aggregate_specs:
+            aggregate_ir_groups.append(
+                {
+                    "caption_builder": lambda subfigures, sector_label=sector_label: (
+                        f"Aggregate {_join_labels([_caption_label(subfigure['caption']) for subfigure in subfigures])} "
+                        f"responses to a TFP shock in {sector_label}."
+                    ),
+                    "note_text": "All panels use the same negative TFP shock and share the same time scale.",
+                    "subfigures": other_aggregate_specs,
+                }
+            )
+    add_grouped_figure_section("2. Aggregate Impulse Responses", aggregate_ir_groups)
+
+    add_figure_section(
+        "3. Sectoral Variables in Stochastic Steady State",
+        [
+            _build_simple_figure_spec(
+                _analysis_named_path(simulation_dir, f"sectoral_{variable_name}_stochss", analysis_name, ".png"),
+                f"Sectoral {variable_caption} at the stochastic steady state.",
+            )
+            for variable_name, variable_caption in [
+                ("k", "capital"),
+                ("l", "labor"),
+                ("y", "value added"),
+                ("m", "intermediates"),
+                ("q", "gross output"),
+            ]
+        ],
+    )
+
+    add_table_section(
+        "4. Aggregate Stochastic Steady State",
+        [
+            os.path.join(analysis_dir, f"stochastic_ss_aggregates_{analysis_name}.tex"),
+        ],
+    )
+
+    add_table_section(
+        "5. Descriptive Statistics",
+        [
+            os.path.join(simulation_dir, f"descriptive_stats_{analysis_name}.tex"),
+        ],
+    )
+
+    add_table_section(
+        "6. Welfare Cost of Business Cycles",
+        [os.path.join(analysis_dir, f"welfare_{analysis_name}.tex")],
+    )
+
+    sectoral_ir_groups = []
+    largest_sectoral_shock = max(config_dict.get("ir_shock_sizes", [0])) if config_dict.get("ir_shock_sizes") else None
+    sectoral_group_specs = [
+        (
+            "Shocked Sector Inputs",
+            [("Lj", "Labor"), ("Ij", "Investment"), ("Mj", "Intermediates"), ("Yj", "Value Added"), ("Kj", "Capital")],
+        ),
+        (
+            "Shocked Sector Outputs",
+            [
+                ("Cj", "Consumption"),
+                ("Pj", "Price"),
+                ("Moutj", "Intermediate Sales"),
+                ("Ioutj", "Investment Sales"),
+                ("Qj", "Gross Output"),
+            ],
+        ),
+        (
+            "Client Sector Inputs",
+            [
+                ("Lj_client", "Labor"),
+                ("Ij_client", "Investment"),
+                ("Mj_client", "Intermediates"),
+                ("Yj_client", "Value Added"),
+                ("Pmj_client", "Intermediate Price"),
+                ("gammaij_client", "Expenditure Share"),
+            ],
+        ),
+        (
+            "Client Sector Outputs",
+            [
+                ("Cj_client", "Consumption"),
+                ("Pj_client", "Price"),
+                ("Moutj_client", "Intermediate Sales"),
+                ("Ioutj_client", "Investment Sales"),
+                ("Qj_client", "Gross Output"),
+            ],
+        ),
+    ]
+    for sector_idx in config_dict.get("ir_sectors_to_plot", []):
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+        )
+        safe_sector = _make_safe_plot_label(sector_label)
+        configured_sectoral_variables = set(config_dict.get("sectoral_ir_variables_to_plot", []))
+        for group_title, variable_specs in sectoral_group_specs:
+            subfigures = []
+            for variable_name, variable_caption in variable_specs:
+                if variable_name not in configured_sectoral_variables:
+                    continue
+                safe_variable = _make_safe_plot_label(variable_name)
+                subfigures.append(
+                    {
+                        "path": _analysis_named_path(
+                            irs_dir,
+                            f"IR_{safe_variable}_{safe_sector}",
+                            analysis_name,
+                            ".png",
+                        ),
+                        "caption": variable_caption,
+                    }
+                )
+
+            if subfigures:
+                shock_text = (
+                    f"Responses are to a negative {largest_sectoral_shock} percent TFP shock."
+                    if largest_sectoral_shock
+                    else "Responses are to the sectoral TFP shock used in the analysis."
+                )
+                sectoral_ir_groups.append(
+                    {
+                        "caption": f"{group_title} for {sector_label}.",
+                        "note_text": f"Follows the MATLAB grouping. {shock_text}",
+                        "subfigures": subfigures,
+                    }
+                )
+    add_grouped_figure_section("7. Sectoral Impulse Responses", sectoral_ir_groups)
+
+    add_figure_section(
+        "8. Ergodic Mean Sectoral Variables",
+        [
+            _build_simple_figure_spec(
+                _analysis_named_path(simulation_dir, f"sectoral_{variable_name}_ergodic", analysis_name, ".png"),
+                f"Ergodic mean sectoral {variable_caption}.",
+            )
+            for variable_name, variable_caption in [
+                ("k", "capital"),
+                ("l", "labor"),
+                ("y", "value added"),
+                ("m", "intermediates"),
+                ("q", "gross output"),
+            ]
+        ],
+    )
+
+    return sections
+
+
+def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, irs_dir, econ_model):
+    analysis_name = config_dict.get("analysis_name") or "analysis"
+    sections = _build_analysis_latex_sections(
+        config_dict=config_dict,
+        analysis_dir=analysis_dir,
+        simulation_dir=simulation_dir,
+        irs_dir=irs_dir,
+        econ_model=econ_model,
+    )
+    if not sections:
+        print("  ⚠ Combined LaTeX file skipped: no rendered tables or figures were found.")
+        return None
+
+    lines = [
+        r"\documentclass[11pt]{article}",
+        r"\usepackage[utf8]{inputenc}",
+        r"\usepackage[T1]{fontenc}",
+        r"\usepackage{textcomp}",
+        r"\usepackage[margin=1in]{geometry}",
+        r"\usepackage{amsmath}",
+        r"\usepackage{booktabs}",
+        r"\usepackage{tabularx}",
+        r"\usepackage{graphicx}",
+        r"\usepackage{subcaption}",
+        r"\usepackage{float}",
+        r"\floatplacement{table}{H}",
+        r"\floatplacement{figure}{H}",
+        r"\captionsetup[subfigure]{justification=centering}",
+        r"\setlength{\parindent}{0pt}",
+        r"\setlength{\parskip}{0.75em}",
+        r"\begin{document}",
+        r"\section*{Tables and Figures}",
+    ]
+
+    for section in sections:
+        lines.append(rf"\subsection*{{{section['title']}}}")
+
+        for tex_path in section["tables"]:
+            relative_path = _latex_relative_path(tex_path, analysis_dir)
+            if _tex_fragment_has_table_env(tex_path):
+                lines.append(rf"\input{{{relative_path}}}")
+            else:
+                lines.extend(
+                    [
+                        r"\begin{table}[H]",
+                        r"\centering",
+                        rf"\input{{{relative_path}}}",
+                        r"\end{table}",
+                    ]
+                )
+            lines.append(r"\clearpage")
+
+        for figure_path in section["figures"]:
+            if isinstance(figure_path, str) or "subfigures" not in figure_path:
+                single_figure = (
+                    _build_simple_figure_spec(figure_path, "") if isinstance(figure_path, str) else figure_path
+                )
+                relative_path = _latex_relative_path(single_figure["path"], analysis_dir)
+                note_path = single_figure.get("note_path") or _figure_note_path(single_figure["path"])
+                lines.extend(
+                    [
+                        r"\begin{figure}[H]",
+                        r"\centering",
+                        rf"\includegraphics[width=0.96\textwidth]{{{relative_path}}}",
+                    ]
+                )
+                if single_figure.get("caption"):
+                    lines.append(rf"\caption{{{_escape_latex(single_figure['caption'])}}}")
+                if os.path.exists(note_path):
+                    lines.extend([r"\par\smallskip", rf"\input{{{_latex_relative_path(note_path, analysis_dir)}}}"])
+                elif single_figure.get("note_text"):
+                    lines.extend(
+                        [
+                            r"\par\smallskip",
+                            r"\begin{minipage}{0.92\textwidth}",
+                            r"\footnotesize",
+                            rf"\textit{{Notes:}} {_escape_latex(single_figure['note_text'])}",
+                            r"\end{minipage}",
+                        ]
+                    )
+                lines.extend([r"\end{figure}", r"\clearpage"])
+                continue
+
+            subfigures = figure_path.get("subfigures", [])
+            if not subfigures:
+                continue
+
+            lines.extend([r"\begin{figure}[H]", r"\centering"])
+            for idx, subfigure in enumerate(subfigures):
+                width = "0.48\\textwidth" if len(subfigures) > 1 else "0.88\\textwidth"
+                lines.extend(
+                    [
+                        rf"\begin{{subfigure}}[t]{{{width}}}",
+                        r"\centering",
+                        rf"\includegraphics[width=\textwidth]{{{_latex_relative_path(subfigure['path'], analysis_dir)}}}",
+                        rf"\caption{{{_escape_latex(subfigure.get('caption', ''))}}}",
+                        r"\end{subfigure}",
+                    ]
+                )
+                if len(subfigures) > 1 and idx % 2 == 0 and idx != len(subfigures) - 1:
+                    lines.append(r"\hfill")
+                elif idx != len(subfigures) - 1:
+                    lines.append(r"\par\medskip")
+
+            lines.append(rf"\caption{{{_escape_latex(figure_path.get('caption', ''))}}}")
+            note_path = figure_path.get("note_path")
+            note_text = figure_path.get("note_text")
+            if note_path and os.path.exists(note_path):
+                lines.extend([r"\par\smallskip", rf"\input{{{_latex_relative_path(note_path, analysis_dir)}}}"])
+            elif note_text:
+                lines.extend(
+                    [
+                        r"\par\smallskip",
+                        r"\begin{minipage}{0.92\textwidth}",
+                        r"\footnotesize",
+                        rf"\textit{{Notes:}} {_escape_latex(note_text)}",
+                        r"\end{minipage}",
+                    ]
+                )
+            lines.extend([r"\end{figure}", r"\clearpage"])
+
+    lines.append(r"\end{document}")
+
+    combined_tex_path = os.path.join(analysis_dir, f"figures_tables_{analysis_name}.tex")
+    with open(combined_tex_path, "w") as combined_file:
+        combined_file.write("\n".join(lines) + "\n")
+
+    table_count = sum(len(section["tables"]) for section in sections)
+    figure_count = sum(len(section["figures"]) for section in sections)
+    print(f"  Combined LaTeX file saved: {combined_tex_path}")
+    print(f"  Included {table_count} tables and {figure_count} figures.")
+    return combined_tex_path
 
 
 def _resolve_data_file(model_dir, configured_name, fallback_names, *, label, required):
@@ -1070,10 +1499,21 @@ def main():
     display_stochastic_ss_data = _apply_display_labels_to_mapping(stochastic_ss_data, output_display_label_map)
     display_welfare_costs = _apply_display_labels_to_mapping(welfare_costs, output_display_label_map)
     display_raw_simulation_data = _apply_display_labels_to_mapping(raw_simulation_data, output_display_label_map)
-    display_stochss_methods_to_include = _apply_display_labels_to_sequence(
-        config.get("stochss_methods_to_include"),
-        output_display_label_map,
+    display_stochss_methods_to_include = cast(
+        "list[str] | None",
+        _apply_display_labels_to_sequence(
+            config.get("stochss_methods_to_include"),
+            output_display_label_map,
+        ),
     )
+    if not display_stochss_methods_to_include:
+        ergodic_display_labels = _apply_display_labels_to_sequence(
+            display_postprocess_context.get("ergodic_experiment_labels")
+            if display_postprocess_context
+            else None,
+            {},
+        )
+        display_stochss_methods_to_include = cast("list[str] | None", ergodic_display_labels)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # MODEL VS DATA MOMENTS TABLE
@@ -1185,12 +1625,6 @@ def main():
         methods_to_include=display_stochss_methods_to_include,
     )
 
-    create_stochastic_ss_table(
-        stochastic_ss_data=display_stochastic_ss_data,
-        save_path=os.path.join(analysis_dir, "stochastic_ss_table.tex"),
-        analysis_name=config["analysis_name"],
-    )
-
     # ═══════════════════════════════════════════════════════════════════════════
     # DESCRIPTIVE STATISTICS
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1254,39 +1688,6 @@ def main():
         analysis_name=config["analysis_name"],
     )
 
-    # Aggregate-only ergodic descriptive statistics (C, I, GDP, K)
-    aggregate_vars = config.get(
-        "aggregate_variables", ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"]
-    )
-    aggregate_ergodic_data = {}
-    for method_name, variables in filtered_analysis_variables_data.items():
-        filtered = {k: v for k, v in variables.items() if k in aggregate_vars}
-        if filtered:
-            aggregate_ergodic_data[method_name] = filtered
-
-    display_aggregate_ergodic_data = _apply_display_labels_to_mapping(
-        aggregate_ergodic_data,
-        output_display_label_map,
-    )
-    display_selected_methods = _apply_display_labels_to_sequence(
-        list(selected_methods),
-        output_display_label_map,
-    )
-
-    create_ergodic_aggregate_stats_table(
-        analysis_variables_data=display_aggregate_ergodic_data,
-        save_path=os.path.join(simulation_dir, "ergodic_aggregate_stats_table.tex"),
-        analysis_name=config["analysis_name"],
-        methods_to_include=display_selected_methods,
-    )
-
-    if len(filtered_analysis_variables_data) > 1:
-        create_comparative_stats_table(
-            analysis_variables_data=display_filtered_analysis_variables_data,
-            save_path=os.path.join(simulation_dir, "descriptive_stats_comparative.tex"),
-            analysis_name=config["analysis_name"],
-        )
-
     # ═══════════════════════════════════════════════════════════════════════════
     # WELFARE COSTS
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1344,6 +1745,14 @@ def main():
                     )
                 except Exception as e:
                     print(f"    ✗ Failed to create {plot_name} for {experiment_label}: {e}", flush=True)
+
+    _write_analysis_results_latex(
+        config_dict=config,
+        analysis_dir=analysis_dir,
+        simulation_dir=simulation_dir,
+        irs_dir=irs_dir,
+        econ_model=econ_model,
+    )
 
     print("\n" + "═" * 72)
     print("  ANALYSIS COMPLETE")

@@ -251,16 +251,6 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, P_ergo
     if isinstance(ir_variables, str):
         ir_variables = [ir_variables]
 
-    unsupported_aggregate_ir_vars = {"Agg. Capital"}
-    filtered_ir_variables = [v for v in ir_variables if v not in unsupported_aggregate_ir_vars]
-    dropped_ir_variables = [v for v in ir_variables if v in unsupported_aggregate_ir_vars]
-    if dropped_ir_variables:
-        print(
-            "  Note: aggregate capital IR benchmark is not available; "
-            f"skipping {dropped_ir_variables} from ir_variables_to_plot."
-        )
-    ir_variables = filtered_ir_variables
-
     sectoral_ir_variables = [
         label for label in _get_requested_sectoral_ir_variables(config) if label in SUPPORTED_SECTORAL_IR_LABELS
     ]

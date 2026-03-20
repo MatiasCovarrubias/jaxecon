@@ -110,6 +110,39 @@ _LOGDEV_PERCENT_NOTE = (
 )
 
 
+def _format_method_display_name(method_name: str, method_names: Optional[list[str]] = None) -> str:
+    if method_names and "Global Solution (Common Shocks)" in method_names and method_name == "Global Solution":
+        return "Global Solution (Long Simulation)"
+    return method_name
+
+
+def _nonlinear_method_note(method_names: list[str]) -> str:
+    if "Global Solution" in method_names and "Global Solution (Common Shocks)" in method_names:
+        return (
+            r" Global Solution (Long Simulation) uses the long ergodic simulation sample, while "
+            r"Global Solution (Common Shocks) uses the short simulation driven by the MATLAB common-shock path."
+        )
+    return ""
+
+
+def _wrap_table_environment(tabular_code: str, *, caption: str, label: str, note_text: str, note_width: str = "0.92") -> str:
+    return (
+        r"\begin{table}[htbp]" + "\n"
+        + r"\centering" + "\n"
+        + rf"\caption{{{caption}}}" + "\n"
+        + rf"\label{{{label}}}" + "\n"
+        + tabular_code
+        + rf"\begin{{minipage}}{{{note_width}\textwidth}}" + "\n"
+        + r"\vspace{0.5em}" + "\n"
+        + r"\footnotesize" + "\n"
+        + r"\textit{Notes:} "
+        + note_text
+        + "\n"
+        + r"\end{minipage}" + "\n"
+        + r"\end{table}" + "\n"
+    )
+
+
 def _scalar_from_matlab_value(x: Any) -> Optional[float]:
     if x is None:
         return None
@@ -644,7 +677,7 @@ def _generate_single_method_latex_table(
     stats_data: Dict[str, Dict[str, Dict[str, float]]], method_name: str
 ) -> str:
     """LaTeX table for single-method case: variables as rows, metrics as columns."""
-    latex_code = (
+    tabular_code = (
         r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
         r"\textbf{Variable} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\"
@@ -656,29 +689,32 @@ def _generate_single_method_latex_table(
         if method_name in exp_stats:
             s = exp_stats[method_name]
             var_display = var_label.replace("_", r"\_")
-            latex_code += (
+            tabular_code += (
                 f"{var_display} & {s['Mean']:.3f} & {s['Sd']:.3f}"
                 f" & {s['Skewness']:.3f} & {s['Excess Kurtosis']:.3f} \\\\\n"
             )
 
-    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
-    latex_code += r"\\" + "\n"
-    latex_code += (
-        r"\textit{Notes:} Mean and standard deviation are reported in percent relative to the deterministic steady state; "
-        + _LOGDEV_PERCENT_NOTE
-        + r" Skewness and excess kurtosis are unit-free and are computed from the same simulation sample."
-        + "\n"
+    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    return _wrap_table_environment(
+        tabular_code,
+        caption="Descriptive statistics",
+        label="tab:descriptive_statistics",
+        note_text=(
+            r"Mean and standard deviation are reported in percent relative to the deterministic steady state; "
+            + _LOGDEV_PERCENT_NOTE
+            + r" Skewness and excess kurtosis are unit-free and are computed from the same simulation sample."
+        ),
     )
-    return latex_code
 
 
 def _generate_variable_organized_latex_table(
     stats_data: Dict[str, Dict[str, Dict[str, float]]], experiment_names: list
 ) -> str:
     """Generate LaTeX table organized by variable with experiments as rows within each variable section."""
-    n_experiments = len(experiment_names)
+    method_names = list(experiment_names)
+    n_experiments = len(method_names)
 
-    latex_code = (
+    tabular_code = (
         r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
         r"\textbf{Method} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\"
@@ -687,29 +723,34 @@ def _generate_variable_organized_latex_table(
     )
 
     for var_idx, (var_label, exp_stats) in enumerate(stats_data.items()):
-        latex_code += f"\\multicolumn{{5}}{{l}}{{\\textbf{{{var_label}}}}} \\\\\n"
+        tabular_code += f"\\multicolumn{{5}}{{l}}{{\\textbf{{{var_label}}}}} \\\\\n"
 
-        for exp_name in experiment_names:
+        for exp_name in method_names:
             if exp_name in exp_stats:
                 stats = exp_stats[exp_name]
-                exp_display = exp_name.replace("_", r"\_")
-                latex_code += f"\\quad {exp_display} & {stats['Mean']:.3f} & {stats['Sd']:.3f} & {stats['Skewness']:.3f} & {stats['Excess Kurtosis']:.3f} \\\\\n"
+                exp_display = _format_method_display_name(exp_name, method_names).replace("_", r"\_")
+                tabular_code += (
+                    f"\\quad {exp_display} & {stats['Mean']:.3f} & {stats['Sd']:.3f} "
+                    f"& {stats['Skewness']:.3f} & {stats['Excess Kurtosis']:.3f} \\\\\n"
+                )
 
         if var_idx < len(stats_data) - 1:
-            latex_code += r"\addlinespace[0.5em]" + "\n"
+            tabular_code += r"\addlinespace[0.5em]" + "\n"
 
-    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
-    latex_code += r"\\" + "\n"
-    latex_code += (
-        r"\textit{Notes:} For each variable, rows compare the reported simulation methods."
-        r" Mean and standard deviation are reported in percent relative to the deterministic steady state; "
-        + _LOGDEV_PERCENT_NOTE
-        + r" Skewness and excess kurtosis are unit-free."
-        r" For nonlinear methods the moments are computed from the Python simulation sample; for benchmark methods they use the simulation blocks loaded from \texttt{ModelData\_simulation.mat} when those blocks are available."
-        + "\n"
+    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    return _wrap_table_environment(
+        tabular_code,
+        caption="Descriptive statistics",
+        label="tab:descriptive_statistics",
+        note_text=(
+            r"For each variable, rows compare the reported simulation methods."
+            + _nonlinear_method_note(method_names)
+            + r" Mean and standard deviation are reported in percent relative to the deterministic steady state; "
+            + _LOGDEV_PERCENT_NOTE
+            + r" Skewness and excess kurtosis are unit-free."
+            r" For nonlinear methods the moments are computed from the Python simulation sample; for benchmark methods they use the simulation blocks loaded from \texttt{ModelData\_simulation.mat} when those blocks are available."
+        ),
     )
-
-    return latex_code
 
 
 def create_comparative_stats_table(
@@ -889,27 +930,29 @@ def _generate_welfare_console_table(welfare_data: Dict[str, float]) -> str:
 
 def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
     """Generate LaTeX table code for welfare costs."""
-    latex_code = (
-        r"\begin{tabularx}{\textwidth}{l X}" + "\n"
+    method_names = list(welfare_data.keys())
+    tabular_code = (
+        r"\begin{tabular}{l r}" + "\n"
         r"\toprule" + "\n"
         r"\textbf{Method} & \textbf{Welfare Cost ($V_c$, \%)} \\" + "\n"
         r"\midrule" + "\n"
     )
 
     for exp_name, welfare_cost in welfare_data.items():
-        exp_display = exp_name.replace("_", r"\_")
-        latex_code += f"{exp_display} & {welfare_cost:.4f} \\\\\n"
+        exp_display = _format_method_display_name(exp_name, method_names).replace("_", r"\_")
+        tabular_code += f"{exp_display} & {welfare_cost:.4f} \\\\\n"
 
-    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
-    latex_code += r"\\" + "\n"
-    latex_code += (
-        r"\textit{Note: $V_c$ is the consumption-equivalent welfare cost of business cycles. "
-        + r"A positive value means business cycles reduce welfare."
-        + r" A value of 1.0 means agents would need 1\% higher steady-state consumption to be compensated.}"
-        + "\n"
+    tabular_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
+    return _wrap_table_environment(
+        tabular_code,
+        caption="Welfare cost of business cycles",
+        label="tab:welfare_costs",
+        note_text=(
+            r"$V_c$ is the consumption-equivalent welfare cost of business cycles."
+            + _nonlinear_method_note(method_names)
+            + r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would need 1\% higher steady-state consumption to be compensated."
+        ),
     )
-
-    return latex_code
 
 
 def create_stochastic_ss_table(
@@ -958,6 +1001,7 @@ _STOCHSS_AGGREGATE_ORDER = [
     ("Agg. Consumption", "C"),
     ("Agg. Investment", "I"),
     ("Agg. GDP", "GDP"),
+    ("Agg. Labor", "L"),
     ("Agg. Capital", "K"),
 ]
 
@@ -998,7 +1042,7 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
     experiment_names = list(stochastic_ss_data.keys())
     n_experiments = len(experiment_names)
 
-    latex_code = (
+    tabular_code = (
         f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_experiments}}}{{X}}}}\n"
         + r"\toprule"
         + "\n"
@@ -1007,33 +1051,34 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
 
     for exp_name in experiment_names:
         exp_display = exp_name.replace("_", r"\_")
-        latex_code += f" & \\textbf{{{exp_display}}}"
+        tabular_code += f" & \\textbf{{{exp_display}}}"
 
-    latex_code += r" \\" + "\n" + r"\midrule" + "\n"
+    tabular_code += r" \\" + "\n" + r"\midrule" + "\n"
 
     for var_key, var_short in _STOCHSS_AGGREGATE_ORDER:
-        latex_code += var_short
+        tabular_code += var_short
 
         for exp_name in experiment_names:
             ss_vars_dict = stochastic_ss_data[exp_name]
             if var_key in ss_vars_dict:
                 value = float(ss_vars_dict[var_key]) * 100
-                latex_code += f" & {value:.3f}"
+                tabular_code += f" & {value:.3f}"
             else:
-                latex_code += " & —"
+                tabular_code += " & —"
 
-        latex_code += r" \\" + "\n"
+        tabular_code += r" \\" + "\n"
 
-    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
-    latex_code += r"\\" + "\n"
-    latex_code += (
-        r"\textit{Notes:} Entries report stochastic steady-state values in percent relative to the deterministic steady state."
-        r" The stochastic steady state is the no-further-shock limit reached from the ergodic distribution."
-        r" Most variables are log-deviation objects, so a value such as $-0.1$ should be read as approximately $0.1$ percent below the deterministic steady state."
-        + "\n"
+    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    return _wrap_table_environment(
+        tabular_code,
+        caption="Aggregate stochastic steady state",
+        label="tab:stochastic_ss",
+        note_text=(
+            r"Entries report stochastic steady-state values in percent relative to the deterministic steady state."
+            r" The stochastic steady state is the no-further-shock limit reached from the ergodic distribution."
+            r" Most variables are log-deviation objects, so a value such as $-0.1$ should be read as approximately $0.1$ percent below the deterministic steady state."
+        ),
     )
-
-    return latex_code
 
 
 def create_stochastic_ss_aggregates_table(
@@ -1043,7 +1088,7 @@ def create_stochastic_ss_aggregates_table(
     methods_to_include: Optional[list[str]] = None,
 ) -> str:
     """
-    Create a compact stochastic steady-state table for aggregates C, I, GDP, K.
+    Create a compact stochastic steady-state table for aggregates C, I, GDP, L, K.
 
     Values are reported in percentage deviations from deterministic steady state.
     """
@@ -1051,6 +1096,7 @@ def create_stochastic_ss_aggregates_table(
         ("Agg. Consumption", "C"),
         ("Agg. Investment", "I"),
         ("Agg. GDP", "GDP"),
+        ("Agg. Labor", "L"),
         ("Agg. Capital", "K"),
     ]
 
@@ -1061,34 +1107,38 @@ def create_stochastic_ss_aggregates_table(
         method_names = all_methods
 
     n_methods = len(method_names)
-    latex_code = (
+    tabular_code = (
         f"\\begin{{tabularx}}{{\\textwidth}}{{l *{{{n_methods}}}{{X}}}}\n"
         + r"\toprule"
         + "\n"
         + r"\textbf{Aggregate}"
     )
     for method in method_names:
-        method_display = method.replace("_", r"\_")
-        latex_code += f" & \\textbf{{{method_display}}}"
-    latex_code += r" \\" + "\n" + r"\midrule" + "\n"
+        method_display = _format_method_display_name(method, method_names).replace("_", r"\_")
+        tabular_code += f" & \\textbf{{{method_display}}}"
+    tabular_code += r" \\" + "\n" + r"\midrule" + "\n"
 
     for var_key, var_short in aggregate_order:
-        latex_code += var_short
+        tabular_code += var_short
         for method in method_names:
             value = stochastic_ss_data.get(method, {}).get(var_key)
             if value is None:
-                latex_code += " & —"
+                tabular_code += " & —"
             else:
-                latex_code += f" & {float(value) * 100:.3f}"
-        latex_code += r" \\" + "\n"
+                tabular_code += f" & {float(value) * 100:.3f}"
+        tabular_code += r" \\" + "\n"
 
-    latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
-    latex_code += r"\\" + "\n"
-    latex_code += (
-        r"\textit{Notes:} Entries report aggregate stochastic steady-state values for consumption, investment, GDP, and capital in percent relative to the deterministic steady state."
-        r" The stochastic steady state is computed from the long ergodic simulation and summarizes the economy after all future shocks are shut down."
-        r" A value such as $-0.1$ should be read as approximately $0.1$ percent below the deterministic steady state."
-        + "\n"
+    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    latex_code = _wrap_table_environment(
+        tabular_code,
+        caption="Aggregate stochastic steady state",
+        label="tab:stochastic_ss_aggregates",
+        note_text=(
+            r"Entries report aggregate stochastic steady-state values for consumption, investment, GDP, labor, and capital in percent relative to the deterministic steady state."
+            + _nonlinear_method_note(method_names)
+            + r" The stochastic steady state is the no-further-shock limit reached from the ergodic distribution."
+            + r" A value such as $-0.1$ should be read as approximately $0.1$ percent below the deterministic steady state."
+        ),
     )
 
     if save_path:

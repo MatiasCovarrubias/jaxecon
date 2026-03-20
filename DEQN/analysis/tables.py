@@ -103,6 +103,12 @@ _MODEL_VS_DATA_CONSOLE_LABELS = [
     for _, _, _, console_label in panel_rows
 ]
 
+_LOGDEV_PERCENT_NOTE = (
+    r"Except for skewness and kurtosis, reported log-deviation objects are expressed in percent "
+    r"relative to the deterministic steady state, so a value such as $-0.1$ should be read as "
+    r"approximately $0.1$ percent below the deterministic steady state."
+)
+
 
 def _scalar_from_matlab_value(x: Any) -> Optional[float]:
     if x is None:
@@ -338,9 +344,11 @@ def _create_model_vs_data_moments_table(
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
-        r"\textit{Notes:} Columns 1st, 2nd, PF, and MITShocks use the MATLAB/Dynare business-cycle objects for sectoral and comovement moments."
-        r" Aggregate moments are re-aggregated in Python using the nonlinear average-price weights for consistency across methods."
+        r"\textit{Notes:} Entries are business-cycle moments. Standard deviations are reported in percent; correlations are unit-free."
+        r" Columns 1st, 2nd, PF, and MITShocks use the MATLAB/Dynare business-cycle objects for sectoral and comovement moments."
+        r" Aggregate rows are re-aggregated in Python using fixed ergodic-price weights so the aggregate definition is consistent across methods."
         + nonlinear_note
+        + r" Data moments come from the empirical targets loaded with the MATLAB objects."
         + "\n"
         r"\end{minipage}" + "\n"
     )
@@ -656,7 +664,10 @@ def _generate_single_method_latex_table(
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
     latex_code += (
-        r"\textit{Note: Mean and Sd are reported as percentage deviations from deterministic steady state.}" + "\n"
+        r"\textit{Notes:} Mean and standard deviation are reported in percent relative to the deterministic steady state; "
+        + _LOGDEV_PERCENT_NOTE
+        + r" Skewness and excess kurtosis are unit-free and are computed from the same simulation sample."
+        + "\n"
     )
     return latex_code
 
@@ -690,7 +701,12 @@ def _generate_variable_organized_latex_table(
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
     latex_code += (
-        r"\textit{Note: Mean and Sd are reported as percentage deviations from deterministic steady state.}" + "\n"
+        r"\textit{Notes:} For each variable, rows compare the reported simulation methods."
+        r" Mean and standard deviation are reported in percent relative to the deterministic steady state; "
+        + _LOGDEV_PERCENT_NOTE
+        + r" Skewness and excess kurtosis are unit-free."
+        r" For nonlinear methods the moments are computed from the Python simulation sample; for benchmark methods they use the simulation blocks loaded from \texttt{ModelData\_simulation.mat} when those blocks are available."
+        + "\n"
     )
 
     return latex_code
@@ -804,7 +820,11 @@ def _generate_comparative_latex_table(df: pd.DataFrame, experiment_names: list) 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
     latex_code += (
-        r"\textit{Note: Mean and Sd are reported as percentage deviations from deterministic steady state.}" + "\n"
+        r"\textit{Notes:} Rows report descriptive moments for each variable-statistic pair across methods."
+        r" Mean and standard deviation are reported in percent relative to the deterministic steady state; "
+        + _LOGDEV_PERCENT_NOTE
+        + r" Skewness and excess kurtosis are unit-free."
+        + "\n"
     )
 
     return latex_code
@@ -884,7 +904,8 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
     latex_code += r"\\" + "\n"
     latex_code += (
         r"\textit{Note: $V_c$ is the consumption-equivalent welfare cost of business cycles. "
-        + r"A value of 1.0 means agents would need 1\% higher steady-state consumption to be compensated.}"
+        + r"A positive value means business cycles reduce welfare."
+        + r" A value of 1.0 means agents would need 1\% higher steady-state consumption to be compensated.}"
         + "\n"
     )
 
@@ -1005,7 +1026,12 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
-    latex_code += r"\textit{Note: Values show percentage deviations from deterministic steady state.}" + "\n"
+    latex_code += (
+        r"\textit{Notes:} Entries report stochastic steady-state values in percent relative to the deterministic steady state."
+        r" The stochastic steady state is the no-further-shock limit reached from the ergodic distribution."
+        r" Most variables are log-deviation objects, so a value such as $-0.1$ should be read as approximately $0.1$ percent below the deterministic steady state."
+        + "\n"
+    )
 
     return latex_code
 
@@ -1058,7 +1084,12 @@ def create_stochastic_ss_aggregates_table(
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
-    latex_code += r"\textit{Note: Values are percentage deviations from deterministic steady state.}" + "\n"
+    latex_code += (
+        r"\textit{Notes:} Entries report aggregate stochastic steady-state values for consumption, investment, GDP, and capital in percent relative to the deterministic steady state."
+        r" The stochastic steady state is computed from the long ergodic simulation and summarizes the economy after all future shocks are shut down."
+        r" A value such as $-0.1$ should be read as approximately $0.1$ percent below the deterministic steady state."
+        + "\n"
+    )
 
     if save_path:
         if analysis_name:
@@ -1147,7 +1178,10 @@ def create_ergodic_aggregate_stats_table(
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
     latex_code += (
-        r"\textit{Note: Mean and Sd are in percentage deviations from deterministic steady state.}"
+        r"\textit{Notes:} Rows report descriptive moments for the ergodic distribution of aggregate consumption, investment, GDP, and capital."
+        r" Mean and standard deviation are in percent relative to the deterministic steady state; "
+        + _LOGDEV_PERCENT_NOTE
+        + r" Skewness and excess kurtosis are unit-free."
         + "\n"
     )
 

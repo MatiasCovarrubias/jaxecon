@@ -65,6 +65,12 @@ The main execution flow in `DEQN/analysis.py` is:
 8. Call `analysis_hooks.prepare_postprocess_analysis(...)`.
 9. Render tables and figures in the analysis order.
 
+## Rolling change log
+
+Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
+
+- Arithmetic mean prices in levels now define the fixed aggregation weights in the common-shock pipeline; the nonlinear benchmark, Dynare reaggregation, and MATLAB IR reaggregation all use level-averaged prices from the active window.
+
 ## Main Python files
 
 ### `DEQN/analysis.py`

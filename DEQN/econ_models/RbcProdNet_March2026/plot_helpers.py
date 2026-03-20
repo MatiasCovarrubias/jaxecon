@@ -37,6 +37,161 @@ plt.rc("figure", titlesize=LARGE_SIZE)
 plt.rc("mathtext", fontset="dejavusans")
 
 
+def _escape_latex(text: str) -> str:
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    return "".join(replacements.get(char, char) for char in text)
+
+
+def _format_number_list(values: list[int]) -> str:
+    if not values:
+        return ""
+    if len(values) == 1:
+        return str(values[0])
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return ", ".join(str(value) for value in values[:-1]) + f", and {values[-1]}"
+
+
+def _describe_response_source(response_source: str) -> str:
+    if response_source == "GIR":
+        return "The DEQN line reports the generalized impulse response averaged over ergodic draws."
+    if response_source == "both":
+        return (
+            "The DEQN lines report both the generalized impulse response averaged over ergodic draws "
+            "and the impulse response computed from the stochastic steady state."
+        )
+    return "The DEQN line reports the impulse response computed from the stochastic steady state."
+
+
+def _describe_benchmark_method(benchmark_method: str) -> str:
+    benchmark_labels = {
+        "FirstOrder": "MATLAB first-order benchmark",
+        "SecondOrder": "MATLAB second-order benchmark",
+        "PerfectForesight": "MATLAB perfect-foresight benchmark",
+    }
+    return benchmark_labels.get(benchmark_method, f"MATLAB {benchmark_method} benchmark")
+
+
+def _write_figure_note_tex(figure_path: str, note_text: str) -> None:
+    note_path = os.path.splitext(figure_path)[0] + "_note.tex"
+    note_tex = (
+        r"\begin{minipage}{0.92\textwidth}" + "\n"
+        r"\footnotesize" + "\n"
+        r"\textit{Notes:} "
+        + _escape_latex(note_text)
+        + "\n"
+        + r"\end{minipage}"
+        + "\n"
+    )
+    with open(note_path, "w") as note_file:
+        note_file.write(note_tex)
+
+
+def _build_ir_note(
+    *,
+    variable_to_plot: str,
+    sector_label: str,
+    shock_sizes: list[int],
+    benchmark_method: str,
+    response_source: str,
+    negative_only: bool,
+    is_aggregate: bool,
+) -> str:
+    shock_text = _format_number_list(shock_sizes)
+    if negative_only:
+        layout_text = (
+            f"The figure shows the negative {shock_text} percent TFP shock to {sector_label}."
+            if shock_text
+            else f"The figure shows a negative TFP shock to {sector_label}."
+        )
+    else:
+        layout_text = (
+            f"Each row corresponds to a {shock_text} percent TFP shock to {sector_label}; "
+            "the left column shows negative shocks and the right column positive shocks."
+            if shock_text
+            else f"The figure compares positive and negative TFP shocks to {sector_label}."
+        )
+
+    axis_text = (
+        "The horizontal axis reports model periods after impact. The vertical axis reports percent deviations "
+        "from the deterministic steady state, so a value of -0.1 should be read as roughly 0.1 percent below "
+        "the deterministic steady state."
+    )
+    if variable_to_plot == "gammaij_client":
+        axis_text = (
+            "The horizontal axis reports model periods after impact. The vertical axis reports the model-implied "
+            "deviation in the client expenditure-share object gammaij_client. From the current code alone I cannot "
+            "map this series cleanly into a level-percent interpretation, so it should be read as a share-deviation "
+            "measure rather than a standard log-percent response."
+        )
+
+    benchmark_text = (
+        f"The dashed benchmark line is the {_describe_benchmark_method(benchmark_method)}."
+    )
+    if is_aggregate:
+        benchmark_text += (
+            " For aggregate consumption, investment, and GDP, the MATLAB benchmark is re-aggregated with fixed "
+            "ergodic prices so that the aggregate definition matches the nonlinear solution."
+        )
+    elif "_client" in variable_to_plot:
+        benchmark_text += (
+            " Variables with the suffix 'client' refer to the main client sector of the shocked sector in the "
+            "input-output network."
+        )
+    else:
+        benchmark_text += " Un-suffixed sectoral variables refer to the shocked sector itself."
+
+    return " ".join([layout_text, axis_text, _describe_response_source(response_source), benchmark_text])
+
+
+def _build_sectoral_distribution_note(
+    *,
+    variable_title: str,
+    experiment_names: list[str],
+    source_kind: str,
+    include_upstreamness: bool,
+) -> str:
+    comparison_text = (
+        "Bars compare the displayed experiments sector by sector."
+        if len(experiment_names) > 1
+        else "Bars report the displayed experiment sector by sector."
+    )
+    if source_kind == "stochss":
+        source_text = (
+            "The figure reports the stochastic steady state computed from the long ergodic simulation, that is, "
+            "the no-further-shock limit reached from the ergodic distribution."
+        )
+    else:
+        source_text = (
+            "The figure reports the ergodic mean from the long nonlinear simulation, i.e. the time average over "
+            "the simulated ergodic sample."
+        )
+
+    upstreamness_text = ""
+    if include_upstreamness:
+        upstreamness_text = (
+            " The textbox reports cross-sector correlations with IO upstreamness and investment upstreamness."
+        )
+
+    return (
+        f"{source_text} {comparison_text} The horizontal axis lists sectors sorted by the first displayed "
+        f"experiment from highest to lowest {variable_title.lower()}. The vertical axis reports percent deviations "
+        "from the deterministic steady state, so a value of -0.1 should be read as roughly 0.1 percent below the "
+        f"deterministic steady state.{upstreamness_text}"
+    )
+
+
 def plot_ergodic_histograms(
     analysis_variables_data: Dict[str, Any],
     figsize: Tuple[float, float] = (15, 10),
@@ -1224,6 +1379,18 @@ def plot_sector_ir_by_shock_size(
             filename = f"IR_{safe_var}_{safe_sector}.png"
         save_path = os.path.join(save_dir, filename)
         plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        _write_figure_note_tex(
+            save_path,
+            _build_ir_note(
+                variable_to_plot=variable_to_plot,
+                sector_label=sector_label,
+                shock_sizes=shock_sizes,
+                benchmark_method=benchmark_method,
+                response_source=response_source,
+                negative_only=negative_only,
+                is_aggregate=variable_to_plot.startswith("Agg."),
+            ),
+        )
         print(f"      Saved: {filename}")
 
     return fig, axes
@@ -1600,6 +1767,15 @@ def plot_sectoral_variable_stochss(
     )
     save_path = os.path.join(save_dir, filename)
     plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    _write_figure_note_tex(
+        save_path,
+        _build_sectoral_distribution_note(
+            variable_title=var_info["title"],
+            experiment_names=experiment_names,
+            source_kind="stochss",
+            include_upstreamness=upstreamness_data is not None,
+        ),
+    )
     print(f"    Saved: {filename}")
     plt.show()
 
@@ -1763,6 +1939,15 @@ def plot_sectoral_variable_ergodic(
     )
     save_path = os.path.join(save_dir, filename)
     plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    _write_figure_note_tex(
+        save_path,
+        _build_sectoral_distribution_note(
+            variable_title=var_info["title"],
+            experiment_names=experiment_names,
+            source_kind="ergodic",
+            include_upstreamness=upstreamness_data is not None,
+        ),
+    )
     print(f"    Saved: {filename}")
     plt.show()
 

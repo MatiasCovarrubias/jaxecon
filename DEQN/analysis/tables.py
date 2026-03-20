@@ -37,55 +37,90 @@ _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
 
 _MODEL_VS_DATA_PANELS = [
     (
+        "Targeted moments",
+        [
+            (
+                "$\\sum_j \\omega_j^{I}\\sigma(I_{jt})$",
+                "sigma_I_avg_invweighted",
+                "sigma_I_avg_invweighted",
+                "sum w^I sigma(I_jt)",
+            ),
+            (
+                "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt},A_{jt})$",
+                "corr_L_TFP_sectoral_avg_vashare",
+                ("correlations", "L_TFP_sectoral_avg_vashare"),
+                "sum w^VA corr(L_jt,A_jt)",
+            ),
+        ],
+    ),
+    (
         "Volatility of aggregates",
         [
-            ("$\\sigma(Y_{\\mathrm{agg}})$", "sigma_VA_agg", "sigma_VA_agg", "σ(Y_agg)"),
-            ("$\\sigma(C_{\\mathrm{agg}})$", "sigma_C_agg", "sigma_C_agg", "σ(C_agg)"),
-            ("$\\sigma(I_{\\mathrm{agg}})$", "sigma_I_agg", "sigma_I_agg", "σ(I_agg)"),
-            ("$\\sigma(L^{hc}_{\\mathrm{agg}})$", "sigma_L_hc_agg", "sigma_L_agg", "σ(L_hc_agg)"),
+            ("$\\sigma(\\mathrm{GDP}_t)$", "sigma_VA_agg", "sigma_VA_agg", "sigma(GDP_t)"),
+            ("$\\sigma(C_t)$", "sigma_C_agg", "sigma_C_agg", "sigma(C_t)"),
+            ("$\\sigma(I_t)$", "sigma_I_agg", "sigma_I_agg", "sigma(I_t)"),
+            ("$\\sigma(L_t)$", "sigma_L_hc_agg", "sigma_L_agg", "sigma(L_t)"),
         ],
     ),
     (
         "Correlation of aggregates",
         [
-            ("$\\mathrm{corr}(L,C)_{\\mathrm{agg}}$", "corr_L_C_agg", ("correlations", "L_C_agg"), "corr(L,C)_agg"),
-            ("$\\mathrm{corr}(I,C)_{\\mathrm{agg}}$", "corr_I_C_agg", ("correlations", "I_C_agg"), "corr(I,C)_agg"),
+            ("$\\mathrm{corr}(C_t,L_t)$", "corr_L_C_agg", ("correlations", "L_C_agg"), "corr(C_t,L_t)"),
+            ("$\\mathrm{corr}(C_t,I_t)$", "corr_I_C_agg", ("correlations", "I_C_agg"), "corr(C_t,I_t)"),
             (
-                "$\\mathrm{corr}(L,A)_{\\mathrm{agg}}$",
+                "$\\mathrm{corr}(L_t,A_t)$",
                 "corr_L_TFP_agg",
                 ("correlations", "L_TFP_agg"),
-                "corr(L,A)_agg",
+                "corr(L_t,A_t)",
             ),
         ],
     ),
     (
         "Sectoral comovement",
         [
-            ("avg corr$(C,C)$", "avg_pairwise_corr_C", "avg_pairwise_corr_C", "avg corr(C,C)"),
-            ("avg corr$(VA,VA)$", "avg_pairwise_corr_VA", "avg_pairwise_corr_VA", "avg corr(VA,VA)"),
-            ("avg corr$(L,L)$", "avg_pairwise_corr_L", "avg_pairwise_corr_L", "avg corr(L,L)"),
-            ("avg corr$(I,I)$", "avg_pairwise_corr_I", "avg_pairwise_corr_I", "avg corr(I,I)"),
-        ],
-    ),
-    (
-        "Average sectoral volatilities",
-        [
-            ("$\\sigma(VA)$ avg", "sigma_VA_avg", "sigma_VA_avg", "σ(VA) avg"),
-            ("$\\sigma(L)$ avg", "sigma_L_avg", "sigma_L_avg", "σ(L) avg"),
-            ("$\\sigma(I)$ avg", "sigma_I_avg", "sigma_I_avg", "σ(I) avg"),
-            ("$\\sigma(L)$ emp-wgt", "sigma_L_avg_empweighted", "sigma_L_avg_empweighted", "σ(L) emp-wgt"),
-            ("$\\sigma(Domar)$ avg", "sigma_Domar_avg", "sigma_Domar_avg", "σ(Domar) avg"),
-        ],
-    ),
-    (
-        "Targeted moments",
-        [
-            ("$\\sigma(I)$ inv-wgt", "sigma_I_avg_invweighted", "sigma_I_avg_invweighted", "σ(I) inv-wgt"),
             (
-                "avg corr$(L,A)$",
-                "corr_L_TFP_sectoral_avg_vashare",
-                ("correlations", "L_TFP_sectoral_avg_vashare"),
-                "avg corr(L,A)",
+                "avg pairwise $\\mathrm{corr}(\\mathbf{C}_t,\\mathbf{C}_t)$",
+                "avg_pairwise_corr_C",
+                "avg_pairwise_corr_C",
+                "avg pairwise corr(C_t,C_t)",
+            ),
+            (
+                "avg pairwise $\\mathrm{corr}(\\mathbf{Y}_t,\\mathbf{Y}_t)$",
+                "avg_pairwise_corr_VA",
+                "avg_pairwise_corr_VA",
+                "avg pairwise corr(Y_t,Y_t)",
+            ),
+            (
+                "avg pairwise $\\mathrm{corr}(\\mathbf{L}_t,\\mathbf{L}_t)$",
+                "avg_pairwise_corr_L",
+                "avg_pairwise_corr_L",
+                "avg pairwise corr(L_t,L_t)",
+            ),
+            (
+                "avg pairwise $\\mathrm{corr}(\\mathbf{I}_t,\\mathbf{I}_t)$",
+                "avg_pairwise_corr_I",
+                "avg_pairwise_corr_I",
+                "avg pairwise corr(I_t,I_t)",
+            ),
+        ],
+    ),
+    (
+        "Sectoral weighted-average volatilities",
+        [
+            ("$\\sum_j \\omega_j^{VA}\\sigma(Y_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(Y_jt)"),
+            ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
+            ("$\\sum_j \\omega_j^{VA}\\sigma(I_{jt})$", "sigma_I_avg", "sigma_I_avg", "sum w^VA sigma(I_jt)"),
+            (
+                "$\\sum_j \\omega_j^{L,emp}\\sigma(L_{jt})$",
+                "sigma_L_avg_empweighted",
+                "sigma_L_avg_empweighted",
+                "sum w^L,emp sigma(L_jt)",
+            ),
+            (
+                "$\\sum_j \\omega_j^{Q,ss}\\sigma(\\mathrm{Domar}_{jt})$",
+                "sigma_Domar_avg",
+                "sigma_Domar_avg",
+                "sum w^Q,ss sigma(Domar_jt)",
             ),
         ],
     ),
@@ -103,10 +138,28 @@ _MODEL_VS_DATA_CONSOLE_LABELS = [
     for _, _, _, console_label in panel_rows
 ]
 
+_MODEL_VS_DATA_METHOD_ORDER = ["1st", "Nonlinear", "Nonlinear-CS"]
+
+_MODEL_VS_DATA_METHOD_HEADERS = {
+    "1st": r"\shortstack{1st Order\\Approx.}",
+    "Nonlinear": r"\shortstack{Global Solution\\(long simul)}",
+    "Nonlinear-CS": r"\shortstack{Global Solution\\(common shocks)}",
+}
+
+_MODEL_VS_DATA_METHOD_CONSOLE_HEADERS = {
+    "1st": "1st Order Approx.",
+    "Nonlinear": "Global Solution (long simul)",
+    "Nonlinear-CS": "Global Solution (common shocks)",
+}
+
 _LOGDEV_PERCENT_NOTE = (
-    r"Except for skewness and kurtosis, reported log-deviation objects are expressed in percent "
-    r"relative to the deterministic steady state, so a value such as $-0.1$ should be read as "
-    r"approximately $0.1$ percent below the deterministic steady state."
+    r"Reported log-difference objects are measured relative to the deterministic steady state; "
+    r"for small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
+)
+
+_DESCRIPTIVE_SHAPE_NOTE = (
+    r"Skewness is positive when the distribution has a longer right tail and negative when it has a longer left tail. "
+    r"Excess kurtosis is reported relative to the Gaussian benchmark, so positive values indicate fatter tails and more extreme events, while negative values indicate thinner tails."
 )
 
 
@@ -327,9 +380,9 @@ def _create_model_vs_data_moments_table(
     empirical_targets: Dict[str, Any],
     method_model_stats: Dict[str, Dict[str, Any]],
 ) -> str:
-    preferred_order = ["1st", "2nd", "PF", "MITShocks", "Nonlinear", "Nonlinear-CS"]
-    method_order = [name for name in preferred_order if name in method_model_stats]
+    method_order = [name for name in _MODEL_VS_DATA_METHOD_ORDER if name in method_model_stats]
     method_order.extend(name for name in method_model_stats if name not in method_order)
+    method_order = [name for name in method_order if name in _MODEL_VS_DATA_METHOD_ORDER]
     n_methods = len(method_order)
     latex_code = (
         r"\begin{table}[H]" + "\n"
@@ -342,15 +395,18 @@ def _create_model_vs_data_moments_table(
         + r"\textbf{Moment}"
     )
     for method_name in method_order:
-        latex_code += f" & \\textbf{{{method_name}}}"
+        latex_code += " & " + _MODEL_VS_DATA_METHOD_HEADERS.get(method_name, method_name)
     latex_code += r" & \textbf{Data} \\" + "\n" + r"\midrule" + "\n"
 
     total_columns = n_methods + 2
     panel_labels = ["Panel A", "Panel B", "Panel C", "Panel D", "Panel E"]
     for panel_index, (panel_title, panel_rows) in enumerate(_MODEL_VS_DATA_PANELS):
         panel_prefix = panel_labels[panel_index] if panel_index < len(panel_labels) else f"Panel {panel_index + 1}"
+        panel_title_display = panel_title
+        if panel_title == "Sectoral weighted-average volatilities":
+            panel_title_display = panel_title + r"$^{a}$"
         latex_code += (
-            rf"\multicolumn{{{total_columns}}}{{l}}{{\textit{{{panel_prefix}. {panel_title}}}}} \\"
+            rf"\multicolumn{{{total_columns}}}{{l}}{{\textit{{{panel_prefix}. {panel_title_display}}}}} \\"
             + "\n"
         )
         for row_label, model_key, data_key, _ in panel_rows:
@@ -366,21 +422,22 @@ def _create_model_vs_data_moments_table(
             latex_code += r"\addlinespace[0.4em]" + "\n"
 
     latex_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
-    nonlinear_note = r" The Nonlinear column uses the long ergodic neural-network simulation."
-    if "Nonlinear-CS" in method_order:
-        nonlinear_note += (
-            r" The Nonlinear-CS column uses the short common-shock neural-network simulation, "
-            r"but aggregates it with the ergodic-price weights from the long run."
-        )
-
     latex_code += (
+        r"\\" + "\n"
+        r"{\footnotesize $^{a}$ Panel E reports sectoral weighted averages."
+        r" Unless otherwise indicated, weights are value-added shares."
+        r" $\omega_j^{L,emp}$ denotes employment shares, and $\omega_j^{Q,ss}=Q_{j,ss}/\sum_i Q_{i,ss}$ denotes steady-state gross-output shares.}" + "\n"
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
-        r"\textit{Notes:} Entries are business-cycle moments. Standard deviations are reported in percent; correlations are unit-free."
-        r" Columns 1st, 2nd, PF, and MITShocks use the MATLAB/Dynare business-cycle objects for sectoral and comovement moments."
+        r"\textit{Notes:} Entries are business-cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
+        r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
+        r" Boldface objects such as $\mathbf{C}_t$ denote the full sectoral vector."
+        r" Comovement refers to the average pairwise correlation across sectors for the corresponding sectoral vector."
         r" Aggregate rows are re-aggregated in Python using fixed ergodic-price weights so the aggregate definition is consistent across methods."
-        + nonlinear_note
+        r" The 1st Order Approx. and Global Solution (common shocks) columns use simulations of 5{,}000 periods."
+        r" The Global Solution (long simul) column uses 16 parallel simulations with 64{,}000 periods each."
+        r" In targeted moments, $\omega_j^{I}$ denotes investment-expenditure weights."
         + r" Data moments come from the empirical targets loaded with the MATLAB objects."
         + "\n"
         r"\end{minipage}" + "\n"
@@ -394,13 +451,13 @@ def _generate_model_vs_data_console_table(
     method_model_stats: Dict[str, Dict[str, Any]],
     analysis_name: Optional[str] = None,
 ) -> str:
-    preferred_order = ["1st", "2nd", "PF", "MITShocks", "Nonlinear", "Nonlinear-CS"]
-    method_order = [name for name in preferred_order if name in method_model_stats]
+    method_order = [name for name in _MODEL_VS_DATA_METHOD_ORDER if name in method_model_stats]
     method_order.extend(name for name in method_model_stats if name not in method_order)
+    method_order = [name for name in method_order if name in _MODEL_VS_DATA_METHOD_ORDER]
     method_col_width = max(
         11,
         len("Data"),
-        *(len(method_name) for method_name in method_order),
+        *(len(_MODEL_VS_DATA_METHOD_CONSOLE_HEADERS.get(method_name, method_name)) for method_name in method_order),
     )
     row_label_width = max(
         22,
@@ -417,7 +474,8 @@ def _generate_model_vs_data_console_table(
 
     header = f"{'Moment':<{row_label_width}}"
     for method_name in method_order:
-        header += f"{method_name:>{method_col_width}}"
+        display_name = _MODEL_VS_DATA_METHOD_CONSOLE_HEADERS.get(method_name, method_name)
+        header += f"{display_name:>{method_col_width}}"
     header += f"{'Data':>{method_col_width}}"
     output.append(header)
     output.append("-" * len(header))
@@ -700,9 +758,10 @@ def _generate_single_method_latex_table(
         caption="Descriptive statistics",
         label="tab:descriptive_statistics",
         note_text=(
-            r"Mean and standard deviation are reported in percent relative to the deterministic steady state; "
+            r"Mean and standard deviation are reported for log differences from the deterministic steady state; "
             + _LOGDEV_PERCENT_NOTE
-            + r" Skewness and excess kurtosis are unit-free and are computed from the same simulation sample."
+            + r" Skewness and excess kurtosis are unit-free, and kurtosis is reported as excess kurtosis. "
+            + _DESCRIPTIVE_SHAPE_NOTE
         ),
     )
 
@@ -745,9 +804,12 @@ def _generate_variable_organized_latex_table(
         note_text=(
             r"For each variable, rows compare the reported simulation methods."
             + _nonlinear_method_note(method_names)
-            + r" Mean and standard deviation are reported in percent relative to the deterministic steady state; "
+            + r" Mean and standard deviation are reported for log differences from the deterministic steady state; "
             + _LOGDEV_PERCENT_NOTE
-            + r" Skewness and excess kurtosis are unit-free."
+            + r" Skewness and excess kurtosis are unit-free, and kurtosis is reported as excess kurtosis. "
+            + _DESCRIPTIVE_SHAPE_NOTE
+            + r" The Log-Linear and Global Solution (Common Shocks) rows use simulation samples of 5{,}000 periods."
+            + r" The Global Solution (Long Simulation) row uses 16 parallel simulations with 64{,}000 periods each."
             r" For nonlinear methods the moments are computed from the Python simulation sample; for benchmark methods they use the simulation blocks loaded from \texttt{ModelData\_simulation.mat} when those blocks are available."
         ),
     )
@@ -948,9 +1010,9 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
         caption="Welfare cost of business cycles",
         label="tab:welfare_costs",
         note_text=(
-            r"$V_c$ is the consumption-equivalent welfare cost of business cycles."
+            r"$V_c$ is the consumption-equivalent amount of consumption agents would be willing to give up in order to eliminate shocks and remain forever at the deterministic steady state."
             + _nonlinear_method_note(method_names)
-            + r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would need 1\% higher steady-state consumption to be compensated."
+            + r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would give up 1\% of consumption to remove business-cycle risk."
         ),
     )
 
@@ -1074,9 +1136,9 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
         caption="Aggregate stochastic steady state",
         label="tab:stochastic_ss",
         note_text=(
-            r"Entries report stochastic steady-state values in percent relative to the deterministic steady state."
-            r" The stochastic steady state is the no-further-shock limit reached from the ergodic distribution."
-            r" Most variables are log-deviation objects, so a value such as $-0.1$ should be read as approximately $0.1$ percent below the deterministic steady state."
+            r"Entries report stochastic steady-state values as log differences from the deterministic steady state."
+            r" The stochastic steady state is computed by taking draws from the ergodic distribution, simulating forward with zero shocks, and taking the point to which those paths converge irrespective of the initial draw; this convergence condition is checked."
+            r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
         ),
     )
 
@@ -1144,10 +1206,10 @@ def create_stochastic_ss_aggregates_table(
         caption="Aggregate stochastic steady state",
         label="tab:stochastic_ss_aggregates",
         note_text=(
-            r"Entries report aggregate stochastic steady-state values for consumption, investment, GDP, labor, and capital in percent relative to the deterministic steady state."
+            r"Entries report aggregate stochastic steady-state values for consumption, investment, GDP, labor, and capital as log differences from the deterministic steady state."
             + _nonlinear_method_note(method_names)
-            + r" The stochastic steady state is the no-further-shock limit reached from the ergodic distribution."
-            + r" A value such as $-0.1$ should be read as approximately $0.1$ percent below the deterministic steady state."
+            + r" The stochastic steady state is computed by taking draws from the ergodic distribution, simulating forward with zero shocks, and taking the point to which those paths converge irrespective of the initial draw; this convergence condition is checked."
+            + r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
         ),
     )
 

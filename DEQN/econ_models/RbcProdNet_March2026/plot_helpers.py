@@ -65,13 +65,13 @@ def _format_number_list(values: list[int]) -> str:
 
 def _describe_response_source(response_source: str) -> str:
     if response_source == "GIR":
-        return "The DEQN line reports the generalized impulse response averaged over ergodic draws."
+        return "The solid DEQN line reports the generalized impulse response averaged over ergodic draws."
     if response_source == "both":
         return (
-            "The DEQN lines report both the generalized impulse response averaged over ergodic draws "
+            "The solid DEQN lines report both the generalized impulse response averaged over ergodic draws "
             "and the impulse response computed from the stochastic steady state."
         )
-    return "The DEQN line reports the impulse response computed from the stochastic steady state."
+    return "The solid DEQN line reports the impulse response computed from the stochastic steady state."
 
 
 def _describe_benchmark_method(benchmark_method: str) -> str:
@@ -123,9 +123,12 @@ def _build_ir_note(
             else f"The figure compares positive and negative TFP shocks to {sector_label}."
         )
 
+    anchor_text = (
+        "Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
+        "while global-solution IRs start from and return to the stochastic steady state."
+    )
     axis_text = (
-        "The horizontal axis reports periods after impact. The vertical axis reports percent deviations from "
-        "the deterministic steady state."
+        "The horizontal axis reports periods after impact. The vertical axis reports impulse responses in percent."
     )
     if variable_to_plot == "gammaij_client":
         axis_text = (
@@ -143,13 +146,13 @@ def _build_ir_note(
         )
     elif "_client" in variable_to_plot:
         benchmark_text += (
-            " Variables with the suffix 'client' refer to the main client sector of the shocked sector in the "
+            " Variables with the suffix 'client' refer to the petroleum client sector of the shocked sector in the "
             "input-output network."
         )
     else:
         benchmark_text += " Un-suffixed sectoral variables refer to the shocked sector itself."
 
-    return " ".join([layout_text, axis_text, _describe_response_source(response_source), benchmark_text])
+    return " ".join([layout_text, anchor_text, axis_text, _describe_response_source(response_source), benchmark_text])
 
 
 def _build_sectoral_distribution_note(
@@ -166,8 +169,9 @@ def _build_sectoral_distribution_note(
     )
     if source_kind == "stochss":
         source_text = (
-            "The figure reports the stochastic steady state computed from the long ergodic simulation, that is, "
-            "the no-further-shock limit reached from the ergodic distribution."
+            "The figure reports the stochastic steady state computed by taking draws from the ergodic distribution, "
+            "simulating forward with zero shocks, and taking the common limit to which those paths converge; "
+            "convergence to the same point across initial draws is checked."
         )
     else:
         source_text = (
@@ -183,9 +187,9 @@ def _build_sectoral_distribution_note(
 
     return (
         f"{source_text} {comparison_text} The horizontal axis lists sectors sorted by the first displayed "
-        f"experiment from highest to lowest {variable_title.lower()}. The vertical axis reports percent deviations "
-        "from the deterministic steady state, so a value of -0.1 should be read as roughly 0.1 percent below the "
-        f"deterministic steady state.{upstreamness_text}"
+        f"experiment from highest to lowest {variable_title.lower()}. The vertical axis reports log differences "
+        "from the deterministic steady state; for small changes, a value of -0.1 means roughly 0.1 percent below "
+        f"the deterministic steady state.{upstreamness_text}"
     )
 
 

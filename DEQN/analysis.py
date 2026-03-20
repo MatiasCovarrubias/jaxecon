@@ -94,11 +94,8 @@ from DEQN.analysis.stochastic_ss import (  # noqa: E402
 )
 from DEQN.analysis.tables import (  # noqa: E402
     create_calibration_table,
-    create_comparative_stats_table,
     create_descriptive_stats_table,
-    create_ergodic_aggregate_stats_table,
     create_stochastic_ss_aggregates_table,
-    create_stochastic_ss_table,
     create_welfare_table,
 )
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
@@ -189,11 +186,14 @@ config = {
     # Aggregate reporting controls
     "aggregate_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
     "descriptive_stats_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
+    # Methods shown in the model-vs-data table. Aliases supported:
+    # "FirstOrder"/"Log-Linear" -> "1st", "NonlinearCS" -> "Nonlinear-CS".
+    "model_vs_data_methods_to_include": ["1st", "Nonlinear", "Nonlinear-CS"],
     # Benchmark methods included in ergodic exercises (descriptive table, aggregate stats, histograms).
     # Nonlinear experiment methods are always included when always_include_nonlinear_methods=True.
     # Canonical names: "Log-Linear", "SecondOrder", "PerfectForesight", "MITShocks".
     # Alias supported: "FirstOrder" -> "Log-Linear".
-    "ergodic_methods_to_include": [],
+    "ergodic_methods_to_include": ["SecondOrder", "PerfectForesight", "MITShocks"],
     "always_include_nonlinear_methods": True,
     # Methods included in stochastic-SS aggregate table.
     # Use None to include all analyzed experiments.
@@ -300,6 +300,17 @@ def _caption_label(label):
     return label if str(label).isupper() else str(label).lower()
 
 
+def _format_percent_list(values):
+    values = [str(int(value)) for value in values if value is not None]
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return ", ".join(values[:-1]) + f", and {values[-1]}"
+
+
 def _existing_subfigures(figure_specs):
     return [figure_spec for figure_spec in figure_specs if os.path.exists(figure_spec["path"])]
 
@@ -397,7 +408,10 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                     "caption": f"Aggregate consumption response to a TFP shock in {sector_label}.",
                     "note_path": _figure_note_path(consumption_specs[0]["path"]),
                     "note_text": (
-                        "Rows report the 10, 20, and 30 percent shocks; columns report negative and positive shocks."
+                        f"Each row corresponds to a {_format_percent_list(ir_shock_sizes)} percent TFP shock in "
+                        f"{sector_label}; the left column shows negative shocks and the right column positive shocks. "
+                        "Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
+                        "while global-solution IRs start from and return to the stochastic steady state."
                     ),
                     "subfigures": consumption_specs,
                 }
@@ -409,15 +423,14 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                         f"Aggregate {_join_labels([_caption_label(subfigure['caption']) for subfigure in subfigures])} "
                         f"responses to a TFP shock in {sector_label}."
                     ),
-                    "note_builder": lambda subfigures,
-                    sector_label=sector_label,
-                    largest_ir_shock=largest_ir_shock,
-                    aggregate_benchmark_label=aggregate_benchmark_label: (
+                    "note_builder": lambda subfigures, sector_label=sector_label, largest_ir_shock=largest_ir_shock, aggregate_benchmark_label=aggregate_benchmark_label: (
                         f"The panels plot the responses of aggregate "
                         f"{_join_labels([subfigure.get('note_label', _caption_label(subfigure['caption'])) for subfigure in subfigures])} "
                         f"to a negative {largest_ir_shock} percent TFP shock in {sector_label}. "
+                        f"Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
+                        f"while global-solution IRs start from and return to the stochastic steady state. "
                         f"The horizontal axis reports periods after impact. "
-                        f"The vertical axis reports percent deviations from the deterministic steady state. "
+                        f"The vertical axis reports impulse responses in percent. "
                         f"Solid lines report the DEQN stochastic-steady-state impulse response and dashed lines report the "
                         f"{aggregate_benchmark_label}; both are aggregated with fixed ergodic-price weights."
                     ),
@@ -527,14 +540,20 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
 
             if subfigures:
                 shock_text = (
-                    f"Responses are to a negative {largest_sectoral_shock} percent TFP shock."
+                    f"The panels plot responses to a negative {largest_sectoral_shock} percent TFP shock in {sector_label}."
                     if largest_sectoral_shock
-                    else "Responses are to the sectoral TFP shock used in the analysis."
+                    else f"The panels plot responses to the sectoral TFP shock used in the analysis for {sector_label}."
                 )
                 sectoral_ir_groups.append(
                     {
                         "caption": f"{group_title} for {sector_label}.",
-                        "note_text": f"Follows the MATLAB grouping. {shock_text}",
+                        "note_text": (
+                            f"Follows the MATLAB grouping. {shock_text} "
+                            "Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
+                            "while global-solution IRs start from and return to the stochastic steady state. "
+                            "The horizontal axis reports periods after impact. "
+                            "The vertical axis reports impulse responses in percent."
+                        ),
                         "subfigures": subfigures,
                     }
                 )
@@ -709,9 +728,7 @@ def _resolve_data_file(model_dir, configured_name, fallback_names, *, label, req
             return filename, path
 
     if required:
-        raise FileNotFoundError(
-            f"{label} file not found in {model_dir}. Tried: {candidate_names}"
-        )
+        raise FileNotFoundError(f"{label} file not found in {model_dir}. Tried: {candidate_names}")
 
     if configured_name is not None:
         print(f"  ⚠ {label} file not found. Tried: {candidate_names} (skipping)")
@@ -1538,9 +1555,7 @@ def main():
     )
     if not display_stochss_methods_to_include:
         ergodic_display_labels = _apply_display_labels_to_sequence(
-            display_postprocess_context.get("ergodic_experiment_labels")
-            if display_postprocess_context
-            else None,
+            display_postprocess_context.get("ergodic_experiment_labels") if display_postprocess_context else None,
             {},
         )
         display_stochss_methods_to_include = cast("list[str] | None", ergodic_display_labels)
@@ -1632,7 +1647,11 @@ def main():
     print("\n" + "═" * 72)
     print("  SECTORAL VARIABLES IN STOCHASTIC SS")
     print("═" * 72, flush=True)
-    if analysis_hooks is not None and hasattr(analysis_hooks, "render_sectoral_stochss_outputs") and postprocess_context:
+    if (
+        analysis_hooks is not None
+        and hasattr(analysis_hooks, "render_sectoral_stochss_outputs")
+        and postprocess_context
+    ):
         analysis_hooks.render_sectoral_stochss_outputs(
             config=config,
             simulation_dir=simulation_dir,
@@ -1745,7 +1764,11 @@ def main():
             postprocess_context=display_postprocess_context,
         )
 
-    if analysis_hooks is not None and hasattr(analysis_hooks, "render_ergodic_sectoral_outputs") and postprocess_context:
+    if (
+        analysis_hooks is not None
+        and hasattr(analysis_hooks, "render_ergodic_sectoral_outputs")
+        and postprocess_context
+    ):
         analysis_hooks.render_ergodic_sectoral_outputs(
             config=config,
             simulation_dir=simulation_dir,

@@ -195,7 +195,7 @@ def process_simulation_with_consistent_aggregation(
         policies_logdev=policy_logdev,
         policies_ss=policies_ss,
         state_ss=state_ss,
-        log_policy_count=11 * n + 7,
+        log_policy_count=11 * n + 8,
         utility_intratemp_idx=11 * n + 7,
         P_weights=jnp.log(P_ergodic) - policies_ss[8 * n : 9 * n],
         Pk_weights=jnp.log(Pk_ergodic) - policies_ss[2 * n : 3 * n],

@@ -58,7 +58,7 @@ class Model:
         self.i_agg_idx = 11 * n + 5
         self.k_agg_idx = 11 * n + 6
         self.utility_intratemp_idx = 11 * n + 7
-        self.log_policy_count = self.utility_intratemp_idx
+        self.log_policy_count = self.utility_intratemp_idx + 1
         self.labels = [
             "Mining, Oil and Gas",
             "Utilities",
@@ -107,7 +107,7 @@ class Model:
         self.gdp_agg_ss = jnp.exp(self.policies_ss[self.gdp_agg_idx])
         self.i_agg_ss = jnp.exp(self.policies_ss[self.i_agg_idx])
         self.k_agg_ss = jnp.exp(self.policies_ss[self.k_agg_idx])
-        self.utility_intratemp_ss = self.policies_ss[self.utility_intratemp_idx]
+        self.utility_intratemp_ss = jnp.exp(self.policies_ss[self.utility_intratemp_idx])
         self.utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
             self.c_util_ss
             - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.l_util_ss ** (1 + self.eps_l ** (-1))
@@ -227,7 +227,7 @@ class Model:
         gdp_agg = policy_levels[self.gdp_agg_idx]
         i_agg = policy_levels[self.i_agg_idx]
         k_agg = policy_levels[self.k_agg_idx]
-        utility_intratemp = policy_notnorm[self.utility_intratemp_idx]
+        utility_intratemp = policy_levels[self.utility_intratemp_idx]
 
         # get steady state prices to aggregate Y, I and M
         Pss = jnp.exp(self.policies_ss[8 * self.n_sectors : 9 * self.n_sectors])
@@ -292,7 +292,7 @@ class Model:
         gdp_agg_loss = jnp.array([gdp_agg / gdp_agg_def - 1])
         i_agg_loss = jnp.array([i_agg / i_agg_def - 1])
         k_agg_loss = jnp.array([k_agg / k_agg_def - 1])
-        utility_intratemp_loss = jnp.array([utility_intratemp - utility_intratemp_def])
+        utility_intratemp_loss = jnp.array([utility_intratemp / utility_intratemp_def - 1])
 
         losses_array = jnp.concatenate(
             [

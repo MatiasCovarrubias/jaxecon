@@ -109,8 +109,7 @@ class Model:
         self.k_agg_ss = jnp.exp(self.policies_ss[self.k_agg_idx])
         self.utility_intratemp_ss = jnp.exp(self.policies_ss[self.utility_intratemp_idx])
         self.utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
-            self.c_util_ss
-            - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.l_util_ss ** (1 + self.eps_l ** (-1))
+            self.c_util_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.l_util_ss ** (1 + self.eps_l ** (-1))
         ) ** (1 - self.eps_c ** (-1))
 
     def marginal_utility(self, Cagg, Lagg):
@@ -292,7 +291,7 @@ class Model:
         gdp_agg_loss = jnp.array([gdp_agg / gdp_agg_def - 1])
         i_agg_loss = jnp.array([i_agg / i_agg_def - 1])
         k_agg_loss = jnp.array([k_agg / k_agg_def - 1])
-        utility_intratemp_loss = jnp.array([utility_intratemp - utility_intratemp_def])
+        utility_intratemp_loss = jnp.array([utility_intratemp / utility_intratemp_def - 1])
 
         losses_array = jnp.concatenate(
             [

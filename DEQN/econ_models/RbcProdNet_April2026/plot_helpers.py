@@ -185,8 +185,8 @@ def _build_ir_note(
     )
     if is_aggregate:
         benchmark_text += (
-            " For aggregate consumption, investment, labor, GDP, and capital, the benchmark is re-aggregated with fixed "
-            "ergodic prices so that the aggregate definition matches the nonlinear solution."
+            " For aggregate consumption, investment, GDP, capital, labor, and intratemporal utility, the benchmark is "
+            "re-aggregated with fixed ergodic prices so that the aggregate definition matches the nonlinear solution."
         )
     elif "_client" in variable_to_plot:
         benchmark_text += (
@@ -276,8 +276,7 @@ def plot_ergodic_histograms(
     n_experiments = len(experiment_names)
 
     # Extract variable labels that exist in ALL experiments
-    # Skip Utility - Dynare simulations don't have this variable
-    excluded_vars = ["Utility"]
+    excluded_vars = []
     first_exp = experiment_names[0]
     candidate_vars = [v for v in analysis_variables_data[first_exp].keys() if v not in excluded_vars]
 
@@ -995,6 +994,7 @@ def plot_sector_ir_by_shock_size(
     P_ergodic: Optional[np.ndarray] = None,
     Pk_ergodic: Optional[np.ndarray] = None,
     state_ss: Optional[np.ndarray] = None,
+    ergodic_price_aggregation: bool = False,
 ):
     """
     Create a figure with one row per shock size and two columns (negative / positive shock).
@@ -1056,7 +1056,7 @@ def plot_sector_ir_by_shock_size(
     --------
     fig, axes : matplotlib figure and axes array
     """
-    from DEQN.econ_models.RbcProdNet_March2026.matlab_irs import (
+    from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import (
         get_matlab_ir_fixedprice,
         get_matlab_ir_for_analysis_variable,
     )
@@ -1126,7 +1126,7 @@ def plot_sector_ir_by_shock_size(
         neg_stochss_key = f"neg_{shock_size}_stochss"
 
         skip_initial_matlab = variable_to_plot != "Kj"
-        if policies_ss is not None and P_ergodic is not None:
+        if ergodic_price_aggregation and policies_ss is not None and P_ergodic is not None:
             matlab_irs = get_matlab_ir_fixedprice(
                 matlab_ir_data,
                 sector_idx,
@@ -1431,7 +1431,7 @@ def plot_sector_ir_by_shock_size(
                 benchmark_method=benchmark_method,
                 response_source=response_source,
                 negative_only=negative_only,
-                is_aggregate=variable_to_plot.startswith("Agg."),
+                is_aggregate=variable_to_plot.startswith("Agg.") or variable_to_plot == "Intratemporal Utility",
             ),
         )
         print(f"      Saved: {filename}")
@@ -2006,12 +2006,11 @@ def plot_gir_heatmap(
     aggregate_idx: int = 0,
     aggregate_labels: list = [
         "Agg. Consumption",
-        "Agg. Labor",
-        "Agg. Capital",
-        "Agg. Output",
-        "Agg. Intermediate Goods",
         "Agg. Investment",
-        "Utility Welfare",
+        "Agg. GDP",
+        "Agg. Capital",
+        "Agg. Labor",
+        "Intratemporal Utility",
     ],
     time_slice: int = 10,
     figsize: Tuple[float, float] = (14, 10),
@@ -2093,7 +2092,7 @@ def plot_gir_heatmap(
     # Save if path provided
     if save_path:
         # Modify filename to include analysis name if provided
-        var_names = ["C_agg", "L_agg", "K_agg", "Y_agg", "M_agg", "I_agg", "Utility_welfare"]
+        var_names = ["C_agg", "I_agg", "GDP_agg", "K_agg", "L_agg", "utility_intratemp"]
         if analysis_name:
             base_filename = os.path.basename(save_path)
             ext = os.path.splitext(base_filename)[1] or ".png"

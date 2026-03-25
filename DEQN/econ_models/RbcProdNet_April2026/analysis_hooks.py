@@ -4,19 +4,31 @@ from typing import Any, Dict
 import jax.numpy as jnp
 import numpy as np
 
-from DEQN.econ_models.RbcProdNet_March2026.aggregation import (
+from DEQN.econ_models.RbcProdNet_April2026.aggregation import (
     compute_ergodic_prices_from_simulation,
-    compute_ergodic_steady_state,
     compute_model_moments_with_consistent_aggregation,
     process_simulation_with_consistent_aggregation,
-    recenter_analysis_variables,
+    reaggregate_aggregates,
 )
-from DEQN.econ_models.RbcProdNet_March2026.matlab_irs import load_matlab_irs
-from DEQN.econ_models.RbcProdNet_March2026.plots import (
+from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import load_matlab_irs
+from DEQN.econ_models.RbcProdNet_April2026.plots import (
     plot_sector_ir_by_shock_size,
     plot_sectoral_variable_ergodic,
     plot_sectoral_variable_stochss,
 )
+
+DEFAULT_ANALYSIS_CONFIG = {
+    "ergodic_price_aggregation": False,
+}
+
+DEFAULT_AGGREGATE_IR_LABELS = [
+    "Agg. Consumption",
+    "Agg. Investment",
+    "Agg. GDP",
+    "Agg. Capital",
+    "Agg. Labor",
+    "Intratemporal Utility",
+]
 
 CORE_SECTORAL_IR_LABELS = [
     "Cj",
@@ -101,31 +113,39 @@ SECTORAL_VAR_DESC = {
 
 
 def prepare_analysis_context(econ_model, simul_obs, simul_policies, config) -> Dict[str, Any]:
-    del simul_obs, config
+    del simul_obs
     n = econ_model.n_sectors
-    P_ergodic, Pk_ergodic, Pm_ergodic = compute_ergodic_prices_from_simulation(
-        simul_policies,
-        econ_model.policies_ss,
-        n,
-    )
     P_ss = jnp.exp(econ_model.policies_ss[8 * n : 9 * n])
     Pk_ss = jnp.exp(econ_model.policies_ss[2 * n : 3 * n])
-    Pm_ss = jnp.exp(econ_model.policies_ss[3 * n : 4 * n])
+    use_ergodic_prices = bool(config.get("ergodic_price_aggregation", False))
+    if use_ergodic_prices:
+        P_ergodic, Pk_ergodic, _ = compute_ergodic_prices_from_simulation(
+            simul_policies,
+            econ_model.policies_ss,
+            n,
+        )
+    else:
+        P_ergodic, Pk_ergodic = P_ss, Pk_ss
     return {
         "P_weights": jnp.log(P_ergodic) - jnp.log(P_ss),
         "Pk_weights": jnp.log(Pk_ergodic) - jnp.log(Pk_ss),
-        "Pm_weights": jnp.log(Pm_ergodic) - jnp.log(Pm_ss),
+        "ergodic_price_aggregation": use_ergodic_prices,
     }
 
 
 def compute_analysis_variables(econ_model, state_logdev, policy_logdev, analysis_context) -> Dict[str, Any]:
-    return econ_model.get_analysis_variables(
-        state_logdev,
-        policy_logdev,
-        analysis_context["P_weights"],
-        analysis_context["Pk_weights"],
-        analysis_context["Pm_weights"],
-    )
+    if analysis_context["ergodic_price_aggregation"]:
+        return reaggregate_aggregates(
+            state_logdev=state_logdev,
+            policies_logdev=policy_logdev,
+            policies_ss=econ_model.policies_ss,
+            state_ss=econ_model.state_ss,
+            log_policy_count=econ_model.log_policy_count,
+            utility_intratemp_idx=econ_model.utility_intratemp_idx,
+            P_weights=analysis_context["P_weights"],
+            Pk_weights=analysis_context["Pk_weights"],
+        )
+    return econ_model.get_aggregates(policy_logdev)
 
 
 def get_states_to_shock(config, econ_model) -> list[int]:
@@ -247,7 +267,7 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
     )
 
     sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
-    ir_variables = config.get("ir_variables_to_plot", ["Agg. Consumption"])
+    ir_variables = config.get("ir_variables_to_plot", DEFAULT_AGGREGATE_IR_LABELS)
     if isinstance(ir_variables, str):
         ir_variables = [ir_variables]
 
@@ -281,6 +301,7 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
         "state_ss_np": np.asarray(state_ss),
         "P_ergodic_np": np.asarray(P_ergodic),
         "Pk_ergodic_np": np.asarray(Pk_ergodic),
+        "ergodic_price_aggregation": bool(config.get("ergodic_price_aggregation", False)),
         "n_sectors": n_sectors,
     }
 
@@ -310,31 +331,22 @@ def prepare_postprocess_analysis(
     n_sectors = econ_model.n_sectors
     analysis_variables_data = dict(analysis_variables_data)
     theoretical_stats: Dict[str, Any] = {}
+    use_ergodic_prices = bool(config.get("ergodic_price_aggregation", False))
 
     reference_experiment_label = _resolve_reference_experiment_label(config, raw_simulation_data)
-    print(
-        f"  Using '{reference_experiment_label}' as the fixed-price aggregation reference.",
-        flush=True,
-    )
     reference_sim_data = raw_simulation_data[reference_experiment_label]
     simul_policies = reference_sim_data.get("simul_policies_full", reference_sim_data["simul_policies"])
-
-    P_ergodic, Pk_ergodic, Pm_ergodic = compute_ergodic_prices_from_simulation(simul_policies, policies_ss, n_sectors)
-
-    ss_corrections = compute_ergodic_steady_state(
-        policies_ss=policies_ss,
-        state_ss=state_ss,
-        P_ergodic=P_ergodic,
-        Pk_ergodic=Pk_ergodic,
-        Pm_ergodic=Pm_ergodic,
-        n_sectors=n_sectors,
-    )
-
-    for exp_label in list(analysis_variables_data.keys()):
-        analysis_variables_data[exp_label] = recenter_analysis_variables(
-            analysis_variables_data[exp_label],
-            ss_corrections,
+    P_ss = jnp.exp(policies_ss[8 * n_sectors : 9 * n_sectors])
+    Pk_ss = jnp.exp(policies_ss[2 * n_sectors : 3 * n_sectors])
+    if use_ergodic_prices:
+        print(
+            f"  Using '{reference_experiment_label}' as the ergodic-price aggregation reference.",
+            flush=True,
         )
+        P_ergodic, Pk_ergodic, _ = compute_ergodic_prices_from_simulation(simul_policies, policies_ss, n_sectors)
+    else:
+        print("  Using model-implied aggregate policy variables (no ergodic-price reaggregation).", flush=True)
+        P_ergodic, Pk_ergodic = P_ss, Pk_ss
 
     dynare_simul_1storder = dynare_simulations.get("FirstOrder")
     dynare_simul_so = dynare_simulations.get("SecondOrder")
@@ -348,8 +360,8 @@ def prepare_postprocess_analysis(
             state_ss=state_ss,
             P_ergodic=P_ergodic,
             Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
+            ergodic_price_aggregation=use_ergodic_prices,
             burn_in=0,
             source_label="First-Order (Dynare)",
         )
@@ -368,8 +380,8 @@ def prepare_postprocess_analysis(
             state_ss=state_ss,
             P_ergodic=P_ergodic,
             Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
+            ergodic_price_aggregation=use_ergodic_prices,
             burn_in=0,
             source_label="Second-Order",
         )
@@ -394,12 +406,9 @@ def prepare_postprocess_analysis(
             elif "policies_std" in pf_stats:
                 policies_std = pf_stats["policies_std"]
                 n = n_sectors
-                if len(policies_std) > 11 * n + 1:
-                    print(f"    Agg. Consumption (utility): sigma={float(policies_std[11*n])*100:.4f}%", flush=True)
-                    print(
-                        f"    Agg. Labor (CES fallback): sigma={float(policies_std[11*n+1])*100:.4f}%",
-                        flush=True,
-                    )
+                if len(policies_std) > 11 * n + 6:
+                    print(f"    Agg. Consumption: sigma={float(policies_std[11*n+2])*100:.4f}%", flush=True)
+                    print(f"    Agg. Labor: sigma={float(policies_std[11*n+3])*100:.4f}%", flush=True)
         else:
             print("  Perfect Foresight moments will use Perfect Foresight (Dynare) simulation series.")
 
@@ -410,8 +419,8 @@ def prepare_postprocess_analysis(
             state_ss=state_ss,
             P_ergodic=P_ergodic,
             Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
+            ergodic_price_aggregation=use_ergodic_prices,
             burn_in=0,
             source_label="Perfect Foresight",
         )
@@ -424,8 +433,8 @@ def prepare_postprocess_analysis(
             state_ss=state_ss,
             P_ergodic=P_ergodic,
             Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
+            ergodic_price_aggregation=use_ergodic_prices,
             burn_in=0,
             source_label="MITShocks",
         )
@@ -441,8 +450,8 @@ def prepare_postprocess_analysis(
         state_ss=state_ss,
         P_ergodic=P_ergodic,
         Pk_ergodic=Pk_ergodic,
-        Pm_ergodic=Pm_ergodic,
         n_sectors=n_sectors,
+        ergodic_price_aggregation=use_ergodic_prices,
     )
 
     upstreamness_data = econ_model.upstreamness()
@@ -509,6 +518,7 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 state_ss=ir_render_context["state_ss_np"],
                 P_ergodic=ir_render_context["P_ergodic_np"],
                 Pk_ergodic=ir_render_context["Pk_ergodic_np"],
+                ergodic_price_aggregation=ir_render_context["ergodic_price_aggregation"],
             )
 
 
@@ -716,8 +726,8 @@ def _build_calibration_method_stats(
     state_ss,
     P_ergodic,
     Pk_ergodic,
-    Pm_ergodic,
     n_sectors,
+    ergodic_price_aggregation,
 ):
     method_stats = {
         "1st": _copy_model_stats((stats.get("FirstOrder") or {}).get("ModelStats")),
@@ -746,8 +756,8 @@ def _build_calibration_method_stats(
         state_ss=state_ss,
         P_ergodic=P_ergodic,
         Pk_ergodic=Pk_ergodic,
-        Pm_ergodic=Pm_ergodic,
         n_sectors=n_sectors,
+        ergodic_price_aggregation=ergodic_price_aggregation,
     )
 
     if reference_experiment_label.endswith(" (ergodic)"):
@@ -763,8 +773,8 @@ def _build_calibration_method_stats(
             state_ss=state_ss,
             P_ergodic=P_ergodic,
             Pk_ergodic=Pk_ergodic,
-            Pm_ergodic=Pm_ergodic,
             n_sectors=n_sectors,
+            ergodic_price_aggregation=ergodic_price_aggregation,
         )
 
     return {label: stats_dict for label, stats_dict in method_stats.items() if stats_dict is not None}

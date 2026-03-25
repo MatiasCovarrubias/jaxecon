@@ -93,29 +93,11 @@ _MODEL_VS_DATA_PANELS = [
             ("$\\sum_j \\omega_j^{VA}\\sigma(Y_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(Y_jt)"),
             ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
             ("$\\sum_j \\omega_j^{VA}\\sigma(I_{jt})$", "sigma_I_avg", "sigma_I_avg", "sum w^VA sigma(I_jt)"),
-            (
-                "$\\sum_j \\omega_j^{L,emp}\\sigma(L_{jt})$",
-                "sigma_L_avg_empweighted",
-                "sigma_L_avg_empweighted",
-                "sum w^L,emp sigma(L_jt)",
-            ),
-            (
-                "$\\sum_j \\omega_j^{Q,ss}\\sigma(\\mathrm{Domar}_{jt})$",
-                "sigma_Domar_avg",
-                "sigma_Domar_avg",
-                "sum w^Q,ss sigma(Domar_jt)",
-            ),
         ],
     ),
     (
         "Targeted moments",
         [
-            (
-                "$\\sum_j \\omega_j^{I}\\sigma(I_{jt})$",
-                "sigma_I_avg_invweighted",
-                "sigma_I_avg_invweighted",
-                "sum w^I sigma(I_jt)",
-            ),
             (
                 "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt},A_{jt})$",
                 "corr_L_TFP_sectoral_avg_vashare",
@@ -394,7 +376,7 @@ def _create_model_vs_data_moments_table(
     latex_code = (
         r"\begin{table}[H]" + "\n"
         r"\centering" + "\n"
-        r"\caption{Model vs. data business-cycle moments}" + "\n"
+        r"\caption{Model vs. data business cycle moments}" + "\n"
         r"\label{tab:model_vs_data_moments}"
         + "\n"
         + f"\\begin{{tabular}}{{l *{{{n_methods + 1}}}{{r}}}}\n"
@@ -433,22 +415,19 @@ def _create_model_vs_data_moments_table(
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
-        r"$^{a}$ Panel E reports sectoral weighted averages."
-        r" Unless otherwise indicated, weights are value-added shares."
-        r" $\omega_j^{L,emp}$ denotes employment shares, and $\omega_j^{Q,ss}=Q_{j,ss}/\sum_i Q_{i,ss}$ denotes steady-state gross-output shares."
+        r"$^{a}$ Panel E reports sectoral weighted averages using value-added shares."
         + "\n"
         r"\end{minipage}" + "\n"
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
-        r"\textit{Notes:} Entries are business-cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
+        r"\textit{Notes:} Entries are business cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
         r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
         r" Boldface objects such as $\mathbf{C}_t$ denote the full sectoral vector."
         r" Comovement means the correlation between sectors in a specific variable; the reported rows summarize those sector-to-sector correlations by their average."
         r" Aggregate rows are re-aggregated in Python using fixed ergodic-price weights so the aggregate definition is consistent across methods."
         r" The 1st Order Approx. and Global Solution (common shocks) columns use simulations of 5{,}000 periods."
         r" The Global Solution (long simul) column uses 16 parallel simulations with 64{,}000 periods each."
-        r" In targeted moments, $\omega_j^{I}$ denotes investment-expenditure weights."
         + r" Data moments come from the empirical targets used in the calibration."
         + "\n"
         r"\end{minipage}" + "\n"
@@ -1019,7 +998,7 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
         note_text=(
             r"$V_c$ is the consumption-equivalent amount of consumption agents would be willing to give up in order to eliminate shocks and remain forever at the deterministic steady state."
             + _nonlinear_method_note(method_names)
-            + r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would give up 1\% of consumption to remove business-cycle risk."
+            + r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would give up 1\% of consumption to remove business cycle risk."
         ),
     )
 
@@ -1070,13 +1049,14 @@ _STOCHSS_AGGREGATE_ORDER = [
     ("Agg. Consumption", "C"),
     ("Agg. Investment", "I"),
     ("Agg. GDP", "GDP"),
-    ("Agg. Labor", "L"),
     ("Agg. Capital", "K"),
+    ("Agg. Labor", "L"),
+    ("Intratemporal Utility", "Intratemporal Utility"),
 ]
 
 
 def _generate_stochastic_ss_console_table(stochastic_ss_data: Dict[str, Dict[str, float]]) -> str:
-    """Generate formatted console output for stochastic steady state (four main aggregates)."""
+    """Generate formatted console output for stochastic steady state aggregates."""
     output = []
     output.append("\n" + "═" * 72)
     output.append("  STOCHASTIC STEADY STATE (% deviations from deterministic SS)")
@@ -1107,7 +1087,7 @@ def _generate_stochastic_ss_console_table(stochastic_ss_data: Dict[str, Dict[str
 
 
 def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, float]]) -> str:
-    """Generate LaTeX table code for stochastic steady state (four main aggregates)."""
+    """Generate LaTeX table code for stochastic steady state aggregates."""
     experiment_names = list(stochastic_ss_data.keys())
     n_experiments = len(experiment_names)
 
@@ -1157,7 +1137,7 @@ def create_stochastic_ss_aggregates_table(
     methods_to_include: Optional[list[str]] = None,
 ) -> str:
     """
-    Create a compact stochastic steady-state table for aggregates C, I, GDP, L, K.
+    Create a compact stochastic steady-state table for aggregates C, I, GDP, L, K, and intratemporal utility.
 
     Values are reported in percentage deviations from deterministic steady state.
     """
@@ -1165,8 +1145,9 @@ def create_stochastic_ss_aggregates_table(
         ("Agg. Consumption", "C"),
         ("Agg. Investment", "I"),
         ("Agg. GDP", "GDP"),
-        ("Agg. Labor", "L"),
         ("Agg. Capital", "K"),
+        ("Agg. Labor", "L"),
+        ("Intratemporal Utility", "Intratemporal Utility"),
     ]
 
     all_methods = list(stochastic_ss_data.keys())
@@ -1208,7 +1189,7 @@ def create_stochastic_ss_aggregates_table(
         caption="Aggregate stochastic steady state",
         label="tab:stochastic_ss_aggregates",
         note_text=(
-            r"Entries report aggregate stochastic steady-state values for consumption, investment, GDP, labor, and capital as log differences from the deterministic steady state."
+            r"Entries report aggregate stochastic steady-state values for consumption, investment, GDP, labor, capital, and intratemporal utility as log differences from the deterministic steady state."
             + _nonlinear_method_note(method_names)
             + r" The stochastic steady state is computed by taking draws from the ergodic distribution, simulating forward with zero shocks, and taking the point to which those paths converge irrespective of the initial draw; this convergence condition is checked."
             + r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
@@ -1237,13 +1218,15 @@ def create_ergodic_aggregate_stats_table(
 ) -> str:
     """
     Create ergodic descriptive statistics table (Mean, Sd, Skewness, Excess Kurtosis)
-    for aggregates C, I, GDP, K.
+    for aggregates C, I, GDP, L, K, and intratemporal utility.
     """
     aggregate_order = [
         ("Agg. Consumption", "C"),
         ("Agg. Investment", "I"),
         ("Agg. GDP", "GDP"),
         ("Agg. Capital", "K"),
+        ("Agg. Labor", "L"),
+        ("Intratemporal Utility", "Intratemporal Utility"),
     ]
     stat_labels = ["Mean", "Sd", "Skewness", "Excess Kurtosis"]
 
@@ -1302,7 +1285,7 @@ def create_ergodic_aggregate_stats_table(
     latex_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
     latex_code += r"\\" + "\n"
     latex_code += (
-        r"\textit{Notes:} Rows report descriptive moments for the ergodic distribution of aggregate consumption, investment, GDP, and capital."
+        r"\textit{Notes:} Rows report descriptive moments for the ergodic distribution of aggregate consumption, investment, GDP, labor, capital, and intratemporal utility."
         r" Mean and standard deviation are in percent relative to the deterministic steady state; "
         + _LOGDEV_PERCENT_NOTE
         + r" Skewness and excess kurtosis are unit-free."

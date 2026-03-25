@@ -606,17 +606,38 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
         r"\usepackage{float}",
         r"\floatplacement{table}{H}",
         r"\floatplacement{figure}{H}",
+        r"\newlength{\FigHfirst}",
+        r"\newlength{\FigHsingle}",
+        r"\newlength{\FigHdouble}",
+        r"\newlength{\FigHpanel}",
+        r"\setlength{\FigHfirst}{0.70\textheight}",
+        r"\setlength{\FigHsingle}{0.58\textheight}",
+        r"\setlength{\FigHdouble}{0.40\textheight}",
+        r"\setlength{\FigHpanel}{0.23\textheight}",
         r"\captionsetup[subfigure]{justification=centering}",
         r"\setlength{\parindent}{0pt}",
         r"\setlength{\parskip}{0.75em}",
         r"\begin{document}",
-        r"\section*{Tables and Figures}",
     ]
+
+    rendered_figure_count = 0
+
+    def _single_figure_include_options(*, is_first_figure):
+        height_name = r"\FigHfirst" if is_first_figure else r"\FigHsingle"
+        return rf"width=0.96\textwidth,height={height_name},keepaspectratio"
+
+    def _subfigure_layout(*, subfigure_count, is_first_figure):
+        if subfigure_count >= 5:
+            return "0.43\\textwidth", r"\FigHpanel", r"\hspace{0.04\textwidth}"
+        if subfigure_count > 1:
+            return "0.48\\textwidth", r"\FigHdouble", r"\hfill"
+        if is_first_figure:
+            return r"\textwidth", r"\FigHfirst", None
+        return "0.88\\textwidth", r"\FigHsingle", None
 
     for section_idx, section in enumerate(sections):
         if section_idx > 0:
             lines.append(r"\clearpage")
-        lines.append(rf"\subsection*{{{section['title']}}}")
 
         total_section_items = len(section["tables"]) + len(section["figures"])
 
@@ -641,13 +662,14 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                 single_figure = (
                     _build_simple_figure_spec(figure_path, "") if isinstance(figure_path, str) else figure_path
                 )
+                is_first_figure = rendered_figure_count == 0
                 relative_path = _latex_relative_path(single_figure["path"], analysis_dir)
                 note_path = single_figure.get("note_path") or _figure_note_path(single_figure["path"])
                 lines.extend(
                     [
                         r"\begin{figure}[H]",
                         r"\centering",
-                        rf"\includegraphics[width=0.96\textwidth]{{{relative_path}}}",
+                        rf"\includegraphics[{_single_figure_include_options(is_first_figure=is_first_figure)}]{{{relative_path}}}",
                     ]
                 )
                 if single_figure.get("caption"):
@@ -665,6 +687,7 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                         ]
                     )
                 lines.append(r"\end{figure}")
+                rendered_figure_count += 1
                 if len(section["tables"]) + figure_idx < total_section_items - 1:
                     lines.append(r"\par\medskip")
                 continue
@@ -673,25 +696,24 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
             if not subfigures:
                 continue
 
+            is_first_figure = rendered_figure_count == 0
             lines.extend([r"\begin{figure}[H]", r"\centering"])
+            width, height_name, column_separator = _subfigure_layout(
+                subfigure_count=len(subfigures),
+                is_first_figure=is_first_figure,
+            )
             for idx, subfigure in enumerate(subfigures):
-                if len(subfigures) >= 5:
-                    width = "0.43\\textwidth"
-                elif len(subfigures) > 1:
-                    width = "0.48\\textwidth"
-                else:
-                    width = "0.88\\textwidth"
                 lines.extend(
                     [
                         rf"\begin{{subfigure}}[t]{{{width}}}",
                         r"\centering",
-                        rf"\includegraphics[width=\textwidth]{{{_latex_relative_path(subfigure['path'], analysis_dir)}}}",
+                        rf"\includegraphics[width=\linewidth,height={height_name},keepaspectratio]{{{_latex_relative_path(subfigure['path'], analysis_dir)}}}",
                         rf"\caption{{{_escape_latex(subfigure.get('caption', ''))}}}",
                         r"\end{subfigure}",
                     ]
                 )
                 if len(subfigures) > 1 and idx % 2 == 0 and idx != len(subfigures) - 1:
-                    lines.append(r"\hfill")
+                    lines.append(column_separator or r"\hfill")
                 elif idx != len(subfigures) - 1:
                     lines.append(r"\par\medskip")
 
@@ -711,6 +733,7 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                     ]
                 )
             lines.append(r"\end{figure}")
+            rendered_figure_count += 1
             if len(section["tables"]) + figure_idx < total_section_items - 1:
                 lines.append(r"\par\medskip")
 

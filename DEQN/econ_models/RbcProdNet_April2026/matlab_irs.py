@@ -900,9 +900,11 @@ def get_sector_irs(
 #   Row 23: GDP_ir      (aggregate GDP expenditure, current-price, log dev)
 #   Row 24: Pmj_client_ir
 #   Row 25: gammaij_client_ir
-#   Row 26: C_util_ir   (utility aggregate consumption, CES aggregator, log dev)
+#   Row 26: L_ir        (aggregate labor headcount, log dev)
+#   Row 27: K_ir        (aggregate capital, log dev)
+#   Row 28: utility_intratemp_ir (level dev)
 #
-# NOTE: Rows 1, 2, 23 are Dynare's built-in aggregates (current-price weighted).
+# NOTE: Rows 1, 2, 23, 26, 27, 28 are Dynare's built-in aggregate rows.
 # For aggregate IRs (Agg. Consumption, Agg. Investment, Agg. GDP), the Python side
 # re-aggregates from full sectoral vectors stored in sectoral_loglin/sectoral_determ
 # using fixed ergodic prices (P_ergodic) via get_matlab_ir_fixedprice().
@@ -934,7 +936,9 @@ NEW_FORMAT_VARIABLE_INDICES = {
     "GDPexp": 23,  # Aggregate GDP expenditure (current-price)
     "Pmj_client": 24,  # Client intermediate price
     "gammaij_client": 25,  # Client expenditure share deviation
-    "C_util": 26,  # Utility aggregate consumption (CES aggregator)
+    "Lagg": 26,  # Aggregate labor headcount
+    "Kagg": 27,  # Aggregate capital
+    "utility_intratemp": 28,  # Intratemporal utility
 }
 
 # Legacy format variable indices (for backwards compatibility)
@@ -959,7 +963,6 @@ LEGACY_VARIABLE_INDICES = {
     "Lagg": 20,
     "R": 21,
     "GDP": 22,
-    "Utility": 23,
     "Lambda": 24,
     "Mu_k": 25,
     "Mu_c": 26,
@@ -971,9 +974,12 @@ MATLAB_IR_VARIABLE_INDICES = NEW_FORMAT_VARIABLE_INDICES.copy()
 # Mapping from analysis variable names to MATLAB variable names
 ANALYSIS_TO_MATLAB_MAPPING = {
     "Agg. Consumption": "Cexp",
+    "Agg. Labor": "Lagg",
+    "Agg. Capital": "Kagg",
     "Agg. Investment": "Iexp",
     "Agg. Output": "GDPexp",
     "Agg. GDP": "GDPexp",
+    "Intratemporal Utility": "utility_intratemp",
     # Own-sector variables
     "Cj": "Cj",
     "Pj": "Pj",
@@ -1002,6 +1008,7 @@ ANALYSIS_TO_MATLAB_MAPPING = {
 AGGREGATE_BLOCK_VARIABLE_MAP = {
     "Agg. Labor": "L",
     "Agg. Capital": "K",
+    "Intratemporal Utility": "utility_intratemp",
 }
 
 
@@ -1049,7 +1056,9 @@ def get_matlab_ir_for_analysis_variable(
         Dictionary with IRs for each shock size/sign, or None if variable not found
     """
     if analysis_var_name in AGGREGATE_BLOCK_VARIABLE_MAP:
-        return _get_matlab_ir_from_aggregate_blocks(ir_data, sector_idx, analysis_var_name, max_periods, skip_initial)
+        block_result = _get_matlab_ir_from_aggregate_blocks(ir_data, sector_idx, analysis_var_name, max_periods, skip_initial)
+        if block_result is not None:
+            return block_result
 
     if analysis_var_name not in ANALYSIS_TO_MATLAB_MAPPING:
         return None

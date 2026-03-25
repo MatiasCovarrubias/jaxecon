@@ -1,15 +1,13 @@
 # Python Analysis Guide
 
-This document describes the Python-side analysis layer for `RbcProdNet_April`
-
-`2026`.
+This document describes the Python-side analysis layer for `RbcProdNet_April2026`.
 
 It complements the MATLAB documentation:
 
 - `MATLAB/CODEBASE_README.md` explains the MATLAB runtime pipeline that builds the saved objects.
 - `MATLAB/ModelData_README.md` explains the structure of `ModelData.mat`, `ModelData_simulation.mat`, and `ModelData_IRs.mat`.
 
-This file is about what Python does *after* those objects exist.
+This file is about what Python does _after_ those objects exist.
 
 ## Scope
 
@@ -17,7 +15,7 @@ The Python analysis layer has one main job:
 
 1. Load MATLAB benchmark objects and trained DEQN checkpoints.
 2. Run the nonlinear DEQN simulation exercises.
-3. Reconstruct analysis variables under a consistent aggregation scheme.
+3. Build analysis variables under the configured aggregation scheme.
 4. Produce the final tables and figures shown in the analysis output folders.
 
 Canonical entry point:
@@ -35,11 +33,11 @@ Model-specific extension points:
 The Python analysis code depends on MATLAB outputs in three different ways:
 
 1. `ModelData.mat`
-  Used for steady state objects, state-space matrices, empirical targets, and benchmark summary statistics.
+   Used for steady state objects, state-space matrices, empirical targets, and benchmark summary statistics.
 2. `ModelData_simulation.mat`
-  Used for simulation-based benchmark series such as `FirstOrder`, `SecondOrder`, `PerfectForesight`, and `MITShocks`, when those blocks are present.
+   Used for simulation-based benchmark series such as `FirstOrder`, `SecondOrder`, `PerfectForesight`, and `MITShocks`, when those blocks are present.
 3. `ModelData_IRs.mat`
-  Used as the benchmark source for aggregate and sectoral IR figures.
+   Used as the benchmark source for aggregate and sectoral IR figures.
 
 The key boundary is:
 
@@ -57,11 +55,13 @@ The main execution flow in `DEQN/analysis.py` is:
 5. Build the long nonlinear simulation runner.
 6. Optionally build the auxiliary common-shock nonlinear runner from the shared MATLAB shock path.
 7. For each analyzed experiment:
-  - run the long nonlinear simulation
-  - compute stochastic SS from that simulation
-  - optionally run the common-shock nonlinear comparison
-  - compute GIR objects
-  - compute welfare inputs
+
+- run the long nonlinear simulation
+- compute stochastic SS from that simulation
+- optionally run the common-shock nonlinear comparison
+- compute GIR objects
+- compute welfare inputs
+
 8. Call `analysis_hooks.prepare_postprocess_analysis(...)`.
 9. Render tables and figures in the analysis order.
 
@@ -69,7 +69,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
-- Arithmetic mean prices in levels now define the fixed aggregation weights in the common-shock pipeline; the nonlinear benchmark, Dynare reaggregation, and MATLAB IR reaggregation all use level-averaged prices from the active window.
+- `ergodic_price_aggregation` is now an explicit config flag. The default `false` path reads aggregate policy variables directly from the model and only re-aggregates with ergodic prices when the flag is turned on.
+- Aggregate presentation is now standardized around six reported aggregates: `C`, `I`, `GDP`, `K`, `L`, and `Intratemporal Utility`. The first model-vs-data table now keeps only value-added-weighted sectoral rows.
+- `RbcProdNet_April2026` now uses its own `analysis_hooks.py`, `aggregation.py`, `matlab_irs.py`, and `plot_helpers.py` as the active pipeline contract instead of delegating aggregate logic to March 2026 helpers.
 
 ## Main Python files
 
@@ -131,13 +133,12 @@ It does not decide the economics. It formats:
 
 ### `analysis_hooks.py`
 
-This is the model-specific bridge between generic DEQN analysis utilities and `RbcProdNet_March2026`.
+This is the model-specific bridge between generic DEQN analysis utilities and `RbcProdNet_April2026`.
 
 Main responsibilities:
 
 - prepare model-specific aggregation context
-- compute ergodic prices from the nonlinear simulation
-- recenter series using ergodic steady-state corrections
+- choose between model-implied aggregate rows and optional ergodic-price reaggregation
 - load simulation-based MATLAB benchmark series into `analysis_variables_data`
 - build model-vs-data moment columns
 - prepare the IR rendering context
@@ -156,6 +157,13 @@ It is the core of the comparison between:
 - model-vs-data moments
 
 If aggregate moments differ unexpectedly across methods, this file is one of the first places to inspect.
+
+Current contract:
+
+- Default mode: `ergodic_price_aggregation = false`
+  Python reads `c_agg`, `l_agg`, `gdp_agg`, `i_agg`, `k_agg`, and `utility_intratemp` directly from the policy arrays.
+- Optional mode: `ergodic_price_aggregation = true`
+  Python re-aggregates nonlinear simulations, Dynare simulations, and MATLAB IRs using fixed ergodic-mean prices.
 
 ### `plot_helpers.py`
 
@@ -197,7 +205,6 @@ The wrapper file currently does two things:
 
 For the current `basefinal` output, use this map:
 
-
 | What you see in generated LaTeX                                                                                                      | Generated fragment file                                                 | Change the source here                                                                                     | Why this is the right place                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `\input{calibration_table_basefinal.tex}`                                                                                            | `analysis/basefinal/calibration_table_basefinal.tex`                    | `DEQN/analysis/tables.py` → `create_calibration_table(...)` and `_create_model_vs_data_moments_table(...)` | This function writes the LaTeX table body, caption, label, note text, panel titles, row labels, and column headers for the model-vs-data table.                                                                            |
@@ -212,7 +219,6 @@ For the current `basefinal` output, use this map:
 | Which figures appear, in what order                                                                                                  | `figures_tables_basefinal.tex`                                          | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | This is where the wrapper decides the sequence: model-vs-data table, aggregate IRs, stochastic-SS sectoral figures, aggregate stochastic-SS table, descriptive stats, welfare, sectoral IRs, and ergodic sectoral figures. |
 | Wrapper-only LaTeX such as figure height limits, subfigure widths, first-figure sizing, `\clearpage`, and section-header suppression | `figures_tables_basefinal.tex`                                          | `DEQN/analysis.py` → `_write_analysis_results_latex(...)`                                                  | These choices are not stored in the fragment files; they are emitted only when the master wrapper is assembled.                                                                                                            |
 | The PNG image itself looks wrong: panel count, legend, axes, line styles, note written onto the image                                | `analysis/basefinal/IRs/*.png` or `analysis/basefinal/simulation/*.png` | `plot_helpers.py` and the relevant render call in `analysis_hooks.py`                                      | Change `plot_helpers.py` for the visual design of the PNG. Change `analysis_hooks.py` if the wrong variables or wrong simulation object are feeding that plot.                                                             |
-
 
 Practical examples:
 
@@ -285,7 +291,7 @@ The analysis codebase can still be cleaned in several places.
 
 ### Redundant outputs
 
-- `create_stochastic_ss_table` and `create_stochastic_ss_aggregates_table` currently overlap heavily for C, I, GDP, and K.
+- `create_stochastic_ss_table` and `create_stochastic_ss_aggregates_table` currently overlap heavily for the reported aggregate block (`C`, `I`, `GDP`, `K`, `L`, and `Intratemporal Utility`).
 - It would be cleaner to decide whether both are really needed.
 
 ### Dormant code paths

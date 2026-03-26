@@ -10,6 +10,28 @@ import jax.numpy as jnp
 import numpy as np
 from jax import random
 
+
+def _matlab_std(x: np.ndarray) -> float:
+    """Match MATLAB std(x) default normalization on vectors."""
+    x = np.asarray(x, dtype=float).reshape(-1)
+    x = x[np.isfinite(x)]
+    if x.size == 0:
+        return float("nan")
+    if x.size == 1:
+        return 0.0
+    return float(np.std(x, ddof=1))
+
+
+def _matlab_std_axis(data: np.ndarray, axis: int) -> np.ndarray:
+    """Match MATLAB std(data, 0, axis) behavior along one axis."""
+    data = np.asarray(data, dtype=float)
+    moved = np.moveaxis(data, axis, 0)
+    result = np.empty(moved.shape[1:], dtype=float)
+    for idx in np.ndindex(result.shape):
+        result[idx] = _matlab_std(moved[(slice(None),) + idx])
+    return result
+
+
 def compute_ergodic_prices_from_simulation(
     simul_policies: jnp.ndarray,
     policies_ss: jnp.ndarray,
@@ -202,6 +224,81 @@ def process_simulation_with_consistent_aggregation(
     )
 
 
+def split_dynare_simulation_logdev(
+    simul_data: jnp.ndarray | np.ndarray,
+    *,
+    policies_ss: jnp.ndarray | np.ndarray,
+    state_ss: jnp.ndarray | np.ndarray,
+    n_sectors: int,
+    burn_in: int = 0,
+    source_label: str = "simulation",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Normalize Dynare full_simul to (T, states) and (T, policies) log deviations."""
+    n = n_sectors
+    simul_np = np.asarray(simul_data, dtype=float)
+    policies_ss_np = np.asarray(policies_ss, dtype=float)
+    state_ss_np = np.asarray(state_ss, dtype=float)
+
+    expected_n_vars = 13 * n + 8
+    if simul_np.shape[0] == expected_n_vars:
+        pass
+    elif simul_np.shape[1] == expected_n_vars:
+        simul_np = simul_np.T
+    else:
+        raise ValueError(
+            f"{source_label}: unexpected simulation shape {simul_np.shape}. "
+            f"Expected one axis to equal n_vars={expected_n_vars}."
+        )
+
+    ss_full = np.concatenate([state_ss_np, policies_ss_np])
+    dist_to_zero = np.mean(np.abs(simul_np[:, 0]))
+    dist_to_ss = np.mean(np.abs(simul_np[:, 0] - ss_full))
+    if dist_to_ss < dist_to_zero:
+        simul_np = simul_np - ss_full[:, None]
+
+    n_periods = simul_np.shape[1]
+    if burn_in >= n_periods:
+        burn_in = n_periods // 10
+    simul_np = simul_np[:, burn_in:]
+
+    obs_logdev = simul_np[: 2 * n, :].T
+    policy_logdev = simul_np[2 * n :, :].T
+    return obs_logdev, policy_logdev
+
+
+def compute_model_moments_from_dynare_simulation(
+    simul_data: jnp.ndarray | np.ndarray,
+    *,
+    policies_ss: jnp.ndarray,
+    state_ss: jnp.ndarray,
+    P_ergodic: jnp.ndarray,
+    Pk_ergodic: jnp.ndarray,
+    n_sectors: int,
+    ergodic_price_aggregation: bool = False,
+    burn_in: int = 0,
+    source_label: str = "simulation",
+) -> dict:
+    """Compute ModelStats from Dynare full_simul using the common Python moment path."""
+    obs_logdev, policy_logdev = split_dynare_simulation_logdev(
+        simul_data,
+        policies_ss=policies_ss,
+        state_ss=state_ss,
+        n_sectors=n_sectors,
+        burn_in=burn_in,
+        source_label=source_label,
+    )
+    return compute_model_moments_with_consistent_aggregation(
+        simul_obs=obs_logdev,
+        simul_policies=policy_logdev,
+        policies_ss=policies_ss,
+        state_ss=state_ss,
+        P_ergodic=P_ergodic,
+        Pk_ergodic=Pk_ergodic,
+        n_sectors=n_sectors,
+        ergodic_price_aggregation=ergodic_price_aggregation,
+    )
+
+
 def compute_model_moments_with_consistent_aggregation(
     simul_obs: jnp.ndarray,
     simul_policies: jnp.ndarray,
@@ -216,8 +313,8 @@ def compute_model_moments_with_consistent_aggregation(
     Compute MATLAB-style `ModelStats` moments for a nonlinear simulation path.
 
     Aggregate moments use the same fixed-price aggregation as the Python analysis
-    pipeline, while sectoral/comovement moments mirror MATLAB's stored
-    `ModelStats` definitions.
+    pipeline, and sectoral value added is also computed with fixed prices.
+    Volatilities use MATLAB's sample-standard-deviation convention.
     """
     n = n_sectors
 
@@ -252,16 +349,19 @@ def compute_model_moments_with_consistent_aggregation(
     i_logdev = policies_np[:, 6 * n : 7 * n].T
     a_logdev = obs_np[:, n : 2 * n].T
     q_logdev = policies_np[:, 9 * n : 10 * n].T
+    utility_intratemp_logdev = policies_np[:, 11 * n + 7]
 
     Cagg_exp = C_levels @ P_ergodic_np
     Iagg_exp = Iout_levels @ P_ergodic_np
     GDPagg_exp = (Q_levels - Mout_levels) @ P_ergodic_np
+    Magg_exp = Mout_levels @ P_ergodic_np
     Kagg = K_levels @ Pk_ergodic_np
     L_hc = np.sum(L_levels, axis=1)
 
     Cagg_exp_ss = np.sum(P_ergodic_np * C_ss)
     Iagg_exp_ss = np.sum(P_ergodic_np * Iout_ss)
     GDPagg_exp_ss = np.sum(P_ergodic_np * (Q_ss - Mout_ss))
+    Magg_exp_ss = np.sum(P_ergodic_np * Mout_ss)
     Kagg_ss = state_ss_levels @ Pk_ergodic_np
     L_hc_ss = np.sum(L_ss)
     Cagg_policy_ss = float(np.exp(policies_ss_np[11 * n + 2]))
@@ -273,6 +373,7 @@ def compute_model_moments_with_consistent_aggregation(
         C_logdev = np.log(np.maximum(Cagg_exp, eps)) - np.log(np.maximum(Cagg_exp_ss, eps))
         I_logdev = np.log(np.maximum(Iagg_exp, eps)) - np.log(np.maximum(Iagg_exp_ss, eps))
         GDP_logdev = np.log(np.maximum(GDPagg_exp, eps)) - np.log(np.maximum(GDPagg_exp_ss, eps))
+        M_logdev = np.log(np.maximum(Magg_exp, eps)) - np.log(np.maximum(Magg_exp_ss, eps))
         K_logdev = np.log(np.maximum(Kagg, eps)) - np.log(np.maximum(Kagg_ss, eps))
         L_hc_logdev = np.log(np.maximum(L_hc, eps)) - np.log(np.maximum(L_hc_ss, eps))
         share_c_denominator = GDPagg_exp_ss
@@ -285,6 +386,7 @@ def compute_model_moments_with_consistent_aggregation(
         GDP_logdev = policies_np[:, 11 * n + 4]
         I_logdev = policies_np[:, 11 * n + 5]
         K_logdev = policies_np[:, 11 * n + 6]
+        M_logdev = np.log(np.maximum(Magg_exp, eps)) - np.log(np.maximum(Magg_exp_ss, eps))
         share_c_denominator = GDPagg_policy_ss
         share_i_denominator = GDPagg_policy_ss
         share_c_numerator = Cagg_policy_ss
@@ -304,7 +406,9 @@ def compute_model_moments_with_consistent_aggregation(
         "I": _compute_univariate_moments(I_logdev),
         "GDP": _compute_univariate_moments(GDP_logdev),
         "L": _compute_univariate_moments(L_hc_logdev),
+        "M": _compute_univariate_moments(M_logdev),
         "K": _compute_univariate_moments(K_logdev),
+        "utility_intratemp": _compute_univariate_moments(utility_intratemp_logdev),
     }
 
     corr_matrix_C, avg_pairwise_corr_C = _safe_corr_matrix_rows(c_logdev)
@@ -312,12 +416,12 @@ def compute_model_moments_with_consistent_aggregation(
     corr_matrix_L, avg_pairwise_corr_L = _safe_corr_matrix_rows(l_logdev)
     corr_matrix_I, avg_pairwise_corr_I = _safe_corr_matrix_rows(i_logdev)
 
-    sigma_VA_sectoral = np.std(va_sector_logdev, axis=0)
-    sigma_L_sectoral = np.std(l_logdev, axis=1)
-    sigma_I_sectoral = np.std(i_logdev, axis=1)
+    sigma_VA_sectoral = _matlab_std_axis(va_sector_logdev, axis=0)
+    sigma_L_sectoral = _matlab_std_axis(l_logdev, axis=1)
+    sigma_I_sectoral = _matlab_std_axis(i_logdev, axis=1)
 
     domar_simul = q_logdev - GDP_logdev[None, :]
-    sigma_Domar_sectoral = np.std(domar_simul, axis=1)
+    sigma_Domar_sectoral = _matlab_std_axis(domar_simul, axis=1)
 
     A_VA_logdev = va_weights @ a_logdev
     omega_Q = (va_price_weights * Q_ss) / np.sum(va_price_weights * (Q_ss - Mout_ss))
@@ -325,14 +429,21 @@ def compute_model_moments_with_consistent_aggregation(
     corr_L_TFP_sectoral = np.array([_safe_corr(l_logdev[j], a_logdev[j]) for j in range(n)])
 
     return {
-        "sigma_VA_agg": float(np.std(GDP_logdev)),
-        "sigma_C_agg": float(np.std(C_logdev)),
-        "sigma_L_agg": float(np.std(L_hc_logdev)),
-        "sigma_L_hc_agg": float(np.std(L_hc_logdev)),
-        "sigma_I_agg": float(np.std(I_logdev)),
-        "sigma_K_agg": float(np.std(K_logdev)),
+        "sigma_VA_agg": _matlab_std(GDP_logdev),
+        "sigma_C_agg": _matlab_std(C_logdev),
+        "sigma_L_agg": _matlab_std(L_hc_logdev),
+        "sigma_L_hc_agg": _matlab_std(L_hc_logdev),
+        "sigma_I_agg": _matlab_std(I_logdev),
+        "sigma_K_agg": _matlab_std(K_logdev),
+        "sigma_M_agg": _matlab_std(M_logdev),
+        "sigma_utility_intratemp_agg": _matlab_std(utility_intratemp_logdev),
+        "sigma_L_legacy_agg": _matlab_std(L_hc_logdev),
+        "sigma_M_legacy_agg": float("nan"),
+        "sigma_C_pref_agg": _matlab_std(C_logdev),
+        "sigma_I_ces_agg": _matlab_std(I_logdev),
+        "sigma_Y_primaryfactor_agg": _matlab_std(GDP_logdev),
         "aggregate_definition": (
-            "ergodic_price_reaggregation" if ergodic_price_aggregation else "model_implied_policy_aggregates"
+            "exact_logdev_to_deterministic_ss"
         ),
         "sample_window": "shocks_simul",
         "aggregate_moments": aggregate_moments,
@@ -353,10 +464,13 @@ def compute_model_moments_with_consistent_aggregation(
         "sigma_L_avg_empweighted": float(np.sum(emp_weights * sigma_L_sectoral)),
         "sigma_I_avg_invweighted": float(np.sum(inv_weights * sigma_I_sectoral)),
         "sigma_Domar_avg": float(np.sum(go_weights * sigma_Domar_sectoral)),
+        "sigma_Domar_avg_legacy": float(np.sum(go_weights * sigma_Domar_sectoral)),
         "corr_matrix_C": corr_matrix_C,
         "sigma_L_sectoral": sigma_L_sectoral,
         "sigma_I_sectoral": sigma_I_sectoral,
         "sigma_Domar_sectoral": sigma_Domar_sectoral,
+        "sigma_Domar_sectoral_legacy": sigma_Domar_sectoral,
+        "domar_definition": "legacy_go_minus_yagg",
         "corr_matrix_VA": corr_matrix_VA,
         "corr_matrix_L": corr_matrix_L,
         "corr_matrix_I": corr_matrix_I,
@@ -408,7 +522,7 @@ def _compute_univariate_moments(x: np.ndarray) -> dict:
         return moments
 
     mu = float(np.mean(x))
-    sigma = float(np.std(x))
+    sigma = _matlab_std(x)
     moments["mean"] = mu
     moments["std"] = sigma
     if sigma == 0:

@@ -114,16 +114,20 @@ jax_config.update("jax_debug_nans", True)
 # Configuration dictionary
 config = {
     # Key configuration - Edit these first
-    "model_dir": "RbcProdNet_March2026",
+    "model_dir": "RbcProdNet_April2026",
     "analysis_name": "basefinal",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
-    "model_data_file": "ModelData_baselong.mat",
-    "model_data_irs_file": "ModelData_IRs_baselong.mat",
-    "model_data_simulation_file": "ModelData_simulation_baselong.mat",  # Set to None to skip MATLAB simulation comparison
+    "model_data_file": None,
+    "model_data_irs_file": None,
+    "model_data_simulation_file": None,  # Set to None to skip MATLAB simulation comparison
+    # Aggregation convention
+    # False (default): use aggregate endogenous policy variables directly from the model / Dynare objects.
+    # True: re-aggregate using fixed ergodic-mean prices computed from the nonlinear ergodic simulation.
+    "ergodic_price_aggregation": False,
     # Experiments to analyze
     "experiments_to_analyze": {
-        "Benchmark March": "newbenchmark_March2026",
+        "benchmark": "GO_shocks",
     },
     # Simulation configuration
     "init_range": 6,
@@ -149,15 +153,14 @@ config = {
     # - GIR: average over ergodic draws
     # - IR_stoch_ss: single IR from stochastic steady state
     "ir_methods": ["IR_stoch_ss"],
-    # MATLAB benchmark used in IR figures. Options:
-    # "FirstOrder", "SecondOrder", "PerfectForesight"
-    "ir_benchmark_method": "PerfectForesight",
+    # MATLAB benchmark overlays used in IR figures.
+    # Override with any subset/order of ["PerfectForesight", "FirstOrder", "SecondOrder"].
+    "ir_benchmark_methods": ["PerfectForesight", "FirstOrder"],
     # Combined IR analysis configuration
     # Sectors to analyze: specify sector indices (0-based).
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
     "ir_sectors_to_plot": [0],
-    "ir_variables_to_plot": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Labor", "Agg. Capital"],
     "sectoral_ir_variables_to_plot": [
         "Cj",
         "Pj",
@@ -181,23 +184,9 @@ config = {
         "Pmj_client",
         "gammaij_client",
     ],
-    "ir_shock_sizes": [10, 20, 30],
     "ir_max_periods": 40,
-    # Aggregate reporting controls
-    "aggregate_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
-    "descriptive_stats_variables": ["Agg. Consumption", "Agg. Investment", "Agg. GDP", "Agg. Capital"],
-    # Methods shown in the model-vs-data table. Aliases supported:
-    # "FirstOrder"/"Log-Linear" -> "1st", "NonlinearCS" -> "Nonlinear-CS".
-    "model_vs_data_methods_to_include": ["1st", "Nonlinear", "Nonlinear-CS"],
-    # Benchmark methods included in ergodic exercises (descriptive table, aggregate stats, histograms).
-    # Nonlinear experiment methods are always included when always_include_nonlinear_methods=True.
-    # Canonical names: "Log-Linear", "SecondOrder", "PerfectForesight", "MITShocks".
-    # Alias supported: "FirstOrder" -> "Log-Linear".
-    "ergodic_methods_to_include": ["SecondOrder", "PerfectForesight", "MITShocks"],
-    "always_include_nonlinear_methods": True,
-    # Methods included in stochastic-SS aggregate table.
-    # Use None to include all analyzed experiments.
-    "stochss_methods_to_include": [],
+    # Shock sizes are discovered from the MATLAB IR objects.
+    # Aggregate tables use all supported aggregates and all available simulations by default.
     # JAX configuration
     "double_precision": True,
 }
@@ -228,6 +217,18 @@ MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", []) if plot
 # ============================================================================
 # ANALYSIS HELPERS
 # ============================================================================
+
+
+DEFAULT_AGGREGATE_LABELS = [
+    "Agg. Consumption",
+    "Agg. Investment",
+    "Agg. GDP",
+    "Agg. Capital",
+    "Agg. Labor",
+    "Intratemporal Utility",
+]
+
+DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
 
 
 def _write_analysis_config(config_dict, analysis_dir):
@@ -301,7 +302,13 @@ def _caption_label(label):
 
 
 def _format_percent_list(values):
-    values = [str(int(value)) for value in values if value is not None]
+    def _format_percent_value(value):
+        rounded = round(float(value), 8)
+        if float(rounded).is_integer():
+            return str(int(round(rounded)))
+        return f"{rounded:.8f}".rstrip("0").rstrip(".")
+
+    values = [_format_percent_value(value) for value in values if value is not None]
     if not values:
         return ""
     if len(values) == 1:
@@ -309,6 +316,34 @@ def _format_percent_list(values):
     if len(values) == 2:
         return f"{values[0]} and {values[1]}"
     return ", ".join(values[:-1]) + f", and {values[-1]}"
+
+
+def _resolve_ir_benchmark_methods(config_dict):
+    configured_methods = config_dict.get("ir_benchmark_methods")
+    if configured_methods is None:
+        legacy_method = config_dict.get("ir_benchmark_method")
+        configured_methods = [legacy_method] if legacy_method else list(DEFAULT_IR_BENCHMARK_METHODS)
+    elif isinstance(configured_methods, str):
+        configured_methods = [configured_methods]
+
+    resolved_methods = []
+    for method in configured_methods:
+        if method and method not in resolved_methods:
+            resolved_methods.append(method)
+    return resolved_methods or list(DEFAULT_IR_BENCHMARK_METHODS)
+
+
+def _describe_ir_benchmark_methods(config_dict):
+    benchmark_method_labels = {
+        "FirstOrder": "MATLAB first-order benchmark",
+        "SecondOrder": "MATLAB second-order benchmark",
+        "PerfectForesight": "MATLAB perfect-foresight benchmark",
+    }
+    labels = [
+        benchmark_method_labels.get(method, f"MATLAB {method} benchmark")
+        for method in _resolve_ir_benchmark_methods(config_dict)
+    ]
+    return _join_labels(labels) if labels else "MATLAB benchmarks"
 
 
 def _existing_subfigures(figure_specs):
@@ -362,6 +397,7 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
         "Agg. GDP": "GDP",
         "Agg. Labor": "Labor",
         "Agg. Capital": "Capital",
+        "Intratemporal Utility": "Intratemporal Utility",
     }
     aggregate_variable_note_labels = {
         "Agg. Consumption": "consumption",
@@ -369,72 +405,48 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
         "Agg. GDP": "GDP",
         "Agg. Labor": "labor",
         "Agg. Capital": "capital",
+        "Intratemporal Utility": "intratemporal utility",
     }
     ir_shock_sizes = list(config_dict.get("ir_shock_sizes", []))
-    largest_ir_shock = max(ir_shock_sizes) if ir_shock_sizes else None
-    benchmark_method_labels = {
-        "FirstOrder": "first-order benchmark",
-        "SecondOrder": "second-order benchmark",
-        "PerfectForesight": "perfect-foresight benchmark",
-    }
-    aggregate_benchmark_label = benchmark_method_labels.get(
-        config_dict.get("ir_benchmark_method", "PerfectForesight"),
-        "benchmark",
+    aggregate_benchmark_labels = _describe_ir_benchmark_methods(config_dict)
+    aggregate_ir_variables = list(
+        getattr(analysis_hooks, "DEFAULT_AGGREGATE_IR_LABELS", DEFAULT_AGGREGATE_LABELS)
     )
     for sector_idx in config_dict.get("ir_sectors_to_plot", []):
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
         )
         safe_sector = _make_safe_plot_label(sector_label)
-        ir_variables = config_dict.get("ir_variables_to_plot", [])
-
-        consumption_specs = []
-        other_aggregate_specs = []
-        for variable_name in ir_variables:
+        aggregate_specs = []
+        for variable_name in aggregate_ir_variables:
             safe_variable = _make_safe_plot_label(variable_name)
             figure_spec = {
                 "path": _analysis_named_path(irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
                 "caption": aggregate_variable_captions.get(variable_name, variable_name),
                 "note_label": aggregate_variable_note_labels.get(variable_name, variable_name),
             }
-            if variable_name == "Agg. Consumption":
-                consumption_specs.append(figure_spec)
-            else:
-                other_aggregate_specs.append(figure_spec)
+            aggregate_specs.append(figure_spec)
 
-        if consumption_specs:
-            aggregate_ir_groups.append(
-                {
-                    "caption": f"Aggregate consumption response to a TFP shock in {sector_label}.",
-                    "note_path": _figure_note_path(consumption_specs[0]["path"]),
-                    "note_text": (
-                        f"Each row corresponds to a {_format_percent_list(ir_shock_sizes)} percent TFP shock in "
-                        f"{sector_label}; the left column shows negative shocks and the right column positive shocks. "
-                        "Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
-                        "while global-solution IRs start from and return to the stochastic steady state."
-                    ),
-                    "subfigures": consumption_specs,
-                }
-            )
-        if other_aggregate_specs:
+        if aggregate_specs:
             aggregate_ir_groups.append(
                 {
                     "caption_builder": lambda subfigures, sector_label=sector_label: (
                         f"Aggregate {_join_labels([_caption_label(subfigure['caption']) for subfigure in subfigures])} "
                         f"responses to a TFP shock in {sector_label}."
                     ),
-                    "note_builder": lambda subfigures, sector_label=sector_label, largest_ir_shock=largest_ir_shock, aggregate_benchmark_label=aggregate_benchmark_label: (
+                    "note_builder": lambda subfigures, sector_label=sector_label, ir_shock_sizes=tuple(ir_shock_sizes), aggregate_benchmark_labels=aggregate_benchmark_labels: (
+                        f"Each row corresponds to a {_format_percent_list(ir_shock_sizes)} percent TFP shock in "
+                        f"{sector_label}; the left column shows negative shocks and the right column positive shocks. "
                         f"The panels plot the responses of aggregate "
                         f"{_join_labels([subfigure.get('note_label', _caption_label(subfigure['caption'])) for subfigure in subfigures])} "
-                        f"to a negative {largest_ir_shock} percent TFP shock in {sector_label}. "
-                        f"Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
+                        f"MATLAB benchmark IRs are anchored at the deterministic steady state, "
                         f"while global-solution IRs start from and return to the stochastic steady state. "
                         f"The horizontal axis reports periods after impact. "
                         f"The vertical axis reports impulse responses in percent. "
                         f"Solid lines report the DEQN stochastic-steady-state impulse response and dashed lines report the "
-                        f"{aggregate_benchmark_label}; both are aggregated with fixed ergodic-price weights."
+                        f"{aggregate_benchmark_labels}; all benchmark overlays are aggregated with fixed ergodic-price weights."
                     ),
-                    "subfigures": other_aggregate_specs,
+                    "subfigures": aggregate_specs,
                 }
             )
     add_grouped_figure_section("2. Aggregate Impulse Responses", aggregate_ir_groups)
@@ -477,6 +489,7 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
 
     sectoral_ir_groups = []
     largest_sectoral_shock = max(config_dict.get("ir_shock_sizes", [0])) if config_dict.get("ir_shock_sizes") else None
+    sectoral_benchmark_labels = _describe_ir_benchmark_methods(config_dict)
     sectoral_group_specs = [
         (
             "Shocked Sector Inputs",
@@ -548,11 +561,12 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                     {
                         "caption": f"{group_title} for {sector_label}.",
                         "note_text": (
-                            f"{shock_text} "
-                            "Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
+                            f"Follows the MATLAB grouping. {shock_text} "
+                            "MATLAB benchmark IRs are anchored at the deterministic steady state, "
                             "while global-solution IRs start from and return to the stochastic steady state. "
                             "The horizontal axis reports periods after impact. "
-                            "The vertical axis reports impulse responses in percent."
+                            "The vertical axis reports impulse responses in percent. "
+                            f"Dashed lines report the {sectoral_benchmark_labels}."
                         ),
                         "subfigures": subfigures,
                     }
@@ -635,13 +649,8 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
             return r"\textwidth", r"\FigHfirst", None
         return "0.88\\textwidth", r"\FigHsingle", None
 
-    for section_idx, section in enumerate(sections):
-        if section_idx > 0:
-            lines.append(r"\clearpage")
-
-        total_section_items = len(section["tables"]) + len(section["figures"])
-
-        for table_idx, tex_path in enumerate(section["tables"]):
+    for section in sections:
+        for tex_path in section["tables"]:
             relative_path = _latex_relative_path(tex_path, analysis_dir)
             if _tex_fragment_has_table_env(tex_path):
                 lines.append(rf"\input{{{relative_path}}}")
@@ -654,10 +663,9 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                         r"\end{table}",
                     ]
                 )
-            if table_idx < total_section_items - 1:
-                lines.append(r"\par\medskip")
+            lines.append(r"\clearpage")
 
-        for figure_idx, figure_path in enumerate(section["figures"]):
+        for figure_path in section["figures"]:
             if isinstance(figure_path, str) or "subfigures" not in figure_path:
                 single_figure = (
                     _build_simple_figure_spec(figure_path, "") if isinstance(figure_path, str) else figure_path
@@ -686,10 +694,8 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                             r"\end{minipage}",
                         ]
                     )
-                lines.append(r"\end{figure}")
+                lines.extend([r"\end{figure}", r"\clearpage"])
                 rendered_figure_count += 1
-                if len(section["tables"]) + figure_idx < total_section_items - 1:
-                    lines.append(r"\par\medskip")
                 continue
 
             subfigures = figure_path.get("subfigures", [])
@@ -732,10 +738,8 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                         r"\end{minipage}",
                     ]
                 )
-            lines.append(r"\end{figure}")
+            lines.extend([r"\end{figure}", r"\clearpage"])
             rendered_figure_count += 1
-            if len(section["tables"]) + figure_idx < total_section_items - 1:
-                lines.append(r"\par\medskip")
 
     lines.append(r"\end{document}")
 

@@ -69,9 +69,28 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- Aggregate IR figures now use the full two-column panel for all reported aggregates, and the default benchmark overlays are the MATLAB perfect-foresight and first-order IRs.
 - `ergodic_price_aggregation` is now an explicit config flag. The default `false` path reads aggregate policy variables directly from the model and only re-aggregates with ergodic prices when the flag is turned on.
 - Aggregate presentation is now standardized around six reported aggregates: `C`, `I`, `GDP`, `K`, `L`, and `Intratemporal Utility`. The first model-vs-data table now keeps only value-added-weighted sectoral rows.
-- `RbcProdNet_April2026` now uses its own `analysis_hooks.py`, `aggregation.py`, `matlab_irs.py`, and `plot_helpers.py` as the active pipeline contract instead of delegating aggregate logic to March 2026 helpers.
+
+## Current defaults and compatibility
+
+The active April 2026 analysis contract is intentionally comprehensive by default.
+
+- All six reported aggregates are always used in aggregate tables and aggregate IR figures: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
+- The aggregate IR wrapper expects a full panel for each reported aggregate: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
+- Shock sizes are no longer meant to be hardcoded in the main config. Python discovers them from `ModelData_IRs.mat` and stores the discovered list back into `config["ir_shock_sizes"]` for downstream rendering and LaTeX assembly.
+- The default IR benchmark overlays are `["PerfectForesight", "FirstOrder"]`. The config still accepts `ir_benchmark_methods` to override the set or ordering, and still accepts the legacy single-string `ir_benchmark_method` for backward compatibility.
+- Descriptive-statistics and stochastic-steady-state tables include all available simulation methods by default. Older keys such as `ergodic_methods_to_include`, `stochss_methods_to_include`, `model_vs_data_methods_to_include`, and `descriptive_stats_variables` now act as compatibility filters rather than the intended default workflow.
+- Python recomputes Dynare simulation moments through the common aggregation path even when `ergodic_price_aggregation = false`, so MATLAB and Python moments can be compared on identical definitions.
+
+## Moment-comparison contract
+
+For the current April pipeline, the intended MATLAB/Python comparison convention is:
+
+- `ergodic_price_aggregation = false` means aggregate `C`, `I`, `GDP`, `L`, `K`, and `Intratemporal Utility` are read directly from the model-implied aggregate endogenous variables.
+- Sectoral value added is still treated with fixed prices in both MATLAB and Python: `VA_j = \bar P_j (Q_j - M_j^{out})`. It does not switch to time-varying prices when aggregate re-aggregation is off.
+- Volatility calculations are matched to MATLAB's default `std` normalization, so Python uses the sample standard deviation (`N-1`) rather than NumPy's population default.
 
 ## Main Python files
 

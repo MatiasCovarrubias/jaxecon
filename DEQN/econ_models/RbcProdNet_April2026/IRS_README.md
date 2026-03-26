@@ -25,7 +25,7 @@ process_sector_irs.m                   │
   ▼                                    │
 process_ir_data.m                      │
   │                                    │
-  ├─ 27-row irs matrix                 │
+  ├─ 29-row irs matrix                 │
   ├─ sectoral struct (37×T each)       │
   │                                    │
   ▼                                    │
@@ -65,7 +65,7 @@ build_ModelData_IRs.m                  │
 | `MATLAB/utils/run_irf_loop.m` | Loops over shock configurations, calls `run_dynare_analysis` for each, then `process_sector_irs` to post-process. |
 | `MATLAB/dynare/run_dynare_analysis.m` | Dynare workhorse. Solves the model, computes first-order IRFs via `simult_()`, second-order IRFs, and perfect-foresight IRFs via Dynare's PF solver. Stores raw `dynare_simul` matrices (`IRSFirstOrder_raw`, `IRSSecondOrder_raw`, `IRSPerfectForesight_raw`). |
 | `MATLAB/dynare/process_sector_irs.m` | Post-processing orchestrator. Loops over shocked sectors, calls `process_ir_data` on each raw simulation (capturing the sectoral output), collects results into `IRFs` cell array, computes statistics. |
-| `MATLAB/utils/process_ir_data.m` | Row-extraction function. Takes a raw `dynare_simul` matrix (486×T for 37 sectors) and produces two outputs: a compact **27-row `irs` matrix** and a **`sectoral` struct** with full 37-sector vectors. |
+| `MATLAB/utils/process_ir_data.m` | Row-extraction function. Takes a raw `dynare_simul` matrix (486×T for 37 sectors) and produces two outputs: a compact **29-row `irs` matrix** and a **`sectoral` struct** with full 37-sector vectors. |
 | `MATLAB/utils/build_ModelData_IRs.m` | Repackages the `IRFs` cell array into a flat struct suitable for saving. Copies `sectoral_loglin` and `sectoral_determ` through to the output. |
 | `MATLAB/utils/get_variable_indices.m` | Single source of truth for variable index ranges within Dynare's simulation output and `policies_ss`. All other MATLAB files call this. |
 
@@ -106,12 +106,12 @@ The `sectoral` structs contain four fields, each 37×T in log deviations from de
 
 | File | Role |
 |------|------|
-| `DEQN/analysis.py` | Main orchestrator. Loads MATLAB data, runs DEQN GIR/IR_stoch_ss, calls plotting. Converts `policies_ss` and `P_ergodic` from JAX to NumPy and passes them to the plotting layer. |
-| `DEQN/analysis/matlab_irs.py` | Bridge module (~1200 lines). Loads `.mat` files, parses MATLAB structs, provides row-based lookup for sectoral variables and fixed-price re-aggregation for aggregate variables. Supports both flat format (current) and legacy nested format. |
-| `DEQN/analysis/plots.py` | Plotting. `plot_sector_ir_by_shock_size()` overlays DEQN nonlinear IRs with MATLAB first-order and PF benchmarks. |
-| `econ_models/.../model.py` | Model definition. `get_aggregates()` exposes the aggregate policy tail directly. |
-| `econ_models/.../analysis_hooks.py` | Switches between direct aggregate extraction and optional fixed-price ergodic reaggregation for GIR analysis. |
-| `DEQN/analysis/aggregation_correction.py` | Consistent aggregation for ergodic simulation moments (separate from IRs). |
+| `DEQN/analysis.py` | Main orchestrator. Loads MATLAB data, runs DEQN GIR/`IR_stoch_ss`, and delegates IR rendering to the active model hooks. |
+| `DEQN/econ_models/RbcProdNet_April2026/matlab_irs.py` | Loads `ModelData_IRs.mat`, parses MATLAB structs, discovers available shock sizes, provides row-based lookup for sectoral variables, and provides fixed-price re-aggregation for aggregate benchmark IRs. |
+| `DEQN/econ_models/RbcProdNet_April2026/plot_helpers.py` | Plotting layer. `plot_sector_ir_by_shock_size()` overlays DEQN nonlinear IRs with one or more MATLAB benchmark series. |
+| `DEQN/econ_models/RbcProdNet_April2026/model.py` | Model definition. `get_aggregates()` exposes the aggregate policy tail directly. |
+| `DEQN/econ_models/RbcProdNet_April2026/analysis_hooks.py` | Builds the IR rendering context, switches between direct aggregate extraction and optional fixed-price ergodic reaggregation, and requests the full aggregate IR panel. |
+| `DEQN/econ_models/RbcProdNet_April2026/aggregation.py` | Shared fixed-price aggregation logic used for moments and for consistent aggregate definitions across nonlinear and benchmark objects. |
 
 ---
 
@@ -143,7 +143,7 @@ Rows in the compact `irs` matrix produced by `process_ir_data.m` (0-indexed):
 | 27 | `K_ir` | Aggregate capital (log dev) |
 | 28 | `utility_intratemp_ir` | Intratemporal utility (level deviation) |
 
-**Important**: Rows 1, 2, and 23 are expenditure aggregates computed with current (time-varying) prices, while rows 26, 27, and 28 are Dynare's built-in aggregate labor, capital, and intratemporal-utility rows. In the current April contract, DEQN aggregate IRs come directly from the aggregate policy tail by default. When `ergodic_price_aggregation=true`, the Python side instead re-aggregates the relevant MATLAB benchmark IRs from full sectoral vectors using fixed ergodic prices.
+**Important**: Rows 1, 2, and 23 are the stored MATLAB aggregate expenditure IR rows, while rows 26, 27, and 28 are Dynare's built-in aggregate labor, capital, and intratemporal-utility rows. In the current April contract, DEQN aggregate IRs come directly from the aggregate policy tail by default. When `ergodic_price_aggregation=true`, the Python side instead re-aggregates the relevant MATLAB benchmark IRs from full sectoral vectors using fixed ergodic prices.
 
 ---
 
@@ -225,11 +225,23 @@ The stochastic vs. deterministic SS difference is intentional — it reveals the
 
 ---
 
+## Current IR plotting defaults
+
+The active April 2026 IR contract is intentionally comprehensive by default.
+
+- All six reported aggregates are rendered in the aggregate IR section: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
+- Each aggregate figure is a full panel: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
+- Shock sizes are discovered from `ModelData_IRs.mat`, not hardcoded in the main analysis config.
+- The default benchmark overlays are `["PerfectForesight", "FirstOrder"]`, though `ir_benchmark_methods` can still override the set or ordering.
+- Sectoral IR figures still focus on the largest discovered shock and the negative-shock panel only.
+
+---
+
 ## Key Dictionaries in `matlab_irs.py`
 
 ### `NEW_FORMAT_VARIABLE_INDICES`
 
-Maps internal variable names to row indices in the 27-row `irs` matrix.
+Maps internal variable names to row indices in the 29-row `irs` matrix.
 
 ```python
 "A": 0, "Cexp": 1, "Iexp": 2, "Cj": 3, "Pj": 4, ...
@@ -241,12 +253,12 @@ Maps internal variable names to row indices in the 27-row `irs` matrix.
 Maps human-readable analysis names to internal names:
 
 ```python
-"Agg. Consumption": "Cexp",   # fallback row (current-price)
-"Agg. Investment": "Iexp",    # fallback row (current-price)
+"Agg. Consumption": "Cexp",   # stored aggregate benchmark row
+"Agg. Investment": "Iexp",    # stored aggregate benchmark row
 "Agg. Labor": "Lagg",         # direct aggregate row
 "Agg. Capital": "Kagg",       # direct aggregate row
-"Agg. Output": "GDPexp",      # fallback row
-"Agg. GDP": "GDPexp",         # fallback row
+"Agg. Output": "GDPexp",      # stored aggregate benchmark row
+"Agg. GDP": "GDPexp",         # stored aggregate benchmark row
 "Intratemporal Utility": "utility_intratemp",  # direct aggregate row
 "Cj": "Cj",                   # direct mapping
 "Pj": "Pj",                   # direct mapping
@@ -283,13 +295,13 @@ MATLAB simulations include period 0 (= steady state before the shock hits). DEQN
 
 1. **Hardcoded offsets**: Python uses `ps_levels[8*n:9*n]` for prices, `ps_levels[:n]` for consumption, etc. These must match the `policies_ss` layout defined in `get_variable_indices.m`. Any reordering of blocks in MATLAB silently breaks Python.
 
-2. **Row index drift**: The 27-row matrix ordering is defined by the concatenation order in `process_ir_data.m`. The `NEW_FORMAT_VARIABLE_INDICES` dict in Python must mirror this exactly. There is no automated check.
+2. **Row index drift**: The 29-row matrix ordering is defined by the concatenation order in `process_ir_data.m`. The Python variable-index mapping must mirror this exactly. There is no automated check.
 
 3. **1-indexed vs 0-indexed**: MATLAB uses 1-indexed sector indices everywhere. Python uses 0-indexed. The `.mat` file stores MATLAB's 1-indexed values; `matlab_irs.py` converts to 0-indexed during loading.
 
 4. **Log vs levels**: Most variables in `policies_ss` and the IR matrices are in **log** (log deviations from log SS). The exception is `A_ir` (row 0) and `A_client_ir` (row 12), which are in **levels** (`exp(dynare_simul(...))`).
 
-5. **Format detection**: `matlab_irs.py` auto-detects flat vs nested `.mat` format. The flat format (current) has a top-level `irfs` field; the nested format (legacy) has `by_shock`. If the file was generated without the sectoral data changes, `sectoral_loglin`/`sectoral_determ` fields will be missing and aggregate IRs will fall back to the current-price rows.
+5. **Format detection**: `matlab_irs.py` auto-detects flat vs nested `.mat` format. The current path standardizes the canonical shock artifact into keys like `pos_12.5` and `neg_50`; legacy files can still be inferred from filenames if needed. If the file was generated without the sectoral data changes, the sectoral blocks needed for fixed-price re-aggregation may be missing and aggregate IRs will fall back to the stored aggregate rows.
 
 6. **PF-only runs**: When MATLAB runs with `run_firstorder_irs=false`, `IRSFirstOrder = []` for every sector. `get_sector_irs` is guarded to skip a shock key only when **both** `IRSFirstOrder` and `IRSPerfectForesight` are absent, so sectoral row-based lookup still returns PF data even with no first-order IRFs. (Older code gated on `first_order` alone, causing sectoral variables to silently return no data in PF-only runs.)
 

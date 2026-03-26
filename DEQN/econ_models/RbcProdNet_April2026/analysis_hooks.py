@@ -5,12 +5,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from DEQN.econ_models.RbcProdNet_April2026.aggregation import (
+    compute_model_moments_from_dynare_simulation,
     compute_ergodic_prices_from_simulation,
     compute_model_moments_with_consistent_aggregation,
     process_simulation_with_consistent_aggregation,
     reaggregate_aggregates,
 )
-from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import load_matlab_irs
+from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import get_available_shock_sizes, load_matlab_irs
 from DEQN.econ_models.RbcProdNet_April2026.plots import (
     plot_sector_ir_by_shock_size,
     plot_sectoral_variable_ergodic,
@@ -20,6 +21,8 @@ from DEQN.econ_models.RbcProdNet_April2026.plots import (
 DEFAULT_ANALYSIS_CONFIG = {
     "ergodic_price_aggregation": False,
 }
+
+DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
 
 DEFAULT_AGGREGATE_IR_LABELS = [
     "Agg. Consumption",
@@ -162,6 +165,21 @@ def _get_requested_sectoral_ir_variables(config) -> list[str]:
     return list(requested)
 
 
+def _resolve_ir_benchmark_methods(config) -> list[str]:
+    configured_methods = config.get("ir_benchmark_methods")
+    if configured_methods is None:
+        legacy_method = config.get("ir_benchmark_method")
+        configured_methods = [legacy_method] if legacy_method else list(DEFAULT_IR_BENCHMARK_METHODS)
+    elif isinstance(configured_methods, str):
+        configured_methods = [configured_methods]
+
+    resolved_methods = []
+    for method in configured_methods:
+        if method and method not in resolved_methods:
+            resolved_methods.append(method)
+    return resolved_methods or list(DEFAULT_IR_BENCHMARK_METHODS)
+
+
 def _warn_unsupported_sectoral_ir_variables(requested_labels) -> None:
     unsupported = [label for label in requested_labels if label not in SUPPORTED_SECTORAL_IR_LABELS]
     new_labels = [label for label in unsupported if label not in _WARNED_UNSUPPORTED_IR_LABELS]
@@ -262,21 +280,26 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
     matlab_ir_data = load_matlab_irs(
         matlab_ir_dir=matlab_ir_dir,
-        shock_sizes=config.get("ir_shock_sizes", [5, 10, 20]),
         irs_file_path=irs_path,
     )
+    shock_sizes = get_available_shock_sizes(matlab_ir_data)
+    if not shock_sizes:
+        configured_shocks = config.get("ir_shock_sizes")
+        if configured_shocks:
+            shock_sizes = list(configured_shocks)
+            print(f"  Falling back to configured IR shock sizes: {shock_sizes}")
+        else:
+            raise ValueError("Could not infer IR shock sizes from MATLAB IR objects.")
+    else:
+        print(f"  Using IR shock sizes discovered from MATLAB objects: {shock_sizes}")
+        config["ir_shock_sizes"] = shock_sizes
 
     sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
-    ir_variables = config.get("ir_variables_to_plot", DEFAULT_AGGREGATE_IR_LABELS)
-    if isinstance(ir_variables, str):
-        ir_variables = [ir_variables]
+    ir_variables = list(DEFAULT_AGGREGATE_IR_LABELS)
 
     sectoral_ir_variables = [
         label for label in _get_requested_sectoral_ir_variables(config) if label in SUPPORTED_SECTORAL_IR_LABELS
     ]
-    shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
-    if not shock_sizes:
-        raise ValueError("ir_shock_sizes must contain at least one shock size.")
     max_periods = config.get("ir_max_periods", 80)
     configured_ir_methods = config.get("ir_methods", ["IR_stoch_ss"])
     if isinstance(configured_ir_methods, str):
@@ -443,6 +466,7 @@ def prepare_postprocess_analysis(
 
     calibration_method_stats = _build_calibration_method_stats(
         stats=stats,
+        dynare_simulations=dynare_simulations,
         analysis_variables_data=analysis_variables_data,
         raw_simulation_data=raw_simulation_data,
         reference_experiment_label=reference_experiment_label,
@@ -503,17 +527,15 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 sector_idx=sector_idx,
                 sector_label=sector_label,
                 variable_to_plot=ir_variable,
-                shock_sizes=(
-                    ir_render_context["shock_sizes"] if is_agg_consumption else [ir_render_context["largest_shock"]]
-                ),
+                shock_sizes=ir_render_context["shock_sizes"],
                 save_dir=irs_dir,
                 analysis_name=config["analysis_name"],
                 max_periods=ir_render_context["max_periods"],
                 n_sectors=ir_render_context["n_sectors"],
-                benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
+                benchmark_methods=_resolve_ir_benchmark_methods(config),
                 response_source=ir_render_context["ir_response_source"],
                 agg_consumption_mode=is_agg_consumption,
-                negative_only=not is_agg_consumption,
+                negative_only=False,
                 policies_ss=ir_render_context["policies_ss_np"],
                 state_ss=ir_render_context["state_ss_np"],
                 P_ergodic=ir_render_context["P_ergodic_np"],
@@ -593,7 +615,7 @@ def render_sectoral_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpro
                 analysis_name=config["analysis_name"],
                 max_periods=ir_render_context["max_periods"],
                 n_sectors=ir_render_context["n_sectors"],
-                benchmark_method=config.get("ir_benchmark_method", "PerfectForesight"),
+                benchmark_methods=_resolve_ir_benchmark_methods(config),
                 response_source=ir_render_context["ir_response_source"],
                 negative_only=True,
                 policies_ss=ir_render_context["policies_ss_np"],
@@ -719,6 +741,7 @@ def postprocess_analysis(
 def _build_calibration_method_stats(
     *,
     stats,
+    dynare_simulations,
     analysis_variables_data,
     raw_simulation_data,
     reference_experiment_label,
@@ -735,6 +758,26 @@ def _build_calibration_method_stats(
         "PF": _copy_model_stats((stats.get("PerfectForesight") or stats.get("Determ") or {}).get("ModelStats")),
         "MITShocks": _copy_model_stats((stats.get("MITShocks") or stats.get("MITShock") or {}).get("ModelStats")),
     }
+
+    dynare_method_map = {
+        "1st": ("FirstOrder", "First-Order (Dynare)"),
+        "2nd": ("SecondOrder", "Second-Order (Dynare)"),
+        "PF": ("PerfectForesight", "Perfect Foresight (Dynare)"),
+        "MITShocks": ("MITShocks", "MIT Shocks (Dynare)"),
+    }
+    for column_label, (dynare_key, source_label) in dynare_method_map.items():
+        dynare_simul = dynare_simulations.get(dynare_key)
+        if dynare_simul is not None:
+            method_stats[column_label] = compute_model_moments_from_dynare_simulation(
+                dynare_simul,
+                policies_ss=policies_ss,
+                state_ss=state_ss,
+                P_ergodic=P_ergodic,
+                Pk_ergodic=Pk_ergodic,
+                n_sectors=n_sectors,
+                ergodic_price_aggregation=ergodic_price_aggregation,
+                source_label=source_label,
+            )
 
     aggregate_method_map = {
         "1st": "Log-Linear",
@@ -797,13 +840,13 @@ def _override_aggregate_rows_from_analysis_vars(model_stats, analysis_vars):
     l_series = _as_float_array(analysis_vars.get("Agg. Labor"))
 
     if c_series.size:
-        model_stats["sigma_C_agg"] = float(np.std(c_series))
+        model_stats["sigma_C_agg"] = _matlab_std(c_series)
     if i_series.size:
-        model_stats["sigma_I_agg"] = float(np.std(i_series))
+        model_stats["sigma_I_agg"] = _matlab_std(i_series)
     if y_series.size:
-        model_stats["sigma_VA_agg"] = float(np.std(y_series))
+        model_stats["sigma_VA_agg"] = _matlab_std(y_series)
     if l_series.size:
-        labor_sigma = float(np.std(l_series))
+        labor_sigma = _matlab_std(l_series)
         model_stats["sigma_L_agg"] = labor_sigma
         model_stats["sigma_L_hc_agg"] = labor_sigma
     if c_series.size and l_series.size:
@@ -829,3 +872,13 @@ def _safe_corr(x, y):
     if np.std(x) == 0 or np.std(y) == 0:
         return float("nan")
     return float(np.corrcoef(x, y)[0, 1])
+
+
+def _matlab_std(x):
+    x = np.asarray(x, dtype=float).reshape(-1)
+    x = x[np.isfinite(x)]
+    if x.size == 0:
+        return float("nan")
+    if x.size == 1:
+        return 0.0
+    return float(np.std(x, ddof=1))

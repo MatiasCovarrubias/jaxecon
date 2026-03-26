@@ -1155,6 +1155,8 @@ def create_stochastic_ss_aggregates_table(
         method_names = [m for m in methods_to_include if m in stochastic_ss_data]
     else:
         method_names = all_methods
+    if not method_names and all_methods:
+        method_names = all_methods
 
     n_methods = len(method_names)
     use_compact_layout = n_methods <= 2

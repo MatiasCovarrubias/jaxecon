@@ -22,6 +22,7 @@ colors = sns.color_palette(palette, 10)
 SMALL_SIZE = 12
 MEDIUM_SIZE = 14
 LARGE_SIZE = 16
+DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
 
 # Set font family and sizes globally
 plt.rc("font", family="sans-serif", size=SMALL_SIZE)
@@ -107,6 +108,16 @@ def _format_number_list(values: list[int]) -> str:
     return ", ".join(str(value) for value in values[:-1]) + f", and {values[-1]}"
 
 
+def _join_text_list(values: list[str]) -> str:
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return ", ".join(values[:-1]) + f", and {values[-1]}"
+
+
 def _describe_response_source(response_source: str) -> str:
     if response_source == "GIR":
         return "The solid DEQN line reports the generalized impulse response averaged over ergodic draws."
@@ -125,6 +136,21 @@ def _describe_benchmark_method(benchmark_method: str) -> str:
         "PerfectForesight": "perfect-foresight benchmark",
     }
     return benchmark_labels.get(benchmark_method, f"{benchmark_method} benchmark")
+
+
+def _resolve_ir_benchmark_methods(
+    benchmark_methods: Optional[list[str]] = None, benchmark_method: Optional[str] = None
+) -> list[str]:
+    if benchmark_methods is None:
+        benchmark_methods = [benchmark_method] if benchmark_method else list(DEFAULT_IR_BENCHMARK_METHODS)
+    elif isinstance(benchmark_methods, str):
+        benchmark_methods = [benchmark_methods]
+
+    resolved_methods = []
+    for method in benchmark_methods:
+        if method and method not in resolved_methods:
+            resolved_methods.append(method)
+    return resolved_methods or list(DEFAULT_IR_BENCHMARK_METHODS)
 
 
 def _write_figure_note_tex(figure_path: str, note_text: str) -> None:
@@ -147,7 +173,7 @@ def _build_ir_note(
     variable_to_plot: str,
     sector_label: str,
     shock_sizes: list[int],
-    benchmark_method: str,
+    benchmark_methods: list[str],
     response_source: str,
     negative_only: bool,
     is_aggregate: bool,
@@ -168,7 +194,7 @@ def _build_ir_note(
         )
 
     anchor_text = (
-        "Perfect-foresight benchmark IRs start from and return to the deterministic steady state, "
+        "MATLAB benchmark IRs are anchored at the deterministic steady state, "
         "while global-solution IRs start from and return to the stochastic steady state."
     )
     axis_text = (
@@ -180,12 +206,14 @@ def _build_ir_note(
             "sector expenditure share, so this panel should be read as a share response rather than a log-percent response."
         )
 
-    benchmark_text = (
-        f"The dashed benchmark line is the {_describe_benchmark_method(benchmark_method)}."
-    )
+    described_benchmarks = [_describe_benchmark_method(method) for method in benchmark_methods]
+    if len(described_benchmarks) == 1:
+        benchmark_text = f"The dashed benchmark line is the {described_benchmarks[0]}."
+    else:
+        benchmark_text = f"The dashed benchmark lines are the {_join_text_list(described_benchmarks)}."
     if is_aggregate:
         benchmark_text += (
-            " For aggregate consumption, investment, GDP, capital, labor, and intratemporal utility, the benchmark is "
+            " For aggregate consumption, investment, GDP, capital, labor, and intratemporal utility, the benchmarks are "
             "re-aggregated with fixed ergodic prices so that the aggregate definition matches the nonlinear solution."
         )
     elif "_client" in variable_to_plot:
@@ -979,14 +1007,15 @@ def plot_sector_ir_by_shock_size(
     sector_idx: int,
     sector_label: str,
     variable_to_plot: str = "Agg. Consumption",
-    shock_sizes: list = [5, 10, 20],
+    shock_sizes: list = [12.5, 50],
     figsize: Optional[Tuple[float, float]] = None,
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
     max_periods: int = 80,
     n_sectors: int = 37,
-    benchmark_method: str = "PerfectForesight",
+    benchmark_method: Optional[str] = None,
+    benchmark_methods: Optional[list[str]] = None,
     response_source: str = "IR_stoch_ss",
     agg_consumption_mode: bool = False,
     negative_only: bool = False,
@@ -1043,8 +1072,10 @@ def plot_sector_ir_by_shock_size(
         Maximum periods to plot.
     n_sectors : int
         Number of sectors in the model.
-    benchmark_method : str
-        MATLAB benchmark to overlay ("PerfectForesight", "FirstOrder", "SecondOrder").
+    benchmark_method : str, optional
+        Backward-compatible single MATLAB benchmark overlay.
+    benchmark_methods : list[str], optional
+        MATLAB benchmarks to overlay ("PerfectForesight", "FirstOrder", "SecondOrder").
     response_source : str
         Which DEQN responses to plot ("GIR", "IR_stoch_ss", or "both").
     agg_consumption_mode : bool
@@ -1080,8 +1111,45 @@ def plot_sector_ir_by_shock_size(
         "SecondOrder": "Second Order",
         "PerfectForesight": "Perfect Foresight",
     }
-    benchmark_series_key = benchmark_key_map.get(benchmark_method, "perfect_foresight")
-    benchmark_label = benchmark_label_map.get(benchmark_method, benchmark_method)
+    resolved_benchmark_methods = _resolve_ir_benchmark_methods(
+        benchmark_methods=benchmark_methods,
+        benchmark_method=benchmark_method,
+    )
+    benchmark_series_specs = [
+        (
+            benchmark_label_map.get(method, method),
+            benchmark_key_map.get(method, "perfect_foresight"),
+        )
+        for method in resolved_benchmark_methods
+    ]
+
+    def _format_shock_size_token(value) -> str:
+        rounded = round(float(value), 8)
+        if float(rounded).is_integer():
+            return str(int(round(rounded)))
+        return f"{rounded:.8f}".rstrip("0").rstrip(".")
+
+    def _resolve_requested_shock_keys(ir_lookup, sign_prefix: str, requested_size) -> list[str]:
+        if not ir_lookup:
+            return []
+
+        requested_token = _format_shock_size_token(requested_size)
+        exact_key = f"{sign_prefix}_{requested_token}"
+        if exact_key in ir_lookup:
+            return [exact_key]
+
+        numeric_matches = []
+        for key in ir_lookup:
+            if not key.startswith(f"{sign_prefix}_"):
+                continue
+            suffix = key[len(sign_prefix) + 1 :]
+            try:
+                key_value = float(suffix)
+            except ValueError:
+                continue
+            if abs(key_value - float(requested_size)) <= 1e-6:
+                numeric_matches.append(key)
+        return numeric_matches
 
     n_sizes = len(shock_sizes)
     n_cols = 1 if negative_only else 2
@@ -1177,66 +1245,48 @@ def plot_sector_ir_by_shock_size(
                 row_max = max(row_max, float(np.max(y[finite])))
 
         if matlab_irs:
-            pos_keys = [pos_key] if pos_key in matlab_irs else [k for k in matlab_irs if k.startswith("pos_")]
-            neg_keys = [neg_key] if neg_key in matlab_irs else [k for k in matlab_irs if k.startswith("neg_")]
-            other_keys = []
+            pos_keys = _resolve_requested_shock_keys(matlab_irs, "pos", shock_size)
+            neg_keys = _resolve_requested_shock_keys(matlab_irs, "neg", shock_size)
             if not pos_keys and not neg_keys:
-                other_keys = list(matlab_irs.keys())
+                print(
+                    f"      Warning: no MATLAB IR benchmark found for requested shock size {shock_size}. "
+                    f"Available keys: {sorted(matlab_irs.keys())}"
+                )
 
-            if not negative_only and ax_pos is not None:
-                for pk in pos_keys:
-                    pos_benchmark = matlab_irs[pk].get(benchmark_series_key)
-                    if pos_benchmark is not None:
-                        pos_benchmark = pos_benchmark[:max_periods] * 100
-                        style = _benchmark_style(0)
+            for benchmark_rank, (benchmark_label, benchmark_series_key) in enumerate(benchmark_series_specs):
+                if not negative_only and ax_pos is not None:
+                    for pk in pos_keys:
+                        pos_benchmark = matlab_irs[pk].get(benchmark_series_key)
+                        if pos_benchmark is not None:
+                            pos_benchmark = pos_benchmark[:max_periods] * 100
+                            style = _benchmark_style(benchmark_rank)
+                            _plot_line(
+                                ax_pos,
+                                pos_benchmark,
+                                color=style["color"],
+                                linewidth=style["linewidth"],
+                                linestyle=style["linestyle"],
+                                marker=style["marker"],
+                                alpha=style["alpha"],
+                            )
+
+                neg_label_added = False
+                for nk in neg_keys:
+                    neg_benchmark = matlab_irs[nk].get(benchmark_series_key)
+                    if neg_benchmark is not None:
+                        neg_benchmark = neg_benchmark[:max_periods] * 100
+                        style = _benchmark_style(benchmark_rank)
                         _plot_line(
-                            ax_pos,
-                            pos_benchmark,
+                            ax_neg,
+                            neg_benchmark,
                             color=style["color"],
                             linewidth=style["linewidth"],
                             linestyle=style["linestyle"],
                             marker=style["marker"],
                             alpha=style["alpha"],
+                            label=benchmark_label if (j == 0 and not neg_label_added) else None,
                         )
-
-            for nk in neg_keys:
-                neg_benchmark = matlab_irs[nk].get(benchmark_series_key)
-                if neg_benchmark is not None:
-                    neg_benchmark = neg_benchmark[:max_periods] * 100
-                    style = _benchmark_style(0)
-                    _plot_line(
-                        ax_neg,
-                        neg_benchmark,
-                        color=style["color"],
-                        linewidth=style["linewidth"],
-                        linestyle=style["linestyle"],
-                        marker=style["marker"],
-                        alpha=style["alpha"],
-                        label=benchmark_label if j == 0 else None,
-                    )
-
-            for ok in other_keys:
-                if ok.startswith("pos_") and negative_only:
-                    continue
-                target_ax = (
-                    ax_pos
-                    if (ax_pos is not None and ok.startswith("pos_"))
-                    else ax_neg if ok.startswith("neg_") else (ax_pos if ax_pos is not None else ax_neg)
-                )
-                generic_benchmark = matlab_irs[ok].get(benchmark_series_key)
-                if generic_benchmark is not None:
-                    generic_benchmark = generic_benchmark[:max_periods] * 100
-                    style = _benchmark_style(0)
-                    _plot_line(
-                        target_ax,
-                        generic_benchmark,
-                        color=style["color"],
-                        linewidth=style["linewidth"],
-                        linestyle=style["linestyle"],
-                        marker=style["marker"],
-                        alpha=style["alpha"],
-                        label=f"{benchmark_label} ({ok})" if (j == 0 and target_ax is ax_neg) else None,
-                    )
+                        neg_label_added = True
         elif j == 0:
             available_sector_indices = sorted(
                 {
@@ -1428,7 +1478,7 @@ def plot_sector_ir_by_shock_size(
                 variable_to_plot=variable_to_plot,
                 sector_label=sector_label,
                 shock_sizes=shock_sizes,
-                benchmark_method=benchmark_method,
+                benchmark_methods=resolved_benchmark_methods,
                 response_source=response_source,
                 negative_only=negative_only,
                 is_aggregate=variable_to_plot.startswith("Agg.") or variable_to_plot == "Intratemporal Utility",

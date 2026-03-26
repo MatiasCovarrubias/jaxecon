@@ -120,7 +120,7 @@ The supported analysis architecture is now:
 
 - `DEQN/analysis/` for generic analysis logic
 - `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py` for model-specific analysis integration
-- `DEQN/econ_models/{MODEL_DIR}/plots.py` and `tables.py` for model-specific outputs
+- `DEQN/econ_models/{MODEL_DIR}/plot_helpers.py`, `matlab_irs.py`, and `aggregation.py` for model-specific analysis contracts when needed
 
 This is the path intended for active models going forward.
 
@@ -131,8 +131,7 @@ analysis scripts, are in a transition period:
 - they are not fully removed/deprecated yet
 - they may still run partially, but compatibility is not guaranteed unless they are migrated to `analysis_hooks.py`
 
-At the moment, the reference implementation for the new structure is `RbcProdNet_March2026`
-(with `RbcProdNet_Dec2025` using a temporary compatibility shim).
+At the moment, the reference implementation for the new structure is `RbcProdNet_April2026`.
 
 ## Adding Model-Specific Analysis
 
@@ -159,4 +158,4 @@ The shared analysis layer stays generic:
 
 - `DEQN/analysis/` handles label-based tables, histograms, welfare, stochastic steady state, and generic GIR plumbing
 - `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py` handles model-aware context preparation and post-processing
-- `DEQN/econ_models/{MODEL_DIR}/plots.py` and `tables.py` handle model-specific outputs
+- `DEQN/econ_models/{MODEL_DIR}/plot_helpers.py`, `matlab_irs.py`, and `aggregation.py` handle model-specific analysis behavior when the generic layer is not enough

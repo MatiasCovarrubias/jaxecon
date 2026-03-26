@@ -10,6 +10,7 @@ Supports two formats:
 """
 
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -73,9 +74,32 @@ def _to_python_sector_idx(raw_sector_idx: Any) -> int:
     return sector_idx
 
 
+def _format_shock_size_token(value: Any) -> str:
+    """Format shock sizes consistently for dictionary keys."""
+    scalar = float(np.asarray(value).item())
+    rounded = round(scalar, 8)
+    if float(rounded).is_integer():
+        return str(int(round(rounded)))
+    return f"{rounded:.8f}".rstrip("0").rstrip(".")
+
+
+def _build_shock_key(
+    *,
+    label: str,
+    shock_value: float,
+    size_pct: Any = None,
+    sign: Any = None,
+) -> str:
+    if sign is not None and size_pct is not None:
+        sign_int = int(np.asarray(sign).item()) if np.asarray(sign).size == 1 else int(sign)
+        sign_prefix = "neg" if sign_int < 0 else "pos"
+        return f"{sign_prefix}_{_format_shock_size_token(size_pct)}"
+    return _parse_shock_label_to_key(label, shock_value)
+
+
 def load_matlab_irs(
     matlab_ir_dir: str,
-    shock_sizes: List[int] = [5, 10, 20],
+    shock_sizes: Optional[List[float]] = None,
     file_pattern: str = "AllSectors_IRS__Oct_25nonlinear_{sign}_{size}.mat",
     irs_file_path: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -88,7 +112,7 @@ def load_matlab_irs(
 
     Args:
         matlab_ir_dir: Directory containing the MATLAB IR files
-        shock_sizes: List of shock sizes in percent (used for legacy format)
+        shock_sizes: Optional list of shock sizes in percent (legacy fallback only)
         file_pattern: File name pattern for legacy format
         irs_file_path: Optional explicit path to ModelData_IRs.mat file
 
@@ -124,7 +148,42 @@ def load_matlab_irs(
 
     # Fall back to legacy format
     print("  No ModelData_IRs.mat found, trying legacy format...")
+    if shock_sizes is None:
+        shock_sizes = _discover_legacy_shock_sizes(matlab_ir_dir)
     return _load_legacy_format(matlab_ir_dir, shock_sizes, file_pattern)
+
+
+def get_available_shock_sizes(ir_data: Dict[str, Any]) -> List[float]:
+    """Extract unique shock sizes from standardized IR keys like pos_12.5 / neg_50."""
+    sizes = set()
+    for key in ir_data:
+        match = re.match(r"^(?:pos|neg)_(\d+(?:\.\d+)?)$", str(key))
+        if match:
+            sizes.add(float(match.group(1)))
+    return sorted(sizes)
+
+
+def _discover_legacy_shock_sizes(matlab_ir_dir: str) -> List[float]:
+    """Infer legacy shock sizes from filenames when no canonical IR object is available."""
+    try:
+        filenames = os.listdir(matlab_ir_dir)
+    except OSError:
+        filenames = []
+
+    sizes = set()
+    for filename in filenames:
+        match = re.search(r"(?:^|[_-])(neg|pos)[_-]?(\d+(?:\.\d+)?)", filename, re.IGNORECASE)
+        if match:
+            sizes.add(float(match.group(2)))
+
+    discovered = sorted(sizes)
+    if discovered:
+        print(f"  Discovered legacy shock sizes from filenames: {discovered}")
+        return discovered
+
+    fallback = [5, 10, 20]
+    print(f"  Could not infer legacy shock sizes from filenames, using fallback {fallback}")
+    return fallback
 
 
 def _parse_shock_label_to_key(label: str, shock_value: float) -> str:
@@ -145,14 +204,12 @@ def _parse_shock_label_to_key(label: str, shock_value: float) -> str:
     Returns:
         Standardized key like "neg_20" or "pos_5"
     """
-    import re
-
     label_str = str(label).strip()
-    match = re.search(r"(neg|pos)_?(\d+)pct", label_str, re.IGNORECASE)
+    match = re.search(r"(neg|pos)_?(\d+(?:\.\d+)?)pct", label_str, re.IGNORECASE)
     if match:
         sign = match.group(1).lower()
-        pct = int(match.group(2))
-        return f"{sign}_{pct}"
+        pct = float(match.group(2))
+        return f"{sign}_{_format_shock_size_token(pct)}"
 
     # Fallback: use shock value and description heuristics
     # In MATLAB: -log(0.8) ≈ 0.223 means A drops to 0.8 (negative shock)
@@ -167,9 +224,9 @@ def _parse_shock_label_to_key(label: str, shock_value: float) -> str:
         sign = "neg" if shock_value > 0 else "pos"
 
     # Extract percentage from shock value
-    pct = int(round(abs(1 - np.exp(-abs(shock_value))) * 100))
+    pct = abs(1 - np.exp(-abs(shock_value))) * 100
 
-    return f"{sign}_{pct}"
+    return f"{sign}_{_format_shock_size_token(pct)}"
 
 
 def _to_1d_array(value: Any) -> Optional[np.ndarray]:
@@ -219,10 +276,24 @@ def _extract_shock_config(shock_artifact: Dict[str, Any], idx: int) -> Dict[str,
         raw_value = 0.0
     shock_value = float(np.asarray(raw_value).item()) if np.asarray(raw_value).size == 1 else float(raw_value)
 
+    size_pct = shock_artifact.get("size_pct")
+    if size_pct is None:
+        size_pct = shock_config.get("size_pct")
+    if size_pct is None:
+        size_pct = metadata.get("size_pct")
+
+    sign = shock_artifact.get("sign")
+    if sign is None:
+        sign = shock_config.get("sign")
+    if sign is None:
+        sign = metadata.get("sign")
+
     return {
         "label": label,
         "description": description,
         "value": shock_value,
+        "size_pct": size_pct,
+        "sign": sign,
     }
 
 
@@ -380,7 +451,12 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
         print(f"    Found {len(shocks)} shock configurations (canonical format)")
         for i, shock_artifact in enumerate(shocks):
             shock_cfg = _extract_shock_config(shock_artifact, i)
-            key = _parse_shock_label_to_key(shock_cfg["label"], shock_cfg["value"])
+            key = _build_shock_key(
+                label=shock_cfg["label"],
+                shock_value=shock_cfg["value"],
+                size_pct=shock_cfg.get("size_pct"),
+                sign=shock_cfg.get("sign"),
+            )
             print(f"    Processing: {shock_cfg['label']} ({shock_cfg['description']}) → key={key}")
 
             processed = _process_canonical_shock(shock_artifact)
@@ -409,7 +485,7 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
             shock_label = shock_cfg.get("label", shock_cfg.get("Label", f"shock_{i}"))
             shock_desc = shock_cfg.get("description", shock_cfg.get("Description", ""))
 
-            key = _parse_shock_label_to_key(shock_label, shock_value)
+            key = _build_shock_key(label=shock_label, shock_value=shock_value, size_pct=shock_cfg.get("size_pct"), sign=shock_cfg.get("sign"))
             print(f"    Processing: {shock_label} ({shock_desc}) → key={key}")
 
             processed = _process_flat_format_shock(md_irs, i)
@@ -441,7 +517,12 @@ def _load_new_format(filepath: str) -> Dict[str, Any]:
         shock_label = shock_cfg.get("label", shock_cfg.get("Label", f"shock_{i}"))
         shock_desc = shock_cfg.get("description", shock_cfg.get("Description", ""))
 
-        key = _parse_shock_label_to_key(shock_label, shock_value)
+        key = _build_shock_key(
+            label=shock_label,
+            shock_value=shock_value,
+            size_pct=shock_cfg.get("size_pct"),
+            sign=shock_cfg.get("sign"),
+        )
         print(f"    Processing: {shock_label} ({shock_desc}) → key={key}")
 
         if not isinstance(shock_result, dict):

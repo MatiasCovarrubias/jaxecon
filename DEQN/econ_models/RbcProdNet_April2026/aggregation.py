@@ -420,6 +420,8 @@ def compute_model_moments_with_consistent_aggregation(
     sigma_L_sectoral = _matlab_std_axis(l_logdev, axis=1)
     sigma_I_sectoral = _matlab_std_axis(i_logdev, axis=1)
 
+    # Vol(log(P_ss_j * Q_j / GDP)) equals Vol(log(Q_j / GDP)) because log(P_ss_j)
+    # is sector-specific but time-invariant.
     domar_simul = q_logdev - GDP_logdev[None, :]
     sigma_Domar_sectoral = _matlab_std_axis(domar_simul, axis=1)
 
@@ -441,10 +443,10 @@ def compute_model_moments_with_consistent_aggregation(
         "sigma_M_legacy_agg": float("nan"),
         "sigma_C_pref_agg": _matlab_std(C_logdev),
         "sigma_I_ces_agg": _matlab_std(I_logdev),
-        "sigma_Y_primaryfactor_agg": _matlab_std(GDP_logdev),
         "aggregate_definition": (
             "exact_logdev_to_deterministic_ss"
         ),
+        "variable_convention": "Y=primary_factors; VA=P_ss*(Q-Mout); GDP=aggregate_VA",
         "sample_window": "shocks_simul",
         "aggregate_moments": aggregate_moments,
         "share_C": float(share_c_numerator / share_c_denominator),
@@ -470,7 +472,8 @@ def compute_model_moments_with_consistent_aggregation(
         "sigma_I_sectoral": sigma_I_sectoral,
         "sigma_Domar_sectoral": sigma_Domar_sectoral,
         "sigma_Domar_sectoral_legacy": sigma_Domar_sectoral,
-        "domar_definition": "legacy_go_minus_yagg",
+        "domar_definition": "log_fixed_price_gross_output_share_in_GDP",
+        "domar_average_weight_definition": "legacy_normalized_gross_output_weights",
         "corr_matrix_VA": corr_matrix_VA,
         "corr_matrix_L": corr_matrix_L,
         "corr_matrix_I": corr_matrix_I,

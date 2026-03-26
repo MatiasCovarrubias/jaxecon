@@ -19,7 +19,7 @@ _CALIBRATION_TARGETED_ROWS = [
 ]
 
 _CALIBRATION_UNTARGETED_ROWS = [
-    ("$\\sigma(Y_{\\text{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
+    ("$\\sigma(\\mathrm{GDP}_{\\text{agg}})$", "sigma_VA_agg", "sigma_VA_agg"),
     ("$\\sigma(C^{\\text{exp}_{\\text{agg}}})$", "sigma_C_agg", "sigma_C_agg"),
     ("$\\sigma(I^{\\text{exp}_{\\text{agg}}})$", "sigma_I_agg", "sigma_I_agg"),
 ]
@@ -30,7 +30,7 @@ _CALIBRATION_TARGETED_CONSOLE_LABELS = [
 ]
 
 _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
-    "σ(Y_agg)",
+    "σ(GDP_agg)",
     "σ(C^exp_agg)",
     "σ(I^exp_agg)",
 ]
@@ -71,7 +71,7 @@ _MODEL_VS_DATA_PANELS = [
                 "Average correlation across sectors in value added",
                 "avg_pairwise_corr_VA",
                 "avg_pairwise_corr_VA",
-                "avg corr across sectors in Y",
+                "avg corr across sectors in VA",
             ),
             (
                 "Average correlation across sectors in investment",
@@ -90,7 +90,7 @@ _MODEL_VS_DATA_PANELS = [
     (
         "Sectoral weighted-average volatilities",
         [
-            ("$\\sum_j \\omega_j^{VA}\\sigma(Y_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(Y_jt)"),
+            ("$\\sum_j \\omega_j^{VA}\\sigma(VA_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(VA_jt)"),
             ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
             ("$\\sum_j \\omega_j^{VA}\\sigma(I_{jt})$", "sigma_I_avg", "sigma_I_avg", "sum w^VA sigma(I_jt)"),
         ],
@@ -562,7 +562,7 @@ def _generate_calibration_latex_table(targeted_rows: list, untargeted_rows: list
         r"$\bar{\sigma}(I_j)$ is the investment-expenditure-share-weighted average of sectoral investment volatilities. "
         r"Both use BEA annual data (1963--2018). "
         r"\textit{Untargeted moments:} "
-        r"$\sigma(Y_{\text{agg}})$ is the volatility of aggregate GDP; "
+        r"$\sigma(\mathrm{GDP}_{\text{agg}})$ is the volatility of aggregate GDP; "
         r"$\sigma(C^{\text{exp}_{\text{agg}}})$ and $\sigma(I^{\text{exp}_{\text{agg}}})$ "
         r"are the volatilities of aggregate consumption and investment. "
         r"In the data, GDP and investment are Tornqvist chain-weighted aggregates of BEA sectoral series; "

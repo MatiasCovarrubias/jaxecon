@@ -409,9 +409,7 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
     }
     ir_shock_sizes = list(config_dict.get("ir_shock_sizes", []))
     aggregate_benchmark_labels = _describe_ir_benchmark_methods(config_dict)
-    aggregate_ir_variables = list(
-        getattr(analysis_hooks, "DEFAULT_AGGREGATE_IR_LABELS", DEFAULT_AGGREGATE_LABELS)
-    )
+    aggregate_ir_variables = list(getattr(analysis_hooks, "DEFAULT_AGGREGATE_IR_LABELS", DEFAULT_AGGREGATE_LABELS))
     for sector_idx in config_dict.get("ir_sectors_to_plot", []):
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
@@ -434,7 +432,9 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                         f"Aggregate {_join_labels([_caption_label(subfigure['caption']) for subfigure in subfigures])} "
                         f"responses to a TFP shock in {sector_label}."
                     ),
-                    "note_builder": lambda subfigures, sector_label=sector_label, ir_shock_sizes=tuple(ir_shock_sizes), aggregate_benchmark_labels=aggregate_benchmark_labels: (
+                    "note_builder": lambda subfigures, sector_label=sector_label, ir_shock_sizes=tuple(
+                        ir_shock_sizes
+                    ), aggregate_benchmark_labels=aggregate_benchmark_labels: (
                         f"Each row corresponds to a {_format_percent_list(ir_shock_sizes)} percent TFP shock in "
                         f"{sector_label}; the left column shows negative shocks and the right column positive shocks. "
                         f"The panels plot the responses of aggregate "

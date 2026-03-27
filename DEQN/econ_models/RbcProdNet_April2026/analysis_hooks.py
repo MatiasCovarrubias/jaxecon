@@ -276,6 +276,24 @@ def _resolve_reference_experiment_label(config, raw_simulation_data) -> str:
     return next(iter(raw_simulation_data))
 
 
+def discover_ir_shock_sizes(*, config, model_dir, irs_path):
+    if not irs_path:
+        return None
+
+    matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
+    matlab_ir_data = load_matlab_irs(
+        matlab_ir_dir=matlab_ir_dir,
+        irs_file_path=irs_path,
+    )
+    shock_sizes = get_available_shock_sizes(matlab_ir_data)
+    if not shock_sizes:
+        configured_shocks = config.get("ir_shock_sizes")
+        if configured_shocks:
+            return list(configured_shocks)
+        return None
+    return shock_sizes
+
+
 def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_ss, P_ergodic, Pk_ergodic, econ_model, n_sectors):
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
     matlab_ir_data = load_matlab_irs(

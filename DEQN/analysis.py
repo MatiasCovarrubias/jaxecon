@@ -1397,6 +1397,19 @@ def main():
     )
     shock_dimension = get_shock_dimension(econ_model, analysis_hooks)
 
+    if analysis_hooks is not None and hasattr(analysis_hooks, "discover_ir_shock_sizes"):
+        discovered_ir_shock_sizes = analysis_hooks.discover_ir_shock_sizes(
+            config=config,
+            model_dir=model_dir,
+            irs_path=irs_path,
+        )
+        if discovered_ir_shock_sizes:
+            config["ir_shock_sizes"] = list(discovered_ir_shock_sizes)
+            print(
+                "  Using IR shock sizes discovered from MATLAB objects for DEQN IR computation: "
+                f"{config['ir_shock_sizes']}"
+            )
+
     if matlab_simulation_block is not None:
         matlab_common_shock_schedule = _extract_matlab_common_shock_schedule(
             matlab_simulation_block,

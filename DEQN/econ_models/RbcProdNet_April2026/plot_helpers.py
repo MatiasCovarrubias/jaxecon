@@ -156,6 +156,10 @@ def _write_figure_note_tex(figure_path: str, note_text: str) -> None:
         note_file.write(note_tex)
 
 
+def _print_saved_file(path: str, indent: str = "    ") -> None:
+    print(f"{indent}Saved: {os.path.basename(path)}", flush=True)
+
+
 def _build_ir_note(
     *,
     variable_to_plot: str,
@@ -404,6 +408,7 @@ def plot_ergodic_histograms(
                 filename = f"Histogram_{var_filename}_comparative.png"
             save_path = os.path.join(save_dir, filename)
             plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+            _print_saved_file(save_path)
 
         figures.append((fig, ax))
 
@@ -585,6 +590,7 @@ def plot_gir_responses(
                     filename = f"GIR_{safe_var_name}_{safe_state_name}{shock_suffix}.png"
                 save_path = os.path.join(save_dir, filename)
                 plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+                _print_saved_file(save_path)
 
             figures.append((fig, ax))
 
@@ -784,6 +790,7 @@ def plot_combined_impulse_responses(
                         filename = f"CombinedIR_{safe_var}_{safe_sector}_shock{shock_size}.png"
                     save_path = os.path.join(save_dir, filename)
                     plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+                    _print_saved_file(save_path)
 
                 figures.append((fig, ax))
 
@@ -985,6 +992,7 @@ def plot_ir_comparison_panel(
             filename = f"IRPanel_{safe_sector}.png"
         save_path = os.path.join(save_dir, filename)
         plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        _print_saved_file(save_path)
 
     return fig, axes
 
@@ -1472,7 +1480,7 @@ def plot_sector_ir_by_shock_size(
                 is_aggregate=variable_to_plot.startswith("Agg.") or variable_to_plot == "Intratemporal Utility",
             ),
         )
-        print(f"      Saved: {filename}")
+        _print_saved_file(save_path, indent="      ")
 
     return fig, axes
 
@@ -1555,7 +1563,6 @@ def plot_sectoral_capital_stochss(
 
     ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
     ax.set_ylabel("Stochastic SS Capital (% Dev. from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
-    ax.set_title("Sectoral Capital at Stochastic Steady State", fontweight="bold", fontsize=LARGE_SIZE)
 
     ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
 
@@ -1568,7 +1575,7 @@ def plot_sectoral_capital_stochss(
     filename = f"sectoral_capital_stochss_{analysis_name}.png" if analysis_name else "sectoral_capital_stochss.png"
     save_path = os.path.join(save_dir, filename)
     plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
-    print(f"    Saved: {filename}")
+    _print_saved_file(save_path)
     plt.show()
 
     return fig, ax
@@ -1682,7 +1689,7 @@ def plot_sectoral_capital_comparison(
     )
     save_path = os.path.join(save_dir, filename)
     plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
-    print(f"    Saved: {filename}")
+    _print_saved_file(save_path)
     plt.show()
 
     return fig, ax
@@ -1800,7 +1807,6 @@ def plot_sectoral_variable_stochss(
     ax.set_ylabel(
         f"Stochastic SS {var_info['title']} (% Dev. from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE
     )
-    ax.set_title(f"Sectoral {var_info['title']} at Stochastic Steady State", fontweight="bold", fontsize=LARGE_SIZE)
 
     # Calculate and display upstreamness correlations if data provided
     if upstreamness_data is not None:
@@ -1859,7 +1865,7 @@ def plot_sectoral_variable_stochss(
             include_upstreamness=upstreamness_data is not None,
         ),
     )
-    print(f"    Saved: {filename}")
+    _print_saved_file(save_path)
     plt.show()
 
     return fig, ax
@@ -1974,7 +1980,6 @@ def plot_sectoral_variable_ergodic(
     ax.set_ylabel(
         f"Ergodic Mean {var_info['title']} (% Dev. from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE
     )
-    ax.set_title(f"Sectoral {var_info['title']} - Ergodic Distribution", fontweight="bold", fontsize=LARGE_SIZE)
 
     # Calculate and display upstreamness correlations if data provided
     if upstreamness_data is not None:
@@ -2033,7 +2038,7 @@ def plot_sectoral_variable_ergodic(
             include_upstreamness=upstreamness_data is not None,
         ),
     )
-    print(f"    Saved: {filename}")
+    _print_saved_file(save_path)
     plt.show()
 
     return fig, ax
@@ -2141,5 +2146,6 @@ def plot_gir_heatmap(
                 os.path.basename(save_path), f"GIR_heatmap_{var_names[aggregate_idx]}_period{time_slice}.png"
             )
         plt.savefig(final_save_path, dpi=300, bbox_inches="tight", format="png")
+        _print_saved_file(final_save_path)
 
     return fig, ax

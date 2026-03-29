@@ -158,6 +158,10 @@ def _nonlinear_method_note(method_names: list[str]) -> str:
     return ""
 
 
+def _print_saved_file(path: str) -> None:
+    print(f"  Saved: {os.path.basename(path)}", flush=True)
+
+
 def _wrap_table_environment(
     tabular_code: str, *, caption: str, label: str, note_text: str, note_width: str = "0.92"
 ) -> str:
@@ -256,6 +260,7 @@ def create_calibration_table(
                 final_save_path = save_path
             with open(final_save_path, "w") as f:
                 f.write(latex_code)
+            _print_saved_file(final_save_path)
 
         print(console_output)
         return latex_code
@@ -301,6 +306,7 @@ def create_calibration_table(
             final_save_path = save_path
         with open(final_save_path, "w") as f:
             f.write(latex_code)
+        _print_saved_file(final_save_path)
 
     print(console_output)
     return latex_code
@@ -666,6 +672,7 @@ def create_descriptive_stats_table(
 
         with open(final_save_path, "w") as file:
             file.write(latex_code)
+        _print_saved_file(final_save_path)
 
     print(console_output)
 
@@ -879,6 +886,7 @@ def create_comparative_stats_table(
 
         with open(final_save_path, "w") as file:
             file.write(latex_code)
+        _print_saved_file(final_save_path)
 
     return latex_code
 
@@ -953,6 +961,7 @@ def create_welfare_table(
 
         with open(final_save_path, "w") as file:
             file.write(latex_code)
+        _print_saved_file(final_save_path)
 
     console_output = _generate_welfare_console_table(welfare_data)
     print(console_output)
@@ -1038,6 +1047,7 @@ def create_stochastic_ss_table(
 
         with open(final_save_path, "w") as file:
             file.write(latex_code)
+        _print_saved_file(final_save_path)
 
     console_output = _generate_stochastic_ss_console_table(stochastic_ss_data)
     print(console_output)
@@ -1210,6 +1220,7 @@ def create_stochastic_ss_aggregates_table(
             final_save_path = save_path
         with open(final_save_path, "w") as file:
             file.write(latex_code)
+        _print_saved_file(final_save_path)
 
     if selected_stochastic_ss_data:
         console_output = _generate_stochastic_ss_console_table(selected_stochastic_ss_data)

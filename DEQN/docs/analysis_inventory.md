@@ -25,9 +25,9 @@ Output roots:
 |---|----------|-------------------|----------------|----------------------|
 | 0 | Setup + roll-forward | Load MATLAB objects, build the Python model, run the long nonlinear simulation, optionally run the auxiliary common-shock simulation, compute stochastic SS objects, GIR objects, and welfare inputs | `analysis.py`; `simul_analysis.py`; `stochastic_ss.py`; `GIR.py`; `welfare.py`; `model_hooks.py`; hooks `compute_analysis_variables` / `prepare_analysis_context` | `config.json` in `analysis_dir` |
 | 1 | Model vs data moments | Empirical targets vs model moments (MATLAB `ModelStats` + nonlinear moments from sim + optional Dynare sim aggregates) | `aggregation.py` + hooks `prepare_postprocess_analysis` → `_build_calibration_method_stats`; first-order stats from `md["Statistics"]` | LaTeX: `analysis_dir/calibration_table_<analysis_name>.tex` (console from `tables.create_calibration_table`) |
-| 2 | Aggregate IRs | Sector TFP shocks; DEQN IR (`GIR`/`IR_stoch_ss`) vs MATLAB benchmark (`ModelData_IRs`) | `GIR.py` (`create_GIR_fn`); MATLAB via `matlab_irs` + hooks `_build_ir_render_context` | PNG: `IRs/IR_<var>_<sector>_<analysis_name>.png` via `plot_helpers.plot_sector_ir_by_shock_size` |
+| 2 | Aggregate IRs | Sector TFP shocks; DEQN IR selected by `config["use_gir"]` (`True` = `GIR`, `False` = `IR_stoch_ss`) vs MATLAB benchmark (`ModelData_IRs`) | `GIR.py` (`create_GIR_fn`); MATLAB via `matlab_irs` + hooks `_build_ir_render_context` | PNG: `IRs/IR_<var>_<sector>_<analysis_name>.png` via `plot_helpers.plot_sector_ir_by_shock_size` |
 | 3 | Sectoral variables in stochastic SS | Bar charts of K,L,Y,M,Q (% dev from det. SS) at stochastic SS, optional upstreamness ρ. These plots are fed from the main long ergodic simulation, not from the common-shock auxiliary run. | `stochastic_ss.py` + hooks `render_sectoral_stochss_outputs` | PNG: `simulation/sectoral_<k|l|y|m|q>_stochss_<analysis_name>.png` |
-| 4 | Aggregate stochastic SS | Aggregate stochastic steady state for the displayed nonlinear method(s) | `stochastic_ss.py` → `compute_analysis_variables` at SS | LaTeX: `stochastic_ss_aggregates_<analysis_name>.tex` |
+| 4 | Aggregate stochastic SS | Aggregate stochastic steady state for the displayed nonlinear method(s); if no filter is configured, all available stochastic-SS methods are shown | `stochastic_ss.py` → `compute_analysis_variables` at SS | LaTeX: `stochastic_ss_aggregates_<analysis_name>.tex` + console table |
 | 5 | Descriptive statistics (simulation) | Mean/sd/skew/excess kurt for configured variables on nonlinear and MATLAB benchmark series. Which benchmark methods appear depends on which method blocks are present in `ModelData_simulation.mat`. | Time series in `analysis_variables_data` after hooks (`process_simulation_with_consistent_aggregation`, NN sim) | LaTeX: `simulation/descriptive_stats_<analysis_name>.tex` |
 | 6 | Welfare cost of BC | CE % from simulated utilities (NN + optional Dynare paths). The common-shock nonlinear run is kept for comparison here. | `welfare.py` + `_compute_welfare_cost_from_sample` / `_welfare_cost_from_dynare_simul` | LaTeX: `analysis_dir/welfare_<analysis_name>.tex` |
 | 7 | Sectoral IRs | Same IR machinery as (2), sectoral variable list from config | `GIR.py` + hooks `render_sectoral_ir_outputs` | PNG: `IRs/IR_<var>_<sector>_<analysis_name>.png` |
@@ -70,7 +70,7 @@ Rule of thumb:
 ### `DEQN/analysis/tables.py`
 
 - `create_calibration_table` → model vs data TeX + console.
-- `create_stochastic_ss_aggregates_table` → aggregate SS TeX.
+- `create_stochastic_ss_aggregates_table` → aggregate SS TeX + console.
 - `create_descriptive_stats_table` → variable-wise descriptive TeX + console.
 - `create_welfare_table` → welfare TeX.
 

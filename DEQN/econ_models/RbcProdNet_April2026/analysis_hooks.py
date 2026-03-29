@@ -507,6 +507,8 @@ def prepare_postprocess_analysis(
     ergodic_experiment_labels = [
         label for label, sim_data in raw_simulation_data.items() if sim_data.get("simulation_kind", "ergodic") == "ergodic"
     ]
+    if not ergodic_experiment_labels and reference_experiment_label in raw_simulation_data:
+        ergodic_experiment_labels = [reference_experiment_label]
     ir_render_context = _build_ir_render_context(
         config=config,
         model_dir=model_dir,

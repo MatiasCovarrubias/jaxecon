@@ -122,13 +122,13 @@ _MODEL_VS_DATA_METHOD_ORDER = ["1st", "Nonlinear", "Nonlinear-CS"]
 
 _MODEL_VS_DATA_METHOD_HEADERS = {
     "1st": r"\shortstack{1st Order\\Approx.}",
-    "Nonlinear": r"\shortstack{Global Solution\\(long simul)}",
+    "Nonlinear": r"\shortstack{Global Solution}",
     "Nonlinear-CS": r"\shortstack{Global Solution\\(common shocks)}",
 }
 
 _MODEL_VS_DATA_METHOD_CONSOLE_HEADERS = {
     "1st": "1st Order Approx.",
-    "Nonlinear": "Global Solution (long simul)",
+    "Nonlinear": "Global Solution",
     "Nonlinear-CS": "Global Solution (common shocks)",
 }
 
@@ -155,6 +155,20 @@ def _nonlinear_method_note(method_names: list[str]) -> str:
             r" Global Solution (Long Simulation) uses the long ergodic simulation sample, while "
             r"Global Solution (Common Shocks) uses the short common-shock simulation sample."
         )
+    return ""
+
+
+def _selected_nonlinear_sample_note(method_names: list[str]) -> str:
+    if "Global Solution" in method_names and "Global Solution (Common Shocks)" not in method_names:
+        return (
+            r" The Global Solution column uses the single nonlinear DEQN simulation selected by the Python config."
+        )
+    return ""
+
+
+def _selected_nonlinear_row_note(method_names: list[str]) -> str:
+    if "Global Solution" in method_names and "Global Solution (Common Shocks)" not in method_names:
+        return r" The Global Solution row uses the single nonlinear DEQN simulation selected by the Python config."
     return ""
 
 
@@ -432,8 +446,9 @@ def _create_model_vs_data_moments_table(
         r" Boldface objects such as $\mathbf{C}_t$ denote the full sectoral vector."
         r" Comovement means the correlation between sectors in a specific variable; the reported rows summarize those sector-to-sector correlations by their average."
         r" Aggregate rows are re-aggregated in Python using fixed ergodic-price weights so the aggregate definition is consistent across methods."
-        r" The 1st Order Approx. and Global Solution (common shocks) columns use simulations of 5{,}000 periods."
-        r" The Global Solution (long simul) column uses 16 parallel simulations with 64{,}000 periods each."
+        + _selected_nonlinear_sample_note(
+            [_MODEL_VS_DATA_METHOD_CONSOLE_HEADERS.get(method_name, method_name) for method_name in method_order]
+        )
         + r" Data moments come from the empirical targets used in the calibration."
         + "\n"
         r"\end{minipage}" + "\n"
@@ -801,8 +816,8 @@ def _generate_variable_organized_latex_table(
             + _LOGDEV_PERCENT_NOTE
             + r" Skewness and excess kurtosis are unit-free, and kurtosis is reported as excess kurtosis. "
             + _DESCRIPTIVE_SHAPE_NOTE
-            + r" The Log-Linear and Global Solution (Common Shocks) rows use simulation samples of 5{,}000 periods."
-            + r" The Global Solution (Long Simulation) row uses 16 parallel simulations with 64{,}000 periods each."
+            + _selected_nonlinear_row_note(method_names)
+            +
             r" For nonlinear methods the moments are computed from the Python simulation sample; benchmark moments use the corresponding benchmark simulation series when those are available."
         ),
     )

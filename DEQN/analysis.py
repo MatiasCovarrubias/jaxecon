@@ -82,7 +82,6 @@ from DEQN.analysis.model_hooks import (  # noqa: E402
     run_model_postprocess,
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
-    compute_analysis_dataset_with_context,
     create_episode_simulation_fn_verbose,
     create_shock_path_simulation_fn,
     simulation_analysis,
@@ -123,13 +122,16 @@ config = {
     "model_data_simulation_file": "ModelData_simulation_newwds_v2.mat",  # Set to None to skip MATLAB simulation comparison
     # Aggregation convention
     # False (default): use aggregate endogenous policy variables directly from the model / Dynare objects.
-    # True: re-aggregate using fixed ergodic-mean prices computed from the nonlinear ergodic simulation.
+    # True: re-aggregate using fixed ergodic-mean prices computed from the selected nonlinear simulation.
     "ergodic_price_aggregation": False,
     # Experiments to analyze
     "experiments_to_analyze": {
         "benchmark": "GO_shocks_newWDS_v2",
     },
     # Simulation configuration
+    # False (default): use the common-shock simulation as the sole nonlinear sample.
+    # True: use the long ergodic simulation as the sole nonlinear sample.
+    "long_simulation": False,
     "init_range": 6,
     "periods_per_epis": 64000,
     "burn_in_periods": 3200,
@@ -783,8 +785,8 @@ def _create_nonlinear_simulation_runners(
     analysis_hooks,
     matlab_common_shock_schedule,
 ):
+    use_long_simulation = bool(config_dict.get("long_simulation", False))
     ergodic_simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config_dict))
-    print("  Nonlinear simulation mode: long ergodic simulation")
 
     def run_ergodic_simulation(train_state):
         simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
@@ -804,55 +806,56 @@ def _create_nonlinear_simulation_runners(
             "simulation_kind": "ergodic",
         }
 
-    common_shock_runner = None
-    if matlab_common_shock_schedule is not None:
-        shock_path_simulation_fn = jax.jit(create_shock_path_simulation_fn(econ_model))
-        print(
-            "  Nonlinear simulation mode: shared MATLAB shock path kept as auxiliary run "
-            f"({matlab_common_shock_schedule['reference_method']})"
+    if use_long_simulation:
+        print("  Nonlinear simulation mode: long ergodic simulation", flush=True)
+        return {
+            "primary": run_ergodic_simulation,
+        }
+
+    if matlab_common_shock_schedule is None:
+        raise ValueError(
+            "long_simulation=False requires a MATLAB common-shock schedule in the simulation data file."
         )
 
-        def run_common_shock_simulation(train_state):
-            (
-                simul_obs,
-                simul_policies,
-                simul_analysis_variables,
-                analysis_context,
-                simul_obs_full,
-                simul_policies_full,
-            ) = simulation_analysis_with_shocks(
-                train_state=train_state,
-                econ_model=econ_model,
-                shock_path=matlab_common_shock_schedule["full_shocks"],
-                simulation_fn=shock_path_simulation_fn,
-                active_start=matlab_common_shock_schedule["active_start"],
-                active_end=matlab_common_shock_schedule["active_end"],
-                analysis_config=config_dict,
-                analysis_hooks=analysis_hooks,
-                label=(f"Common-shock nonlinear simulation ({matlab_common_shock_schedule['reference_method']})"),
-            )
-            return {
-                "simul_obs": simul_obs,
-                "simul_policies": simul_policies,
-                "simul_analysis_variables": simul_analysis_variables,
-                "analysis_context": analysis_context,
-                "simul_obs_full": simul_obs_full,
-                "simul_policies_full": simul_policies_full,
-                "simulation_kind": "common_shock",
-            }
+    shock_path_simulation_fn = jax.jit(create_shock_path_simulation_fn(econ_model))
 
-        common_shock_runner = run_common_shock_simulation
-    else:
-        print("  No MATLAB common-shock schedule found; only long ergodic simulation will be used.")
+    def run_common_shock_simulation(train_state):
+        (
+            simul_obs,
+            simul_policies,
+            simul_analysis_variables,
+            analysis_context,
+            simul_obs_full,
+            simul_policies_full,
+        ) = simulation_analysis_with_shocks(
+            train_state=train_state,
+            econ_model=econ_model,
+            shock_path=matlab_common_shock_schedule["full_shocks"],
+            simulation_fn=shock_path_simulation_fn,
+            active_start=matlab_common_shock_schedule["active_start"],
+            active_end=matlab_common_shock_schedule["active_end"],
+            analysis_config=config_dict,
+            analysis_hooks=analysis_hooks,
+            label=(f"Common-shock nonlinear simulation ({matlab_common_shock_schedule['reference_method']})"),
+        )
+        return {
+            "simul_obs": simul_obs,
+            "simul_policies": simul_policies,
+            "simul_analysis_variables": simul_analysis_variables,
+            "analysis_context": analysis_context,
+            "simul_obs_full": simul_obs_full,
+            "simul_policies_full": simul_policies_full,
+            "simulation_kind": "common_shock",
+        }
 
+    print(
+        "  Nonlinear simulation mode: shared MATLAB shock path "
+        f"({matlab_common_shock_schedule['reference_method']})",
+        flush=True,
+    )
     return {
-        "ergodic": run_ergodic_simulation,
-        "common_shock": common_shock_runner,
+        "primary": run_common_shock_simulation,
     }
-
-
-def _common_shock_label(experiment_label: str) -> str:
-    return f"{experiment_label} (common shocks)"
 
 
 def _build_output_display_label_map(config_dict):
@@ -863,7 +866,6 @@ def _build_output_display_label_map(config_dict):
     experiment_label = experiment_labels[0]
     return {
         experiment_label: "Global Solution",
-        _common_shock_label(experiment_label): "Global Solution (Common Shocks)",
     }
 
 
@@ -980,8 +982,8 @@ def _run_experiment_analysis(
 
     train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
 
-    ergodic_results = nonlinear_simulation_runners["ergodic"](train_state)
-    ergodic_analysis_context = ergodic_results["analysis_context"]
+    selected_results = nonlinear_simulation_runners["primary"](train_state)
+    selected_analysis_context = selected_results["analysis_context"]
 
     welfare_costs = {}
     raw_simulation_data = {}
@@ -1030,34 +1032,15 @@ def _run_experiment_analysis(
 
     store_variant(
         experiment_label,
-        ergodic_results,
-        analysis_context_for_reporting=ergodic_analysis_context,
+        selected_results,
+        analysis_context_for_reporting=selected_analysis_context,
         required_stochss=True,
     )
 
-    common_shock_runner = nonlinear_simulation_runners.get("common_shock")
-    if common_shock_runner is not None:
-        common_shock_results = common_shock_runner(train_state)
-        common_shock_analysis_variables, _ = compute_analysis_dataset_with_context(
-            econ_model=econ_model,
-            simul_obs=common_shock_results["simul_obs"],
-            simul_policies=common_shock_results["simul_policies"],
-            analysis_config=config_dict,
-            analysis_context=ergodic_analysis_context,
-            analysis_hooks=analysis_hooks,
-        )
-        common_shock_results["simul_analysis_variables"] = common_shock_analysis_variables
-        store_variant(
-            _common_shock_label(experiment_label),
-            common_shock_results,
-            analysis_context_for_reporting=ergodic_analysis_context,
-            required_stochss=False,
-        )
-
     gir_results = gir_fn(
-        ergodic_results["simul_obs"],
+        selected_results["simul_obs"],
         train_state,
-        ergodic_results["simul_policies"],
+        selected_results["simul_policies"],
         stochastic_ss_states[experiment_label],
     )
 
@@ -1772,10 +1755,6 @@ def main():
     else:
         desc_analysis_data = filtered_analysis_variables_data
 
-    display_filtered_analysis_variables_data = _apply_display_labels_to_mapping(
-        filtered_analysis_variables_data,
-        output_display_label_map,
-    )
     display_desc_analysis_data = _apply_display_labels_to_mapping(
         desc_analysis_data,
         output_display_label_map,

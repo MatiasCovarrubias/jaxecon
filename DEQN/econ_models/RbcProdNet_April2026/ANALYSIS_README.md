@@ -52,13 +52,12 @@ The main execution flow in `DEQN/analysis.py` is:
 2. Load `ModelData.mat`.
 3. Build the Python `Model`.
 4. Optionally load `ModelData_simulation.mat` and extract benchmark simulation windows.
-5. Build the long nonlinear simulation runner.
-6. Optionally build the auxiliary common-shock nonlinear runner from the shared MATLAB shock path.
+5. Build the nonlinear DEQN simulation runner selected by `config["long_simulation"]`.
+6. Use that selected nonlinear run as the single DEQN source for stochastic SS, GIRs, welfare, and nonlinear reporting.
 7. For each analyzed experiment:
 
-- run the long nonlinear simulation
+- run the selected nonlinear simulation
 - compute stochastic SS from that simulation
-- optionally run the common-shock nonlinear comparison
 - compute GIR objects
 - compute welfare inputs
 
@@ -69,9 +68,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- The nonlinear DEQN analysis now enforces a single simulation source via `long_simulation`: `False` uses the common-shock run for GIRs, stochastic steady state, and ergodic-price aggregation, while `True` uses the long ergodic run.
+- IR selection is now controlled by the boolean `use_gir`, aggregate stochastic-SS tables default to all available stochastic-SS methods when no filter is configured, and saved tables / figures print their filenames to the Python console.
 - Aggregate IR figures now use the full two-column panel for all reported aggregates, and the default benchmark overlays are the MATLAB perfect-foresight and first-order IRs.
-- `ergodic_price_aggregation` is now an explicit config flag. The default `false` path reads aggregate policy variables directly from the model and only re-aggregates with ergodic prices when the flag is turned on.
-- Aggregate presentation is now standardized around six reported aggregates: `C`, `I`, `GDP`, `K`, `L`, and `Intratemporal Utility`. The first model-vs-data table now keeps only value-added-weighted sectoral rows.
 
 ## Current defaults and compatibility
 
@@ -80,9 +79,12 @@ The active April 2026 analysis contract is intentionally comprehensive by defaul
 - All six reported aggregates are always used in aggregate tables and aggregate IR figures: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
 - The aggregate IR wrapper expects a full panel for each reported aggregate: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
 - Shock sizes are no longer meant to be hardcoded in the main config. Python discovers them from `ModelData_IRs.mat` and stores the discovered list back into `config["ir_shock_sizes"]` for downstream rendering and LaTeX assembly.
+- IR selection is now controlled by `config["use_gir"]`: `False` renders the stochastic-steady-state IR and `True` renders the generalized impulse response averaged over ergodic draws.
+- `config["long_simulation"]` selects the single nonlinear DEQN simulation source used throughout the analysis: `False` uses the common-shock run and `True` uses the long ergodic run.
 - The default IR benchmark overlays are `["PerfectForesight", "FirstOrder"]`. The config still accepts `ir_benchmark_methods` to override the set or ordering, and still accepts the legacy single-string `ir_benchmark_method` for backward compatibility.
-- Descriptive-statistics and stochastic-steady-state tables include all available simulation methods by default. Older keys such as `ergodic_methods_to_include`, `stochss_methods_to_include`, `model_vs_data_methods_to_include`, and `descriptive_stats_variables` now act as compatibility filters rather than the intended default workflow.
+- Descriptive-statistics and stochastic-steady-state tables include all available simulation methods by default. For aggregate stochastic-SS tables, when `stochss_methods_to_include` is absent or empty, Python now falls back directly to the available keys in `stochastic_ss_data`. Older keys such as `ergodic_methods_to_include`, `stochss_methods_to_include`, `model_vs_data_methods_to_include`, and `descriptive_stats_variables` now act as compatibility filters rather than the intended default workflow.
 - Python recomputes Dynare simulation moments through the common aggregation path even when `ergodic_price_aggregation = false`, so MATLAB and Python moments can be compared on identical definitions.
+- Saved PNGs and generated table fragments print `Saved: <filename>` to the Python console so Colab output identifies the object that was just written.
 
 ## Moment-comparison contract
 
@@ -122,20 +124,20 @@ Main responsibilities:
 
 Important distinction:
 
-- the long ergodic simulation is the main nonlinear analysis object
-- the common-shock simulation is an auxiliary comparative object
+- `long_simulation = true` makes the long ergodic simulation the main nonlinear analysis object
+- `long_simulation = false` makes the common-shock simulation the main nonlinear analysis object
 
 ### `DEQN/analysis/stochastic_ss.py`
 
 This computes stochastic steady states from simulated paths and evaluates equilibrium accuracy.
 
-For this model, the stochastic-SS sectoral figures should use the stochastic SS coming from the long ergodic simulation, not the common-shock run.
+For this model, the stochastic-SS objects are computed from the selected nonlinear simulation source.
 
 ### `DEQN/analysis/GIR.py`
 
 This computes GIR or stochastic-SS impulse responses depending on `config["use_gir"]`.
 
-For this model, the IR exercises are anchored to the main long ergodic run.
+For this model, the IR exercises are anchored to the selected nonlinear simulation source.
 
 ### `DEQN/analysis/tables.py`
 
@@ -297,10 +299,10 @@ This is separate from `ModelData.mat`, which may still contain benchmark summary
 
 The current Python analysis logic follows these conventions:
 
-- The long nonlinear simulation is the main nonlinear object.
-- The common-shock nonlinear simulation is auxiliary and mainly used for comparative exercises such as descriptive comparisons and welfare comparisons.
-- Sectoral stochastic-SS figures should use the long ergodic run.
-- GIR exercises should use the long ergodic run.
+- Exactly one nonlinear DEQN simulation source is active per run.
+- `long_simulation = true` selects the long ergodic run; `long_simulation = false` selects the common-shock run.
+- Sectoral stochastic-SS figures should use the selected nonlinear run.
+- GIR exercises should use the selected nonlinear run.
 - MATLAB simulation benchmarks should only appear when the corresponding method blocks exist in `ModelData_simulation.mat`.
 - Theoretical moments are no longer part of the descriptive-statistics table.
 

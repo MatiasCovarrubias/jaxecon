@@ -106,7 +106,7 @@ The `sectoral` structs contain four fields, each 37×T in log deviations from de
 
 | File | Role |
 |------|------|
-| `DEQN/analysis.py` | Main orchestrator. Loads MATLAB data, runs DEQN GIR/`IR_stoch_ss`, and delegates IR rendering to the active model hooks. |
+| `DEQN/analysis.py` | Main orchestrator. Loads MATLAB data, runs the DEQN IR selected by `config["use_gir"]` (`True` = `GIR`, `False` = `IR_stoch_ss`), and delegates IR rendering to the active model hooks. |
 | `DEQN/econ_models/RbcProdNet_April2026/matlab_irs.py` | Loads `ModelData_IRs.mat`, parses MATLAB structs, discovers available shock sizes, provides row-based lookup for sectoral variables, and provides fixed-price re-aggregation for aggregate benchmark IRs. |
 | `DEQN/econ_models/RbcProdNet_April2026/plot_helpers.py` | Plotting layer. `plot_sector_ir_by_shock_size()` overlays DEQN nonlinear IRs with one or more MATLAB benchmark series. |
 | `DEQN/econ_models/RbcProdNet_April2026/model.py` | Model definition. `get_aggregates()` exposes the aggregate policy tail directly. |
@@ -232,8 +232,10 @@ The active April 2026 IR contract is intentionally comprehensive by default.
 - All six reported aggregates are rendered in the aggregate IR section: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
 - Each aggregate figure is a full panel: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
 - Shock sizes are discovered from `ModelData_IRs.mat`, not hardcoded in the main analysis config.
+- The nonlinear DEQN line is always solid. `config["use_gir"] = True` switches that solid line to the generalized impulse response; `False` switches it to the stochastic-steady-state IR.
 - The default benchmark overlays are `["PerfectForesight", "FirstOrder"]`, though `ir_benchmark_methods` can still override the set or ordering.
 - Sectoral IR figures still focus on the largest discovered shock and the negative-shock panel only.
+- Saved IR PNGs print `Saved: <filename>` to the Python console when written.
 
 ---
 

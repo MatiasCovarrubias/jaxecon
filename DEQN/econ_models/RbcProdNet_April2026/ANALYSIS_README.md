@@ -133,7 +133,7 @@ For this model, the stochastic-SS sectoral figures should use the stochastic SS 
 
 ### `DEQN/analysis/GIR.py`
 
-This computes GIR or stochastic-SS impulse responses depending on `config["ir_methods"]`.
+This computes GIR or stochastic-SS impulse responses depending on `config["use_gir"]`.
 
 For this model, the IR exercises are anchored to the main long ergodic run.
 

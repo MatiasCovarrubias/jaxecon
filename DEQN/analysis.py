@@ -149,10 +149,10 @@ config = {
     "gir_trajectory_length": 100,
     "shock_size": 0.2,
     "gir_seed": 42,
-    # IR method(s): choose any of ["GIR", "IR_stoch_ss"].
-    # - GIR: average over ergodic draws
-    # - IR_stoch_ss: single IR from stochastic steady state
-    "ir_methods": ["IR_stoch_ss"],
+    # IR selection:
+    # - False: stochastic-steady-state impulse response
+    # - True: generalized impulse response averaged over ergodic draws
+    "use_gir": False,
     # MATLAB benchmark overlays used in IR figures.
     # Override with any subset/order of ["PerfectForesight", "FirstOrder", "SecondOrder"].
     "ir_benchmark_methods": ["PerfectForesight", "FirstOrder"],
@@ -1608,11 +1608,7 @@ def main():
         ),
     )
     if not display_stochss_methods_to_include:
-        ergodic_display_labels = _apply_display_labels_to_sequence(
-            display_postprocess_context.get("ergodic_experiment_labels") if display_postprocess_context else None,
-            {},
-        )
-        display_stochss_methods_to_include = cast("list[str] | None", ergodic_display_labels)
+        display_stochss_methods_to_include = cast("list[str] | None", list(display_stochastic_ss_data.keys()))
 
     # ═══════════════════════════════════════════════════════════════════════════
     # MODEL VS DATA MOMENTS TABLE

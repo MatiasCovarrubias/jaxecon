@@ -1158,6 +1158,8 @@ def create_stochastic_ss_aggregates_table(
     if not method_names and all_methods:
         method_names = all_methods
 
+    selected_stochastic_ss_data = {method: stochastic_ss_data[method] for method in method_names}
+
     n_methods = len(method_names)
     use_compact_layout = n_methods <= 2
     if use_compact_layout:
@@ -1208,6 +1210,12 @@ def create_stochastic_ss_aggregates_table(
             final_save_path = save_path
         with open(final_save_path, "w") as file:
             file.write(latex_code)
+
+    if selected_stochastic_ss_data:
+        console_output = _generate_stochastic_ss_console_table(selected_stochastic_ss_data)
+        print(console_output)
+    else:
+        print("  ⚠ Aggregate stochastic steady-state table skipped: no stochastic SS methods available.")
 
     return latex_code
 

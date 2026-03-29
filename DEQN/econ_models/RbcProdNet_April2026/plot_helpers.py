@@ -53,14 +53,6 @@ def _ranked_color(rank: int):
     return colors[rank % len(colors)]
 
 
-def _response_kind_rank(response_kind: str) -> int:
-    response_ranks = {
-        "IR_stoch_ss": 0,
-        "GIR": 1,
-    }
-    return response_ranks.get(response_kind, 0)
-
-
 def _benchmark_style(benchmark_rank: int = 0) -> dict[str, Any]:
     benchmark_colors = ["black", "dimgray", "gray", "silver"]
     return {
@@ -73,11 +65,12 @@ def _benchmark_style(benchmark_rank: int = 0) -> dict[str, Any]:
 
 
 def _experiment_style(experiment_rank: int, response_kind: str = "IR_stoch_ss") -> dict[str, Any]:
+    del response_kind
     return {
         "color": _ranked_color(experiment_rank),
-        "linewidth": 2.5 if response_kind == "IR_stoch_ss" else 2.2,
-        "linestyle": _ranked_linestyle(_response_kind_rank(response_kind)),
-        "marker": _ranked_marker(_response_kind_rank(response_kind)),
+        "linewidth": 2.5,
+        "linestyle": "-",
+        "marker": None,
         "alpha": 0.9,
     }
 
@@ -121,11 +114,6 @@ def _join_text_list(values: list[str]) -> str:
 def _describe_response_source(response_source: str) -> str:
     if response_source == "GIR":
         return "The solid DEQN line reports the generalized impulse response averaged over ergodic draws."
-    if response_source == "both":
-        return (
-            "The solid DEQN lines report both the generalized impulse response averaged over ergodic draws "
-            "and the impulse response computed from the stochastic steady state."
-        )
     return "The solid DEQN line reports the impulse response computed from the stochastic steady state."
 
 
@@ -1077,7 +1065,7 @@ def plot_sector_ir_by_shock_size(
     benchmark_methods : list[str], optional
         MATLAB benchmarks to overlay ("PerfectForesight", "FirstOrder", "SecondOrder").
     response_source : str
-        Which DEQN responses to plot ("GIR", "IR_stoch_ss", or "both").
+        Which DEQN response to plot ("GIR" or "IR_stoch_ss").
     agg_consumption_mode : bool
         If True, use one-sided y-axis (neg panel: neg territory, pos panel: pos territory).
     negative_only : bool
@@ -1163,7 +1151,7 @@ def plot_sector_ir_by_shock_size(
     fig, axes = plt.subplots(n_sizes, n_cols, figsize=figsize, dpi=display_dpi, sharex=True, squeeze=False)
 
     experiment_names = list(gir_data.keys()) if gir_data else []
-    distinguish_response_kinds = response_source == "both"
+    distinguish_response_kinds = False
     first_exp_data = gir_data[experiment_names[0]] if experiment_names else {}
     all_state_names = list(first_exp_data.keys()) if first_exp_data else []
 
@@ -1304,7 +1292,7 @@ def plot_sector_ir_by_shock_size(
             if state_name and state_name in gir_data[exp_name]:
                 state_gir_data = gir_data[exp_name][state_name]
 
-                if response_source in ["GIR", "both"] and pos_key in state_gir_data:
+                if response_source == "GIR" and pos_key in state_gir_data:
                     if not negative_only and ax_pos is not None:
                         gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
                         if variable_to_plot in gir_vars_pos:
@@ -1320,7 +1308,7 @@ def plot_sector_ir_by_shock_size(
                                 alpha=style["alpha"],
                             )
 
-                if response_source in ["GIR", "both"] and neg_key in state_gir_data:
+                if response_source == "GIR" and neg_key in state_gir_data:
                     gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg:
                         response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
@@ -1340,7 +1328,7 @@ def plot_sector_ir_by_shock_size(
                             ),
                         )
 
-                if response_source in ["IR_stoch_ss", "both"] and pos_stochss_key in state_gir_data:
+                if response_source == "IR_stoch_ss" and pos_stochss_key in state_gir_data:
                     if not negative_only and ax_pos is not None:
                         gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
                         if variable_to_plot in gir_vars_pos_stochss:
@@ -1356,7 +1344,7 @@ def plot_sector_ir_by_shock_size(
                                 alpha=style["alpha"],
                             )
 
-                if response_source in ["IR_stoch_ss", "both"] and neg_stochss_key in state_gir_data:
+                if response_source == "IR_stoch_ss" and neg_stochss_key in state_gir_data:
                     gir_vars_neg_stochss = state_gir_data[neg_stochss_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg_stochss:
                         response_neg_stochss = gir_vars_neg_stochss[variable_to_plot][:max_periods] * 100

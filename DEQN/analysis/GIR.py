@@ -26,8 +26,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
             - ir_shock_sizes: List of shock sizes as percentages (e.g., [5, 10, 20])
             - states_to_shock: Optional list of state indices to shock
             - gir_seed: Random seed
-            - ir_method: Single method name ("GIR" or "IR_stoch_ss")
-            - ir_methods: Optional list of method names to compute
+            - use_gir: Boolean selecting GIR (`True`) vs stochastic-SS IR (`False`)
             - gir_symmetric_shocks: If True, positive shock is symmetric with negative
                                     (A_pos = 1/A_neg), not (1 + shock_size) (default: True)
         simul_policies: Simulation policies for extracting model-specific analysis context

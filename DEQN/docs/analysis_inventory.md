@@ -86,7 +86,7 @@ Rule of thumb:
 
 ### `DEQN/analysis/GIR.py`
 
-- `create_GIR_fn` — IR paths for configured shock sizes / states (`config["ir_methods"]`).
+- `create_GIR_fn` — IR paths for configured shock sizes / states (`config["use_gir"]`).
 
 ### `DEQN/analysis/welfare.py`
 

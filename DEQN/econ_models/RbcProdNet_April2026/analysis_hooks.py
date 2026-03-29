@@ -180,6 +180,21 @@ def _resolve_ir_benchmark_methods(config) -> list[str]:
     return resolved_methods or list(DEFAULT_IR_BENCHMARK_METHODS)
 
 
+def _resolve_ir_response_source(config) -> str:
+    use_gir = config.get("use_gir")
+    if use_gir is not None:
+        return "GIR" if bool(use_gir) else "IR_stoch_ss"
+
+    configured_ir_methods = config.get("ir_methods")
+    if configured_ir_methods is None:
+        return "IR_stoch_ss"
+
+    if isinstance(configured_ir_methods, str):
+        configured_ir_methods = [configured_ir_methods]
+
+    return "GIR" if "GIR" in configured_ir_methods else "IR_stoch_ss"
+
+
 def _warn_unsupported_sectoral_ir_variables(requested_labels) -> None:
     unsupported = [label for label in requested_labels if label not in SUPPORTED_SECTORAL_IR_LABELS]
     new_labels = [label for label in unsupported if label not in _WARNED_UNSUPPORTED_IR_LABELS]
@@ -319,15 +334,7 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
         label for label in _get_requested_sectoral_ir_variables(config) if label in SUPPORTED_SECTORAL_IR_LABELS
     ]
     max_periods = config.get("ir_max_periods", 80)
-    configured_ir_methods = config.get("ir_methods", ["IR_stoch_ss"])
-    if isinstance(configured_ir_methods, str):
-        configured_ir_methods = [configured_ir_methods]
-    if "GIR" in configured_ir_methods and "IR_stoch_ss" in configured_ir_methods:
-        ir_response_source = "both"
-    elif "GIR" in configured_ir_methods:
-        ir_response_source = "GIR"
-    else:
-        ir_response_source = "IR_stoch_ss"
+    ir_response_source = _resolve_ir_response_source(config)
 
     return {
         "matlab_ir_data": matlab_ir_data,
@@ -537,8 +544,9 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
         )
+        print(f"\n  Aggregate IRs: {sector_label} (sector {sector_idx + 1})")
         for ir_variable in ir_render_context["ir_variables"]:
-            is_agg_consumption = ir_variable == "Agg. Consumption"
+            print(f"    Plotting aggregate variable: {ir_variable}")
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
                 matlab_ir_data=ir_render_context["matlab_ir_data"],
@@ -552,7 +560,7 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 n_sectors=ir_render_context["n_sectors"],
                 benchmark_methods=_resolve_ir_benchmark_methods(config),
                 response_source=ir_render_context["ir_response_source"],
-                agg_consumption_mode=is_agg_consumption,
+                agg_consumption_mode=True,
                 negative_only=False,
                 policies_ss=ir_render_context["policies_ss_np"],
                 state_ss=ir_render_context["state_ss_np"],

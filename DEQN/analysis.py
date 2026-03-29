@@ -115,19 +115,19 @@ jax_config.update("jax_debug_nans", True)
 config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_April2026",
-    "analysis_name": "basefinal",
+    "analysis_name": "GO_shocks_newWDS_v2",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
-    "model_data_file": None,
-    "model_data_irs_file": None,
-    "model_data_simulation_file": None,  # Set to None to skip MATLAB simulation comparison
+    "model_data_file": "ModelData_newwds_v2.mat",
+    "model_data_irs_file": "ModelData_IRs_newwds_v2.mat",
+    "model_data_simulation_file": "ModelData_simulation_newwds_v2.mat",  # Set to None to skip MATLAB simulation comparison
     # Aggregation convention
     # False (default): use aggregate endogenous policy variables directly from the model / Dynare objects.
     # True: re-aggregate using fixed ergodic-mean prices computed from the nonlinear ergodic simulation.
     "ergodic_price_aggregation": False,
     # Experiments to analyze
     "experiments_to_analyze": {
-        "benchmark": "GO_shocks",
+        "benchmark": "GO_shocks_newWDS_v2",
     },
     # Simulation configuration
     "init_range": 6,
@@ -152,7 +152,7 @@ config = {
     # IR selection:
     # - False: stochastic-steady-state impulse response
     # - True: generalized impulse response averaged over ergodic draws
-    "use_gir": False,
+    "use_gir": True,
     # MATLAB benchmark overlays used in IR figures.
     # Override with any subset/order of ["PerfectForesight", "FirstOrder", "SecondOrder"].
     "ir_benchmark_methods": ["PerfectForesight", "FirstOrder"],
@@ -184,7 +184,7 @@ config = {
         "Pmj_client",
         "gammaij_client",
     ],
-    "ir_max_periods": 40,
+    "ir_max_periods": 20,
     # Shock sizes are discovered from the MATLAB IR objects.
     # Aggregate tables use all supported aggregates and all available simulations by default.
     # JAX configuration

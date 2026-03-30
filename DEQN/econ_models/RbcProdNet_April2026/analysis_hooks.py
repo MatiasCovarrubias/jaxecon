@@ -453,29 +453,14 @@ def prepare_postprocess_analysis(
         analysis_variables_data["SecondOrder"] = secondorder_analysis_vars
         print("  Loaded Second-Order simulation series.")
 
-    pf_stats_key = "PerfectForesight" if "PerfectForesight" in stats else ("Determ" if "Determ" in stats else None)
-    if pf_stats_key:
-        pf_stats = stats[pf_stats_key]
-        pf_model_stats = pf_stats.get("ModelStats") if isinstance(pf_stats, dict) else None
-        if dynare_simul_pf is None:
-            if isinstance(pf_model_stats, dict):
-                c_sd = pf_model_stats.get("sigma_C_agg")
-                i_sd = pf_model_stats.get("sigma_I_agg")
-                y_sd = pf_model_stats.get("sigma_VA_agg")
-                if c_sd is not None:
-                    print(f"    Agg. Consumption (exp): sigma={float(c_sd)*100:.4f}%", flush=True)
-                if i_sd is not None:
-                    print(f"    Agg. Investment (exp): sigma={float(i_sd)*100:.4f}%", flush=True)
-                if y_sd is not None:
-                    print(f"    Agg. Output/GDP (exp): sigma={float(y_sd)*100:.4f}%", flush=True)
-            elif "policies_std" in pf_stats:
-                policies_std = pf_stats["policies_std"]
-                n = n_sectors
-                if len(policies_std) > 11 * n + 6:
-                    print(f"    Agg. Consumption: sigma={float(policies_std[11*n+2])*100:.4f}%", flush=True)
-                    print(f"    Agg. Labor: sigma={float(policies_std[11*n+3])*100:.4f}%", flush=True)
-        else:
-            print("  Perfect Foresight moments will use Perfect Foresight (Dynare) simulation series.")
+    if dynare_simul_pf is not None:
+        print("  Perfect Foresight moments will use Perfect Foresight (Dynare) simulation series.")
+    elif isinstance(stats.get("PerfectForesight") or stats.get("Determ"), dict):
+        print(
+            "  Perfect Foresight benchmark moments are unavailable because "
+            "ModelData_simulation has no PerfectForesight block.",
+            flush=True,
+        )
 
     if dynare_simul_pf is not None:
         pf_analysis_vars = process_simulation_with_consistent_aggregation(
@@ -971,12 +956,8 @@ def _build_calibration_method_stats(
     n_sectors,
     ergodic_price_aggregation,
 ):
-    method_stats = {
-        "1st": _copy_model_stats((stats.get("FirstOrder") or {}).get("ModelStats")),
-        "2nd": _copy_model_stats((stats.get("SecondOrder") or {}).get("ModelStats")),
-        "PF": _copy_model_stats((stats.get("PerfectForesight") or stats.get("Determ") or {}).get("ModelStats")),
-        "MITShocks": _copy_model_stats((stats.get("MITShocks") or stats.get("MITShock") or {}).get("ModelStats")),
-    }
+    del stats
+    method_stats = {}
 
     dynare_method_map = {
         "1st": ("FirstOrder", "First-Order (Dynare)"),
@@ -1040,12 +1021,6 @@ def _build_calibration_method_stats(
         )
 
     return {label: stats_dict for label, stats_dict in method_stats.items() if stats_dict is not None}
-
-
-def _copy_model_stats(model_stats):
-    if not isinstance(model_stats, dict):
-        return None
-    return dict(model_stats)
 
 
 def _override_aggregate_rows_from_analysis_vars(model_stats, analysis_vars):

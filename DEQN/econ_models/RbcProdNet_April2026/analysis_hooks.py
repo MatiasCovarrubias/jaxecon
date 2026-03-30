@@ -627,6 +627,9 @@ def _build_aggregate_histogram_context(
 
 def _build_aggregate_histogram_note(histogram_context):
     benchmark_labels = histogram_context.get("benchmark_labels", [])
+    benchmark_labels = [
+        "1st Order Approximation" if label == "1st Order Approx." else label for label in benchmark_labels
+    ]
     if not benchmark_labels:
         benchmark_text = "MATLAB benchmarks"
     elif len(benchmark_labels) == 1:
@@ -642,7 +645,7 @@ def _build_aggregate_histogram_note(histogram_context):
     )
     if histogram_context.get("theoretical_distribution_params"):
         benchmark_source_text = (
-            "The 1st Order Approx. benchmark plots the Gaussian density implied by its theoretical moments, while the remaining benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+            "For the 1st Order Approximation, the reported benchmark is the Gaussian density implied by its theoretical moments. The remaining benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
         )
     else:
         benchmark_source_text = (

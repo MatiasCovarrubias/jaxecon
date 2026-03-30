@@ -171,12 +171,12 @@ def _descriptive_distribution_source_note(method_names: list[str]) -> str:
         return (
             r" The reported moments summarize the distribution of the simulated series for the displayed method."
             + _selected_nonlinear_sample_note(method_names)
-            + r" Benchmark moments use the corresponding benchmark simulation series when those are available, except that the 1st Order Approx. uses theoretical moments when those are available."
+            + r" Benchmark moments use the corresponding benchmark simulation series when those are available, except that the reported moments for the 1st Order Approximation are taken from its theoretical moments when those are available."
         )
     return (
         r" The reported moments summarize the distribution of the simulated series for each displayed method."
         + _selected_nonlinear_row_note(method_names)
-        + r" Benchmark moments use the corresponding benchmark simulation series when those are available, except that the 1st Order Approx. uses theoretical moments when those are available."
+        + r" Benchmark moments use the corresponding benchmark simulation series when those are available, except that the reported moments for the 1st Order Approximation are taken from its theoretical moments when those are available."
     )
 
 

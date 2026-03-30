@@ -459,9 +459,7 @@ def compute_model_moments_with_consistent_aggregation(
         "sigma_M_legacy_agg": float("nan"),
         "sigma_C_pref_agg": _matlab_std(C_logdev),
         "sigma_I_ces_agg": _matlab_std(I_logdev),
-        "aggregate_definition": (
-            "exact_logdev_to_deterministic_ss"
-        ),
+        "aggregate_definition": ("exact_logdev_to_deterministic_ss"),
         "variable_convention": "Y=primary_factors; VA=P_ss*(Q-Mout); GDP=aggregate_VA",
         "sample_window": "shocks_simul",
         "aggregate_moments": aggregate_moments,

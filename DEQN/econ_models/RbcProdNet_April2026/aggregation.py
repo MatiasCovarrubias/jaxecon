@@ -640,6 +640,7 @@ def generate_loglinear_samples_from_theostats(
         "Agg. GDP": "sigma_VA_agg",
         "Agg. Investment": "sigma_I_agg",
         "Agg. Capital": "sigma_K_agg",
+        "Intratemporal Utility": "sigma_utility_intratemp_agg",
     }
 
     result = {}
@@ -699,7 +700,6 @@ def get_loglinear_distribution_params(theo_stats: dict) -> dict:
         "Agg. GDP": "sigma_VA_agg",
         "Agg. Investment": "sigma_I_agg",
         "Agg. Capital": "sigma_K_agg",
-        "Intratemporal Utility": "sigma_utility_intratemp_agg",
     }
 
     result = {}

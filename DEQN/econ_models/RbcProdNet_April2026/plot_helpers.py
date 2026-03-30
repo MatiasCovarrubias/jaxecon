@@ -337,11 +337,11 @@ def plot_ergodic_histograms(
         for exp_name in experiment_names:
             var_data[exp_name] = analysis_variables_data[exp_name][var_label] * 100
 
-        # Use fixed range from -10 to 10 (percentages)
-        bin_range = (-10, 10)
+        # Use a tighter fixed range and slightly fewer bins to reduce visual noise.
+        bin_range = (-7.5, 7.5)
 
         # Create bins using the fixed range
-        bins = np.linspace(bin_range[0], bin_range[1], 31)
+        bins = np.linspace(bin_range[0], bin_range[1], 21)
         bin_centers = (bins[:-1] + bins[1:]) / 2
         bin_width = bins[1] - bins[0]
 
@@ -400,6 +400,7 @@ def plot_ergodic_histograms(
 
         # Apply consistent styling
         ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
+        ax.set_xlim(*bin_range)
 
         # Adjust layout
         plt.tight_layout()

@@ -264,6 +264,7 @@ def plot_ergodic_histograms(
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
     theo_dist_params: Optional[Dict[str, Dict[str, float]]] = None,
+    benchmark_order: Optional[list[str]] = None,
 ):
     """
     Create publication-quality histograms of ergodic distributions for analysis variables.
@@ -286,6 +287,9 @@ def plot_ergodic_histograms(
         smooth PDF curves instead of histograms. Format:
         {experiment_name: {var_label: {"mean": float, "std": float}}}
         Experiments in this dict will show a smooth normal PDF curve.
+    benchmark_order : list[str], optional
+        Ordered benchmark labels that should use the same benchmark styling
+        convention as the aggregate IR figures.
 
     Returns:
     --------
@@ -310,9 +314,6 @@ def plot_ergodic_histograms(
             missing_in = [exp for exp in experiment_names if var not in analysis_variables_data[exp]]
             print(f"  Note: Skipping '{var}' - not available in: {missing_in}")
 
-    # Use colors from the global palette
-    plot_colors = colors[:n_experiments]
-
     # Create safe file names from labels
     def make_safe_filename(label):
         return label.replace(" ", "_").replace(".", "").replace("/", "_")
@@ -325,6 +326,10 @@ def plot_ergodic_histograms(
     theo_experiments = set()
     if theo_dist_params is not None:
         theo_experiments = set(theo_dist_params.keys())
+    benchmark_order = benchmark_order or []
+    benchmark_style_map = {
+        label: _benchmark_style(rank) for rank, label in enumerate(benchmark_order)
+    }
 
     for var_label, var_filename in zip(var_labels, var_filenames):
         # Extract data for this analysis variable across all experiments and convert to percentages
@@ -344,7 +349,7 @@ def plot_ergodic_histograms(
         x_smooth = np.linspace(bin_range[0], bin_range[1], 200)
 
         # Create figure
-        fig, ax = plt.subplots(figsize=(8, 6), dpi=display_dpi)
+        fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
         # Plot histogram for each experiment
         for i, exp_name in enumerate(experiment_names):
@@ -365,7 +370,7 @@ def plot_ergodic_histograms(
                 # PDF integrated over bin_width gives probability per bin
                 pdf_values = norm.pdf(x_smooth, loc=mean_pct, scale=std_pct) * bin_width
 
-                style = _experiment_style(i, "IR_stoch_ss")
+                style = benchmark_style_map.get(exp_name, _experiment_style(i, "IR_stoch_ss"))
                 ax.plot(x_smooth, pdf_values, label=exp_name, **style)
             else:
                 # Calculate histogram from samples
@@ -373,7 +378,7 @@ def plot_ergodic_histograms(
                 freqs = counts / len(var_data[exp_name])
 
                 # Plot the frequency line
-                style = _experiment_style(i, "IR_stoch_ss")
+                style = benchmark_style_map.get(exp_name, _experiment_style(i, "IR_stoch_ss"))
                 ax.plot(bin_centers, freqs, label=exp_name, **style)
 
         # Add vertical line at deterministic steady state (x=0)

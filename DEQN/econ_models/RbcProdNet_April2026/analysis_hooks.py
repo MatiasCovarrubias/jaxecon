@@ -12,6 +12,7 @@ from DEQN.econ_models.RbcProdNet_April2026.aggregation import (
     reaggregate_aggregates,
 )
 from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import get_available_shock_sizes, load_matlab_irs
+from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import plot_ergodic_histograms, _write_figure_note_tex
 from DEQN.econ_models.RbcProdNet_April2026.plots import (
     plot_sector_ir_by_shock_size,
     plot_sectoral_variable_ergodic,
@@ -31,6 +32,11 @@ DEFAULT_AGGREGATE_IR_LABELS = [
     "Agg. Capital",
     "Agg. Labor",
     "Intratemporal Utility",
+]
+
+AGGREGATE_HISTOGRAM_BENCHMARKS = [
+    ("Log-Linear", "1st Order Approx."),
+    ("MITShocks", "MIT shocks"),
 ]
 
 CORE_SECTORAL_IR_LABELS = [
@@ -374,6 +380,7 @@ def prepare_postprocess_analysis(
     gir_data,
     dynare_simulations,
     irs_path,
+    matlab_common_shock_schedule=None,
 ):
     del model_data
     n_sectors = econ_model.n_sectors
@@ -520,6 +527,13 @@ def prepare_postprocess_analysis(
         econ_model=econ_model,
         n_sectors=n_sectors,
     )
+    aggregate_histogram_context = _build_aggregate_histogram_context(
+        config=config,
+        simulation_dir=simulation_dir,
+        raw_simulation_data=raw_simulation_data,
+        reference_experiment_label=reference_experiment_label,
+        matlab_common_shock_schedule=matlab_common_shock_schedule,
+    )
 
     return {
         "analysis_variables_data": analysis_variables_data,
@@ -533,8 +547,101 @@ def prepare_postprocess_analysis(
             "upstreamness_data": upstreamness_data,
             "ergodic_experiment_labels": ergodic_experiment_labels,
             "reference_experiment_label": reference_experiment_label,
+            "aggregate_histogram_context": aggregate_histogram_context,
         },
     }
+
+
+def _build_aggregate_histogram_context(
+    *,
+    config,
+    simulation_dir,
+    raw_simulation_data,
+    reference_experiment_label,
+    matlab_common_shock_schedule,
+):
+    note_anchor_path = os.path.join(
+        simulation_dir,
+        f"aggregate_histograms_{config['analysis_name']}.png",
+    )
+    context = {
+        "note_anchor_path": note_anchor_path,
+        "note_path": os.path.splitext(note_anchor_path)[0] + "_note.tex",
+        "long_simulation": bool(config.get("long_simulation", False)),
+        "benchmark_labels": [display_label for _, display_label in AGGREGATE_HISTOGRAM_BENCHMARKS],
+    }
+
+    if context["long_simulation"]:
+        reference_sim_data = raw_simulation_data.get(reference_experiment_label, {})
+        active_obs = reference_sim_data.get("simul_obs")
+        periods_per_episode = int(config.get("periods_per_epis", 0))
+        burn_in = int(config.get("burn_in_periods", 0))
+        kept_periods_per_seed = max(periods_per_episode - burn_in, 0)
+        context.update(
+            {
+                "mode": "long_ergodic",
+                "active_observations": int(active_obs.shape[0]) if active_obs is not None else 0,
+                "kept_periods_per_seed": kept_periods_per_seed,
+                "total_periods": periods_per_episode,
+                "burn_in": burn_in,
+                "burn_out": 0,
+                "n_simul_seeds": int(config.get("n_simul_seeds", 0)),
+                "periods_per_episode": periods_per_episode,
+            }
+        )
+        return context
+
+    schedule = matlab_common_shock_schedule or {}
+    active_shocks = schedule.get("active_shocks")
+    active_periods = int(active_shocks.shape[0]) if active_shocks is not None else 0
+    full_shocks = schedule.get("full_shocks")
+    total_periods = int(full_shocks.shape[0]) if full_shocks is not None else active_periods
+    context.update(
+        {
+            "mode": "common_shock",
+            "reference_method": schedule.get("reference_method", "MATLAB benchmark"),
+            "burn_in": int(schedule.get("burn_in", 0)),
+            "active_periods": active_periods,
+            "burn_out": int(schedule.get("burn_out", 0)),
+            "total_periods": total_periods,
+        }
+    )
+    return context
+
+
+def _build_aggregate_histogram_note(histogram_context):
+    benchmark_labels = histogram_context.get("benchmark_labels", [])
+    if not benchmark_labels:
+        benchmark_text = "MATLAB benchmarks"
+    elif len(benchmark_labels) == 1:
+        benchmark_text = benchmark_labels[0]
+    elif len(benchmark_labels) == 2:
+        benchmark_text = f"{benchmark_labels[0]} and {benchmark_labels[1]}"
+    else:
+        benchmark_text = ", ".join(benchmark_labels[:-1]) + f", and {benchmark_labels[-1]}"
+    base_text = (
+        "The reported histograms summarize the distribution of the simulated series for each displayed aggregate. "
+        "Each panel plots percent log deviations from deterministic steady state. "
+        f"The solid colored line reports the Global solution; dashed gray lines report {benchmark_text}. "
+    )
+    if histogram_context.get("mode") == "long_ergodic":
+        return (
+            base_text
+            + "The global-solution histogram is computed from the retained ergodic simulation sample after discarding "
+            f"{histogram_context.get('burn_in', 0)} burn-in periods from each simulation path. "
+            f"The reported nonlinear sample contains {histogram_context.get('active_observations', 0)} observations. "
+            "Benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+        )
+    return (
+        base_text
+        + "The global-solution histogram is computed from the active window of the common-shock simulation, with "
+        f"{histogram_context.get('burn_in', 0)} burn-in periods, "
+        f"{histogram_context.get('active_periods', 0)} active-shock periods, and "
+        f"{histogram_context.get('burn_out', 0)} burn-out periods "
+        f"({histogram_context.get('total_periods', 0)} total). "
+        f"The reported nonlinear sample contains {histogram_context.get('active_periods', 0)} observations. "
+        "Benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+    )
 
 
 def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postprocess_context):
@@ -570,6 +677,58 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 Pk_ergodic=ir_render_context["Pk_ergodic_np"],
                 ergodic_price_aggregation=ir_render_context["ergodic_price_aggregation"],
             )
+
+
+def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_variables_data, postprocess_context):
+    if not analysis_variables_data or not postprocess_context:
+        return
+
+    reference_experiment_label = postprocess_context.get("reference_experiment_label")
+    if not reference_experiment_label or reference_experiment_label not in analysis_variables_data:
+        return
+    histogram_context = postprocess_context.get("aggregate_histogram_context") or {}
+
+    selected_methods = [
+        (reference_experiment_label, "Global solution"),
+        *AGGREGATE_HISTOGRAM_BENCHMARKS,
+    ]
+    ordered_histogram_data = {}
+    missing_methods = []
+
+    for source_label, display_label in selected_methods:
+        series = analysis_variables_data.get(source_label)
+        if series is None:
+            missing_methods.append(source_label)
+            continue
+        filtered_series = {
+            variable_label: series[variable_label]
+            for variable_label in DEFAULT_AGGREGATE_IR_LABELS
+            if variable_label in series
+        }
+        if filtered_series:
+            ordered_histogram_data[display_label] = filtered_series
+
+    if not ordered_histogram_data:
+        return
+
+    if missing_methods:
+        print(
+            "  Aggregate histograms skipped missing benchmarks: " + ", ".join(missing_methods),
+            flush=True,
+        )
+
+    print("  Aggregate histograms: Global solution vs 1st-order and MIT benchmarks", flush=True)
+    plot_ergodic_histograms(
+        analysis_variables_data=ordered_histogram_data,
+        save_dir=simulation_dir,
+        analysis_name=config["analysis_name"],
+        benchmark_order=[display_label for _, display_label in AGGREGATE_HISTOGRAM_BENCHMARKS],
+    )
+    if histogram_context.get("note_anchor_path"):
+        _write_figure_note_tex(
+            histogram_context["note_anchor_path"],
+            _build_aggregate_histogram_note(histogram_context),
+        )
 
 
 def render_sectoral_stochss_outputs(

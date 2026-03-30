@@ -352,6 +352,17 @@ def _existing_subfigures(figure_specs):
     return [figure_spec for figure_spec in figure_specs if os.path.exists(figure_spec["path"])]
 
 
+def _existing_subfigure_groups(group_specs):
+    existing_groups = []
+    for group_spec in group_specs:
+        subfigures = _existing_subfigures(group_spec.get("subfigures", []))
+        if subfigures:
+            existing_group = dict(group_spec)
+            existing_group["subfigures"] = subfigures
+            existing_groups.append(existing_group)
+    return existing_groups
+
+
 def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir, irs_dir, econ_model):
     analysis_name = config_dict.get("analysis_name") or "analysis"
     sections = []
@@ -386,6 +397,17 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                 existing_groups.append(existing_group)
         if existing_groups:
             sections.append({"title": title, "tables": [], "figures": existing_groups})
+
+    def add_nested_grouped_figure_section(title, figure_specs):
+        existing_figures = []
+        for figure_spec in figure_specs:
+            subfigure_groups = _existing_subfigure_groups(figure_spec.get("subfigure_groups", []))
+            if subfigure_groups:
+                existing_figure = dict(figure_spec)
+                existing_figure["subfigure_groups"] = subfigure_groups
+                existing_figures.append(existing_figure)
+        if existing_figures:
+            sections.append({"title": title, "tables": [], "figures": existing_figures})
 
     add_table_section(
         "1. Model vs. Data Moments",
@@ -484,8 +506,59 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
         ],
     )
 
+    histogram_variable_groups = [
+        (
+            "Expenditure Aggregates",
+            [
+                ("Agg. Consumption", "Consumption"),
+                ("Agg. Investment", "Investment"),
+                ("Agg. GDP", "GDP"),
+            ],
+        ),
+        (
+            "Inputs and Utility",
+            [
+                ("Agg. Capital", "Capital"),
+                ("Agg. Labor", "Labor"),
+                ("Intratemporal Utility", "Utility"),
+            ],
+        ),
+    ]
+
+    def _histogram_filename(variable_name):
+        return variable_name.replace(" ", "_").replace(".", "").replace("/", "_")
+
+    histogram_group_note_path = os.path.join(simulation_dir, f"aggregate_histograms_{analysis_name}_note.tex")
+    add_nested_grouped_figure_section(
+        "6. Aggregate Distribution Histograms",
+        [
+            {
+                "caption": "Aggregate distributions: Global solution, 1st Order Approx., and MIT shocks.",
+                "note_path": histogram_group_note_path,
+                "subfigure_groups": [
+                    {
+                        "title": group_title,
+                        "subfigures": [
+                            {
+                                "path": _analysis_named_path(
+                                    simulation_dir,
+                                    f"Histogram_{_histogram_filename(variable_name)}",
+                                    analysis_name,
+                                    ".png",
+                                ),
+                                "caption": variable_caption,
+                            }
+                            for variable_name, variable_caption in variable_specs
+                        ],
+                    }
+                    for group_title, variable_specs in histogram_variable_groups
+                ],
+            }
+        ],
+    )
+
     add_table_section(
-        "6. Welfare Cost of Business Cycles",
+        "7. Welfare Cost of Business Cycles",
         [os.path.join(analysis_dir, f"welfare_{analysis_name}.tex")],
     )
 
@@ -573,10 +646,10 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                         "subfigures": subfigures,
                     }
                 )
-    add_grouped_figure_section("7. Sectoral Impulse Responses", sectoral_ir_groups)
+    add_grouped_figure_section("8. Sectoral Impulse Responses", sectoral_ir_groups)
 
     add_figure_section(
-        "8. Ergodic Mean Sectoral Variables",
+        "9. Ergodic Mean Sectoral Variables",
         [
             _build_simple_figure_spec(
                 _analysis_named_path(simulation_dir, f"sectoral_{variable_name}_ergodic", analysis_name, ".png"),
@@ -626,10 +699,12 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
         r"\newlength{\FigHsingle}",
         r"\newlength{\FigHdouble}",
         r"\newlength{\FigHpanel}",
+        r"\newlength{\FigHtriple}",
         r"\setlength{\FigHfirst}{0.70\textheight}",
         r"\setlength{\FigHsingle}{0.58\textheight}",
         r"\setlength{\FigHdouble}{0.40\textheight}",
         r"\setlength{\FigHpanel}{0.23\textheight}",
+        r"\setlength{\FigHtriple}{0.18\textheight}",
         r"\captionsetup[subfigure]{justification=centering}",
         r"\setlength{\parindent}{0pt}",
         r"\setlength{\parskip}{0.75em}",
@@ -651,6 +726,13 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
             return r"\textwidth", r"\FigHfirst", None
         return "0.88\\textwidth", r"\FigHsingle", None
 
+    def _grouped_subfigure_layout(subfigure_count):
+        if subfigure_count >= 3:
+            return "0.31\\textwidth", r"\FigHtriple", r"\hfill"
+        if subfigure_count == 2:
+            return "0.48\\textwidth", r"\FigHdouble", r"\hfill"
+        return "0.88\\textwidth", r"\FigHsingle", None
+
     for section in sections:
         for tex_path in section["tables"]:
             relative_path = _latex_relative_path(tex_path, analysis_dir)
@@ -668,7 +750,9 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
             lines.append(r"\clearpage")
 
         for figure_path in section["figures"]:
-            if isinstance(figure_path, str) or "subfigures" not in figure_path:
+            has_subfigures = isinstance(figure_path, dict) and "subfigures" in figure_path
+            has_subfigure_groups = isinstance(figure_path, dict) and "subfigure_groups" in figure_path
+            if isinstance(figure_path, str) or (not has_subfigures and not has_subfigure_groups):
                 single_figure = (
                     _build_simple_figure_spec(figure_path, "") if isinstance(figure_path, str) else figure_path
                 )
@@ -693,6 +777,59 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                             r"\begin{minipage}{0.92\textwidth}",
                             r"\footnotesize",
                             rf"\textit{{Notes:}} {_escape_latex(single_figure['note_text'])}",
+                            r"\end{minipage}",
+                        ]
+                    )
+                lines.extend([r"\end{figure}", r"\clearpage"])
+                rendered_figure_count += 1
+                continue
+
+            if has_subfigure_groups:
+                subfigure_groups = figure_path.get("subfigure_groups", [])
+                if not subfigure_groups:
+                    continue
+
+                lines.extend([r"\begin{figure}[H]", r"\centering"])
+                for group_idx, subfigure_group in enumerate(subfigure_groups):
+                    group_title = subfigure_group.get("title")
+                    if group_title:
+                        lines.extend(
+                            [
+                                rf"{{\small\textbf{{{_escape_latex(group_title)}}}\par}}",
+                                r"\smallskip",
+                            ]
+                        )
+
+                    grouped_subfigures = subfigure_group.get("subfigures", [])
+                    width, height_name, column_separator = _grouped_subfigure_layout(len(grouped_subfigures))
+                    for idx, subfigure in enumerate(grouped_subfigures):
+                        lines.extend(
+                            [
+                                rf"\begin{{subfigure}}[t]{{{width}}}",
+                                r"\centering",
+                                rf"\includegraphics[width=\linewidth,height={height_name},keepaspectratio]{{{_latex_relative_path(subfigure['path'], analysis_dir)}}}",
+                                rf"\caption{{{_escape_latex(subfigure.get('caption', ''))}}}",
+                                r"\end{subfigure}",
+                            ]
+                        )
+                        if idx != len(grouped_subfigures) - 1:
+                            lines.append(column_separator or r"\hfill")
+
+                    if group_idx != len(subfigure_groups) - 1:
+                        lines.extend([r"\par\medskip", r"\medskip"])
+
+                lines.append(rf"\caption{{{_escape_latex(figure_path.get('caption', ''))}}}")
+                note_path = figure_path.get("note_path")
+                note_text = figure_path.get("note_text")
+                if note_path and os.path.exists(note_path):
+                    lines.extend([r"\par\smallskip", rf"\input{{{_latex_relative_path(note_path, analysis_dir)}}}"])
+                elif note_text:
+                    lines.extend(
+                        [
+                            r"\par\smallskip",
+                            r"\begin{minipage}{0.92\textwidth}",
+                            r"\footnotesize",
+                            rf"\textit{{Notes:}} {_escape_latex(note_text)}",
                             r"\end{minipage}",
                         ]
                     )
@@ -1542,6 +1679,7 @@ def main():
             gir_data=gir_data,
             dynare_simulations=dynare_welfare_inputs,
             irs_path=irs_path,
+            matlab_common_shock_schedule=matlab_common_shock_schedule,
         )
     else:
         model_postprocess = run_model_postprocess(
@@ -1765,6 +1903,24 @@ def main():
         save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
         analysis_name=config["analysis_name"],
     )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AGGREGATE HISTOGRAMS
+    # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  AGGREGATE HISTOGRAMS")
+    print("═" * 72, flush=True)
+    if (
+        analysis_hooks is not None
+        and hasattr(analysis_hooks, "render_aggregate_histogram_outputs")
+        and postprocess_context
+    ):
+        analysis_hooks.render_aggregate_histogram_outputs(
+            config=config,
+            simulation_dir=simulation_dir,
+            analysis_variables_data=analysis_variables_data,
+            postprocess_context=postprocess_context,
+        )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # WELFARE COSTS

@@ -68,15 +68,15 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- Aggregate histograms are now active again for the six reported aggregates, comparing `Global solution`, `1st Order Approx.`, and `MIT shocks`, and the combined LaTeX wrapper places them immediately after descriptive statistics.
 - The nonlinear DEQN analysis now enforces a single simulation source via `long_simulation`: `False` uses the common-shock run for GIRs, stochastic steady state, and ergodic-price aggregation, while `True` uses the long ergodic run.
 - IR selection is now controlled by the boolean `use_gir`, aggregate stochastic-SS tables default to all available stochastic-SS methods when no filter is configured, and saved tables / figures print their filenames to the Python console.
-- Aggregate IR figures now use the full two-column panel for all reported aggregates, and the default benchmark overlays are the MATLAB perfect-foresight and first-order IRs.
 
 ## Current defaults and compatibility
 
 The active April 2026 analysis contract is intentionally comprehensive by default.
 
-- All six reported aggregates are always used in aggregate tables and aggregate IR figures: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
+- All six reported aggregates are always used in aggregate tables, aggregate IR figures, and aggregate histogram figures: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
 - The aggregate IR wrapper expects a full panel for each reported aggregate: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
 - Shock sizes are no longer meant to be hardcoded in the main config. Python discovers them from `ModelData_IRs.mat` and stores the discovered list back into `config["ir_shock_sizes"]` for downstream rendering and LaTeX assembly.
 - IR selection is now controlled by `config["use_gir"]`: `False` renders the stochastic-steady-state IR and `True` renders the generalized impulse response averaged over ergodic draws.
@@ -236,8 +236,10 @@ For the current `basefinal` output, use this map:
 | Caption `Descriptive statistics`                                                                                                     | inside `simulation/descriptive_stats_basefinal.tex`                     | `DEQN/analysis/tables.py` → `create_descriptive_stats_table(...)`                                          | Edit this when changing the descriptive-statistics table title or note text.                                                                                                                                               |
 | `\input{welfare_basefinal.tex}`                                                                                                      | `analysis/basefinal/welfare_basefinal.tex`                              | `DEQN/analysis/tables.py` → `create_welfare_table(...)`                                                    | This function writes the welfare table caption, label, note, and row layout.                                                                                                                                               |
 | Caption `Welfare cost of business cycles`                                                                                            | inside `welfare_basefinal.tex`                                          | `DEQN/analysis/tables.py` → `create_welfare_table(...)`                                                    | Edit here for welfare-table title or note changes.                                                                                                                                                                         |
+| Aggregate histogram grouped figure caption, subgroup titles, and ordering                                                            | emitted directly into `figures_tables_basefinal.tex`                    | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | The wrapper decides the grouped histogram figure layout and places it immediately after descriptive statistics in the master output.                                                                                       |
+| Aggregate histogram note text                                                                                                        | `analysis/basefinal/simulation/aggregate_histograms_basefinal_note.tex` | `analysis_hooks.py`                                                                                         | The histogram note is generated from the active nonlinear simulation workflow and benchmark simulation metadata inside the model-specific postprocess hook.                                                                  |
 | Figure captions and notes such as `Aggregate consumption response to a TFP shock in ...`                                             | emitted directly into `figures_tables_basefinal.tex`                    | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | The grouped figure captions and note text for aggregate IRs, sectoral IRs, stochastic-SS sectoral figures, and ergodic sectoral figures are assembled in the wrapper builder, not in `tables.py`.                          |
-| Which figures appear, in what order                                                                                                  | `figures_tables_basefinal.tex`                                          | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | This is where the wrapper decides the sequence: model-vs-data table, aggregate IRs, stochastic-SS sectoral figures, aggregate stochastic-SS table, descriptive stats, welfare, sectoral IRs, and ergodic sectoral figures. |
+| Which figures appear, in what order                                                                                                  | `figures_tables_basefinal.tex`                                          | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | This is where the wrapper decides the sequence: model-vs-data table, aggregate IRs, stochastic-SS sectoral figures, aggregate stochastic-SS table, descriptive stats, aggregate histograms, welfare, sectoral IRs, and ergodic sectoral figures. |
 | Wrapper-only LaTeX such as figure height limits, subfigure widths, first-figure sizing, `\clearpage`, and section-header suppression | `figures_tables_basefinal.tex`                                          | `DEQN/analysis.py` → `_write_analysis_results_latex(...)`                                                  | These choices are not stored in the fragment files; they are emitted only when the master wrapper is assembled.                                                                                                            |
 | The PNG image itself looks wrong: panel count, legend, axes, line styles, note written onto the image                                | `analysis/basefinal/IRs/*.png` or `analysis/basefinal/simulation/*.png` | `plot_helpers.py` and the relevant render call in `analysis_hooks.py`                                      | Change `plot_helpers.py` for the visual design of the PNG. Change `analysis_hooks.py` if the wrong variables or wrong simulation object are feeding that plot.                                                             |
 
@@ -269,9 +271,10 @@ Main displayed exercises:
 3. sectoral variables in stochastic SS
 4. aggregate stochastic SS
 5. descriptive statistics
-6. welfare costs
-7. sectoral IRs
-8. ergodic mean sectoral variables
+6. aggregate histograms
+7. welfare costs
+8. sectoral IRs
+9. ergodic mean sectoral variables
 
 For the exact current execution inventory, see:
 
@@ -322,7 +325,6 @@ The analysis codebase can still be cleaned in several places.
 
 ### Unused plotting helpers
 
-- `plot_ergodic_histograms`
 - `plot_combined_impulse_responses`
 - `plot_gir_heatmap`
 - several alternative IR panel helpers

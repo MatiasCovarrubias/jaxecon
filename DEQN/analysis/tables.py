@@ -159,17 +159,25 @@ def _nonlinear_method_note(method_names: list[str]) -> str:
 
 
 def _selected_nonlinear_sample_note(method_names: list[str]) -> str:
-    if "Global Solution" in method_names and "Global Solution (Common Shocks)" not in method_names:
-        return (
-            r" The Global Solution column uses the single nonlinear DEQN simulation selected by the Python config."
-        )
     return ""
 
 
 def _selected_nonlinear_row_note(method_names: list[str]) -> str:
-    if "Global Solution" in method_names and "Global Solution (Common Shocks)" not in method_names:
-        return r" The Global Solution row uses the single nonlinear DEQN simulation selected by the Python config."
     return ""
+
+
+def _descriptive_distribution_source_note(method_names: list[str]) -> str:
+    if len(method_names) == 1:
+        return (
+            r" The reported moments summarize the distribution of the simulated series for the displayed method."
+            + _selected_nonlinear_sample_note(method_names)
+            + r" Benchmark moments use the corresponding benchmark simulation series when those are available."
+        )
+    return (
+        r" The reported moments summarize the distribution of the simulated series for each displayed method."
+        + _selected_nonlinear_row_note(method_names)
+        + r" Benchmark moments use the corresponding benchmark simulation series when those are available."
+    )
 
 
 def _print_saved_file(path: str) -> None:
@@ -766,6 +774,8 @@ def _generate_single_method_latex_table(stats_data: Dict[str, Dict[str, Dict[str
         caption="Descriptive statistics",
         label="tab:descriptive_statistics",
         note_text=(
+            _descriptive_distribution_source_note([method_name])
+            + " "
             r"Mean and standard deviation are reported for log differences from the deterministic steady state; "
             + _LOGDEV_PERCENT_NOTE
             + r" Skewness and excess kurtosis are unit-free, and kurtosis is reported as excess kurtosis. "
@@ -812,13 +822,11 @@ def _generate_variable_organized_latex_table(
         note_text=(
             r"For each variable, rows compare the reported simulation methods."
             + _nonlinear_method_note(method_names)
+            + _descriptive_distribution_source_note(method_names)
             + r" Mean and standard deviation are reported for log differences from the deterministic steady state; "
             + _LOGDEV_PERCENT_NOTE
             + r" Skewness and excess kurtosis are unit-free, and kurtosis is reported as excess kurtosis. "
             + _DESCRIPTIVE_SHAPE_NOTE
-            + _selected_nonlinear_row_note(method_names)
-            +
-            r" For nonlinear methods the moments are computed from the Python simulation sample; benchmark moments use the corresponding benchmark simulation series when those are available."
         ),
     )
 

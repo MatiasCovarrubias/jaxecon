@@ -412,7 +412,11 @@ def prepare_postprocess_analysis(
     theo_stats = stats.get("TheoStats") if isinstance(stats, dict) else None
 
     if isinstance(theo_stats, dict):
-        theoretical_stats.update(create_theoretical_descriptive_stats(theo_stats, label="Log-Linear"))
+        loglinear_theoretical_stats = create_theoretical_descriptive_stats(theo_stats, label="Log-Linear")
+        if loglinear_theoretical_stats.get("Log-Linear"):
+            theoretical_stats.update(loglinear_theoretical_stats)
+        else:
+            print("  TheoStats not usable for 1st Order Approx.; falling back to simulation moments.", flush=True)
 
     if dynare_simul_1storder is not None:
         firstorder_analysis_vars = process_simulation_with_consistent_aggregation(

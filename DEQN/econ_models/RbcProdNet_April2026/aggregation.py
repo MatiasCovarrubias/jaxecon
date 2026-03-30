@@ -11,6 +11,22 @@ import numpy as np
 from jax import random
 
 
+def _matlab_scalar_to_float(value) -> float:
+    """Unwrap MATLAB-loaded scalar values into a real Python float."""
+    arr = np.asarray(value).reshape(-1)
+    if arr.size == 0:
+        return float("nan")
+    scalar = np.real_if_close(arr[0], tol=1000)
+    if np.iscomplexobj(scalar):
+        scalar = np.real(scalar)
+    return float(scalar)
+
+
+def _is_usable_theoretical_scalar(value) -> bool:
+    scalar = _matlab_scalar_to_float(value)
+    return np.isfinite(scalar)
+
+
 def _matlab_std(x: np.ndarray) -> float:
     """Match MATLAB std(x) default normalization on vectors."""
     x = np.asarray(x, dtype=float).reshape(-1)
@@ -688,10 +704,10 @@ def get_loglinear_distribution_params(theo_stats: dict) -> dict:
 
     result = {}
     for var_name, sigma_key in var_mapping.items():
-        if sigma_key in theo_stats:
-            sigma = theo_stats[sigma_key]
+        if sigma_key in theo_stats and _is_usable_theoretical_scalar(theo_stats[sigma_key]):
+            sigma = _matlab_scalar_to_float(theo_stats[sigma_key])
             # Log-linear: mean of log deviation is 0, std is sigma
-            result[var_name] = {"mean": 0.0, "std": float(sigma)}
+            result[var_name] = {"mean": 0.0, "std": sigma}
 
     return result
 
@@ -727,13 +743,17 @@ def create_theoretical_descriptive_stats(theo_stats: dict, label: str = "Log-Lin
     result = {}
     aggregate_moments = theo_stats.get("aggregate_moments", {})
     for var_name, (sigma_key, moment_key) in var_mapping.items():
-        if sigma_key in theo_stats:
-            sigma = float(theo_stats[sigma_key])
+        if sigma_key in theo_stats and _is_usable_theoretical_scalar(theo_stats[sigma_key]):
+            sigma = _matlab_scalar_to_float(theo_stats[sigma_key])
             theo_mean = 0.0
             if isinstance(aggregate_moments, dict):
                 moment_block = aggregate_moments.get(moment_key, {})
-                if isinstance(moment_block, dict) and "mean" in moment_block:
-                    theo_mean = float(moment_block["mean"]) * 100
+                if (
+                    isinstance(moment_block, dict)
+                    and "mean" in moment_block
+                    and _is_usable_theoretical_scalar(moment_block["mean"])
+                ):
+                    theo_mean = _matlab_scalar_to_float(moment_block["mean"]) * 100
             result[var_name] = {
                 "Mean": theo_mean,
                 "Sd": sigma * 100,  # Convert to percentage

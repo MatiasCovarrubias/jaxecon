@@ -8,6 +8,8 @@ from DEQN.econ_models.RbcProdNet_April2026.aggregation import (
     compute_model_moments_from_dynare_simulation,
     compute_ergodic_prices_from_simulation,
     compute_model_moments_with_consistent_aggregation,
+    create_theoretical_descriptive_stats,
+    get_loglinear_distribution_params,
     process_simulation_with_consistent_aggregation,
     reaggregate_aggregates,
 )
@@ -407,6 +409,10 @@ def prepare_postprocess_analysis(
     dynare_simul_so = dynare_simulations.get("SecondOrder")
     dynare_simul_pf = dynare_simulations.get("PerfectForesight")
     dynare_simul_mit = dynare_simulations.get("MITShocks")
+    theo_stats = stats.get("TheoStats") if isinstance(stats, dict) else None
+
+    if isinstance(theo_stats, dict):
+        theoretical_stats.update(create_theoretical_descriptive_stats(theo_stats, label="Log-Linear"))
 
     if dynare_simul_1storder is not None:
         firstorder_analysis_vars = process_simulation_with_consistent_aggregation(
@@ -534,6 +540,12 @@ def prepare_postprocess_analysis(
         reference_experiment_label=reference_experiment_label,
         matlab_common_shock_schedule=matlab_common_shock_schedule,
     )
+    if isinstance(theo_stats, dict):
+        loglinear_hist_params = get_loglinear_distribution_params(theo_stats)
+        if loglinear_hist_params:
+            aggregate_histogram_context["theoretical_distribution_params"] = {
+                "1st Order Approx.": loglinear_hist_params
+            }
 
     return {
         "analysis_variables_data": analysis_variables_data,
@@ -624,13 +636,21 @@ def _build_aggregate_histogram_note(histogram_context):
         "Each panel plots percent log deviations from deterministic steady state. "
         f"The solid colored line reports the Global solution; dashed gray lines report {benchmark_text}. "
     )
+    if histogram_context.get("theoretical_distribution_params"):
+        benchmark_source_text = (
+            "The 1st Order Approx. benchmark plots the Gaussian density implied by its theoretical moments, while the remaining benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+        )
+    else:
+        benchmark_source_text = (
+            "Benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+        )
     if histogram_context.get("mode") == "long_ergodic":
         return (
             base_text
             + "The global-solution histogram is computed from the retained ergodic simulation sample after discarding "
             f"{histogram_context.get('burn_in', 0)} burn-in periods from each simulation path. "
             f"The reported nonlinear sample contains {histogram_context.get('active_observations', 0)} observations. "
-            "Benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+            + benchmark_source_text
         )
     return (
         base_text
@@ -640,7 +660,7 @@ def _build_aggregate_histogram_note(histogram_context):
         f"{histogram_context.get('burn_out', 0)} burn-out periods "
         f"({histogram_context.get('total_periods', 0)} total). "
         f"The reported nonlinear sample contains {histogram_context.get('active_periods', 0)} observations. "
-        "Benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+        + benchmark_source_text
     )
 
 
@@ -687,6 +707,7 @@ def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_varia
     if not reference_experiment_label or reference_experiment_label not in analysis_variables_data:
         return
     histogram_context = postprocess_context.get("aggregate_histogram_context") or {}
+    histogram_theoretical_params = histogram_context.get("theoretical_distribution_params")
 
     selected_methods = [
         (reference_experiment_label, "Global solution"),
@@ -698,6 +719,9 @@ def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_varia
     for source_label, display_label in selected_methods:
         series = analysis_variables_data.get(source_label)
         if series is None:
+            if histogram_theoretical_params and display_label in histogram_theoretical_params:
+                ordered_histogram_data[display_label] = {}
+                continue
             missing_methods.append(source_label)
             continue
         filtered_series = {
@@ -722,6 +746,7 @@ def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_varia
         analysis_variables_data=ordered_histogram_data,
         save_dir=simulation_dir,
         analysis_name=config["analysis_name"],
+        theo_dist_params=histogram_theoretical_params,
         benchmark_order=[display_label for _, display_label in AGGREGATE_HISTOGRAM_BENCHMARKS],
     )
     if histogram_context.get("note_anchor_path"):

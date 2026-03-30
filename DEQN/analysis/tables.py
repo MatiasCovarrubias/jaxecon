@@ -171,12 +171,12 @@ def _descriptive_distribution_source_note(method_names: list[str]) -> str:
         return (
             r" The reported moments summarize the distribution of the simulated series for the displayed method."
             + _selected_nonlinear_sample_note(method_names)
-            + r" Benchmark moments use the corresponding benchmark simulation series when those are available."
+            + r" Benchmark moments use the corresponding benchmark simulation series when those are available, except that the 1st Order Approx. uses theoretical moments when those are available."
         )
     return (
         r" The reported moments summarize the distribution of the simulated series for each displayed method."
         + _selected_nonlinear_row_note(method_names)
-        + r" Benchmark moments use the corresponding benchmark simulation series when those are available."
+        + r" Benchmark moments use the corresponding benchmark simulation series when those are available, except that the 1st Order Approx. uses theoretical moments when those are available."
     )
 
 
@@ -659,7 +659,10 @@ def create_descriptive_stats_table(
     for var_label in var_labels:
         stats_data[var_label] = {}
         for exp_name in experiment_names:
-            used_simulation = False
+            if theoretical_stats and exp_name in theoretical_stats and var_label in theoretical_stats[exp_name]:
+                stats_data[var_label][exp_name] = theoretical_stats[exp_name][var_label]
+                continue
+
             if exp_name in analysis_variables_data:
                 analysis_vars_dict = analysis_variables_data[exp_name]
                 if var_label in analysis_vars_dict:
@@ -671,11 +674,6 @@ def create_descriptive_stats_table(
                             "Skewness": float(skew(var_values)),
                             "Excess Kurtosis": float(kurtosis(var_values)),
                         }
-                        used_simulation = True
-
-            if not used_simulation and theoretical_stats and exp_name in theoretical_stats:
-                if var_label in theoretical_stats[exp_name]:
-                    stats_data[var_label][exp_name] = theoretical_stats[exp_name][var_label]
 
     if len(experiment_names) == 1:
         latex_code = _generate_single_method_latex_table(stats_data, experiment_names[0])

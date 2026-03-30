@@ -680,8 +680,10 @@ def get_loglinear_distribution_params(theo_stats: dict) -> dict:
     var_mapping = {
         "Agg. Consumption": "sigma_C_agg",
         "Agg. Labor": "sigma_L_agg",
-        "Agg. Output": "sigma_VA_agg",
+        "Agg. GDP": "sigma_VA_agg",
         "Agg. Investment": "sigma_I_agg",
+        "Agg. Capital": "sigma_K_agg",
+        "Intratemporal Utility": "sigma_utility_intratemp_agg",
     }
 
     result = {}
@@ -698,11 +700,8 @@ def create_theoretical_descriptive_stats(theo_stats: dict, label: str = "Log-Lin
     """
     Create pre-computed descriptive statistics from theoretical moments.
 
-    For log-linear (first-order) approximation, all variables are lognormally distributed:
-        log(X/X_ss) ~ N(0, σ²)
-
     This means:
-        - Mean of log deviation = 0 (by construction)
+        - Mean of log deviation = theoretical mean from TheoStats when available
         - Std = σ (from TheoStats)
         - Skewness = 0 (normal distribution)
         - Excess Kurtosis = 0 (normal distribution)
@@ -717,19 +716,26 @@ def create_theoretical_descriptive_stats(theo_stats: dict, label: str = "Log-Lin
         Ready to pass to create_descriptive_stats_table as theoretical_stats
     """
     var_mapping = {
-        "Agg. Consumption": "sigma_C_agg",
-        "Agg. Labor": "sigma_L_agg",
-        "Agg. GDP": "sigma_VA_agg",
-        "Agg. Investment": "sigma_I_agg",
-        "Agg. Capital": "sigma_K_agg",
+        "Agg. Consumption": ("sigma_C_agg", "C"),
+        "Agg. Labor": ("sigma_L_agg", "L"),
+        "Agg. GDP": ("sigma_VA_agg", "GDP"),
+        "Agg. Investment": ("sigma_I_agg", "I"),
+        "Agg. Capital": ("sigma_K_agg", "K"),
+        "Intratemporal Utility": ("sigma_utility_intratemp_agg", "utility_intratemp"),
     }
 
     result = {}
-    for var_name, sigma_key in var_mapping.items():
+    aggregate_moments = theo_stats.get("aggregate_moments", {})
+    for var_name, (sigma_key, moment_key) in var_mapping.items():
         if sigma_key in theo_stats:
             sigma = float(theo_stats[sigma_key])
+            theo_mean = 0.0
+            if isinstance(aggregate_moments, dict):
+                moment_block = aggregate_moments.get(moment_key, {})
+                if isinstance(moment_block, dict) and "mean" in moment_block:
+                    theo_mean = float(moment_block["mean"]) * 100
             result[var_name] = {
-                "Mean": 0.0,  # Log-linear mean is 0 by construction
+                "Mean": theo_mean,
                 "Sd": sigma * 100,  # Convert to percentage
                 "Skewness": 0.0,  # Normal distribution
                 "Excess Kurtosis": 0.0,  # Normal distribution (excess kurtosis = 0)

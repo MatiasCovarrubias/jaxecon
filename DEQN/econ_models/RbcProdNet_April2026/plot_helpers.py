@@ -295,23 +295,37 @@ def plot_ergodic_histograms(
     --------
     list of (fig, ax) tuples for each analysis variable
     """
-    # Get experiment names
+    # Get experiment names from both simulated and theoretical sources
     experiment_names = list(analysis_variables_data.keys())
-    n_experiments = len(experiment_names)
+    if theo_dist_params is not None:
+        for exp_name in theo_dist_params.keys():
+            if exp_name not in experiment_names:
+                experiment_names.append(exp_name)
 
-    # Extract variable labels that exist in ALL experiments
+    # Extract variable labels that exist in all experiments once theoretical overlays are accounted for
     excluded_vars = []
-    first_exp = experiment_names[0]
-    candidate_vars = [v for v in analysis_variables_data[first_exp].keys() if v not in excluded_vars]
+    candidate_vars = []
+    for exp_name, exp_data in analysis_variables_data.items():
+        candidate_vars.extend(v for v in exp_data.keys() if v not in excluded_vars)
+    if theo_dist_params is not None:
+        for exp_params in theo_dist_params.values():
+            candidate_vars.extend(v for v in exp_params.keys() if v not in excluded_vars)
+    candidate_vars = list(dict.fromkeys(candidate_vars))
 
     # Only include variables that exist in all experiments
     var_labels = []
     for var in candidate_vars:
-        exists_in_all = all(var in analysis_variables_data[exp] for exp in experiment_names)
+        exists_in_all = True
+        missing_in = []
+        for exp in experiment_names:
+            in_simulation = exp in analysis_variables_data and var in analysis_variables_data[exp]
+            in_theory = theo_dist_params is not None and var in theo_dist_params.get(exp, {})
+            if not (in_simulation or in_theory):
+                exists_in_all = False
+                missing_in.append(exp)
         if exists_in_all:
             var_labels.append(var)
         else:
-            missing_in = [exp for exp in experiment_names if var not in analysis_variables_data[exp]]
             print(f"  Note: Skipping '{var}' - not available in: {missing_in}")
 
     # Create safe file names from labels
@@ -332,11 +346,6 @@ def plot_ergodic_histograms(
     }
 
     for var_label, var_filename in zip(var_labels, var_filenames):
-        # Extract data for this analysis variable across all experiments and convert to percentages
-        var_data = {}
-        for exp_name in experiment_names:
-            var_data[exp_name] = analysis_variables_data[exp_name][var_label] * 100
-
         # Use a tighter fixed range and slightly fewer bins to reduce visual noise.
         bin_range = (-7.5, 7.5)
 
@@ -365,6 +374,8 @@ def plot_ergodic_histograms(
                 params = theo_dist_params[exp_name][var_label]
                 mean_pct = params["mean"] * 100  # Convert to percentage
                 std_pct = params["std"] * 100  # Convert to percentage
+                if std_pct <= 0:
+                    continue
 
                 # Compute PDF and scale to match histogram frequencies
                 # PDF integrated over bin_width gives probability per bin
@@ -373,9 +384,14 @@ def plot_ergodic_histograms(
                 style = benchmark_style_map.get(exp_name, _experiment_style(i, "IR_stoch_ss"))
                 ax.plot(x_smooth, pdf_values, label=exp_name, **style)
             else:
+                if exp_name not in analysis_variables_data or var_label not in analysis_variables_data[exp_name]:
+                    continue
+                var_values = np.asarray(analysis_variables_data[exp_name][var_label], dtype=float) * 100
+                if var_values.size == 0:
+                    continue
                 # Calculate histogram from samples
-                counts, _ = np.histogram(var_data[exp_name], bins=bins)
-                freqs = counts / len(var_data[exp_name])
+                counts, _ = np.histogram(var_values, bins=bins)
+                freqs = counts / len(var_values)
 
                 # Plot the frequency line
                 style = benchmark_style_map.get(exp_name, _experiment_style(i, "IR_stoch_ss"))

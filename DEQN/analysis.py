@@ -1893,15 +1893,27 @@ def main():
     else:
         desc_analysis_data = filtered_analysis_variables_data
 
+    desc_display_label_map = dict(output_display_label_map)
+    desc_display_label_map.update(
+        {
+            "Log-Linear": "1st Order Approx.",
+            "MITShocks": "MIT shocks",
+        }
+    )
     display_desc_analysis_data = _apply_display_labels_to_mapping(
         desc_analysis_data,
-        output_display_label_map,
+        desc_display_label_map,
+    )
+    display_theoretical_stats = _apply_display_labels_to_mapping(
+        theoretical_stats,
+        desc_display_label_map,
     )
 
     create_descriptive_stats_table(
         analysis_variables_data=display_desc_analysis_data,
         save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
         analysis_name=config["analysis_name"],
+        theoretical_stats=display_theoretical_stats,
     )
 
     # ═══════════════════════════════════════════════════════════════════════════

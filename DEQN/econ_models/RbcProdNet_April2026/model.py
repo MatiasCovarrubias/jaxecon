@@ -108,9 +108,11 @@ class Model:
         self.i_agg_ss = jnp.exp(self.policies_ss[self.i_agg_idx])
         self.k_agg_ss = jnp.exp(self.policies_ss[self.k_agg_idx])
         self.utility_intratemp_ss = jnp.exp(self.policies_ss[self.utility_intratemp_idx])
-        self.utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
-            self.c_util_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.l_util_ss ** (1 + self.eps_l ** (-1))
-        ) ** (1 - self.eps_c ** (-1))
+        self.utility_ss = self._utility_from_intratemp_level(self.utility_intratemp_ss)
+
+    def _utility_from_intratemp_level(self, utility_intratemp):
+        sigma = self.eps_c ** (-1)
+        return utility_intratemp ** (1 - sigma) / (1 - sigma)
 
     def marginal_utility(self, Cagg, Lagg):
         return (Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))) ** (
@@ -382,20 +384,9 @@ class Model:
         Returns:
             utility: Utility in levels
         """
-        # Denormalize policies
-        policies_notnorm = policies_logdev + self.policies_ss
-        policies_levels = self._policy_levels(policies_notnorm)
-
-        # Extract aggregate consumption and labor
-        Cagg = policies_levels[self.c_util_idx]
-        Lagg = policies_levels[self.l_util_idx]
-
-        # Calculate utility
-        utility = (1 / (1 - self.eps_c ** (-1))) * (
-            Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))
-        ) ** (1 - self.eps_c ** (-1))
-
-        return utility
+        utility_intratemp_log = policies_logdev[self.utility_intratemp_idx] + self.policies_ss[self.utility_intratemp_idx]
+        utility_intratemp = jnp.exp(utility_intratemp_log)
+        return self._utility_from_intratemp_level(utility_intratemp)
 
     def get_aggregates(self, policies_logdev):
         """Return model-implied aggregate policy variables in log-deviation form."""

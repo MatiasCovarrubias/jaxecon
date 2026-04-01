@@ -127,6 +127,64 @@ def create_shock_path_simulation_fn(econ_model):
     return sample_obs_and_policies_given_shocks
 
 
+def create_loglinear_episode_utility_fn(
+    econ_model,
+    config,
+    *,
+    state_transition_matrix,
+    state_shock_matrix,
+    policy_state_matrix,
+    policy_shock_matrix=None,
+):
+    """
+    Create a first-order episode simulator that returns period utility only.
+
+    The Dynare state-space objects are interpreted as:
+        s_t = A s_{t-1} + B eps_t
+        x_t = C s_{t-1} + D eps_t
+    with all states and policies measured in log deviations from steady state.
+    """
+    A = jnp.asarray(state_transition_matrix)
+    B = jnp.asarray(state_shock_matrix)
+    C = jnp.asarray(policy_state_matrix)
+    if policy_shock_matrix is None:
+        D = jnp.zeros((C.shape[0], B.shape[1]), dtype=C.dtype)
+    else:
+        D = jnp.asarray(policy_shock_matrix)
+
+    def sample_episode_utilities(epis_rng):
+        initial_obs_normalized = econ_model.initial_state(epis_rng, config["init_range"])
+        initial_state_logdev = initial_obs_normalized * econ_model.state_sd
+        period_rngs = random.split(epis_rng, config["periods_per_epis"])
+
+        def period_step(previous_state_logdev, period_rng):
+            period_shock = config["simul_vol_scale"] * econ_model.sample_shock(period_rng)
+            policy_logdev = C @ previous_state_logdev + D @ period_shock
+            next_state_logdev = A @ previous_state_logdev + B @ period_shock
+            utility = econ_model.utility_from_policies(policy_logdev)
+            return next_state_logdev, utility
+
+        _, episode_utilities = lax.scan(period_step, initial_state_logdev, period_rngs)
+        return episode_utilities
+
+    return sample_episode_utilities
+
+
+def simulate_ergodic_utilities(*, analysis_config, episode_utility_fn, label="Simulation"):
+    """Run many ergodic episodes and flatten retained utility observations."""
+    base_rng = random.PRNGKey(analysis_config["simul_seed"])
+    episode_rngs = random.split(base_rng, analysis_config["n_simul_seeds"])
+
+    multi_episode_fn = jax.vmap(episode_utility_fn)
+    utilities_multi = multi_episode_fn(episode_rngs)
+    utilities_multi = utilities_multi[:, analysis_config["burn_in_periods"] :]
+
+    n_seeds, n_periods = utilities_multi.shape
+    utilities = utilities_multi.reshape(n_seeds * n_periods)
+    print(f"    {label}: {utilities.shape[0]:,} obs ({n_seeds} seeds × {n_periods} periods)", flush=True)
+    return utilities
+
+
 def simulation_analysis(train_state, econ_model, analysis_config, simulation_fn, analysis_hooks=None):
     """
     Run parallel simulations and compute analysis variables.

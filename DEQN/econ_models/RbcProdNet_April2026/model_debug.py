@@ -113,9 +113,12 @@ class ModelDebug:
         ]
         self.Cagg_ss = jnp.exp(self.policies_ss[11 * self.n_sectors])
         self.Lagg_ss = jnp.exp(self.policies_ss[11 * self.n_sectors + 1])
-        self.utility_ss = (1 / (1 - self.eps_c ** (-1))) * (
-            self.Cagg_ss - self.theta * (1 / (1 + self.eps_l ** (-1))) * self.Lagg_ss ** (1 + self.eps_l ** (-1))
-        ) ** (1 - self.eps_c ** (-1))
+        self.utility_intratemp_ss = jnp.exp(self.policies_ss[11 * self.n_sectors + 7])
+        self.utility_ss = self._utility_from_intratemp_level(self.utility_intratemp_ss)
+
+    def _utility_from_intratemp_level(self, utility_intratemp):
+        sigma = self.eps_c ** (-1)
+        return utility_intratemp ** (1 - sigma) / (1 - sigma)
 
     def marginal_utility(self, Cagg, Lagg):
         return (Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))) ** (
@@ -416,14 +419,9 @@ class ModelDebug:
         return U
 
     def utility_from_policies(self, policies_logdev):
-        policies_notnorm = policies_logdev + self.policies_ss
-        policies_levels = jnp.exp(policies_notnorm)
-        Cagg = policies_levels[11 * self.n_sectors]
-        Lagg = policies_levels[11 * self.n_sectors + 1]
-        utility = (1 / (1 - self.eps_c ** (-1))) * (
-            Cagg - self.theta * (1 / (1 + self.eps_l ** (-1))) * Lagg ** (1 + self.eps_l ** (-1))
-        ) ** (1 - self.eps_c ** (-1))
-        return utility
+        utility_intratemp_log = policies_logdev[11 * self.n_sectors + 7] + self.policies_ss[11 * self.n_sectors + 7]
+        utility_intratemp = jnp.exp(utility_intratemp_log)
+        return self._utility_from_intratemp_level(utility_intratemp)
 
     def get_aggregates(self, policies_logdev):
         return {

@@ -83,7 +83,9 @@ from DEQN.analysis.model_hooks import (  # noqa: E402
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
+    create_loglinear_episode_utility_fn,
     create_shock_path_simulation_fn,
+    simulate_ergodic_utilities,
     simulation_analysis,
     simulation_analysis_with_shocks,
 )
@@ -231,6 +233,17 @@ DEFAULT_AGGREGATE_LABELS = [
 ]
 
 DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
+WELFARE_CONSUMPTION_RECENTERED_LABEL = "C-recentered"
+WELFARE_LABOR_RECENTERED_LABEL = "L-recentered"
+WELFARE_BOTH_RECENTERED_LABEL = "C and L recentered"
+WELFARE_OUTPUT_ORDER = [
+    "Global Solution",
+    WELFARE_BOTH_RECENTERED_LABEL,
+    WELFARE_CONSUMPTION_RECENTERED_LABEL,
+    "FirstOrder",
+    "MITShocks",
+    "PerfectForesight",
+]
 
 
 def _write_analysis_config(config_dict, analysis_dir):
@@ -414,7 +427,7 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
         [os.path.join(analysis_dir, f"calibration_table_{analysis_name}.tex")],
     )
 
-    aggregate_ir_groups = []
+    aggregate_ir_figures = []
     aggregate_variable_captions = {
         "Agg. Consumption": "Consumption",
         "Agg. Investment": "Investment",
@@ -439,41 +452,34 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
         )
         safe_sector = _make_safe_plot_label(sector_label)
-        aggregate_specs = []
         for variable_name in aggregate_ir_variables:
             safe_variable = _make_safe_plot_label(variable_name)
-            figure_spec = {
-                "path": _analysis_named_path(irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
-                "caption": aggregate_variable_captions.get(variable_name, variable_name),
-                "note_label": aggregate_variable_note_labels.get(variable_name, variable_name),
-            }
-            aggregate_specs.append(figure_spec)
-
-        if aggregate_specs:
-            aggregate_ir_groups.append(
-                {
-                    "caption_builder": lambda subfigures, sector_label=sector_label: (
-                        f"Aggregate {_join_labels([_caption_label(subfigure['caption']) for subfigure in subfigures])} "
-                        f"responses to a TFP shock in {sector_label}."
-                    ),
-                    "note_builder": lambda subfigures, sector_label=sector_label, ir_shock_sizes=tuple(
-                        ir_shock_sizes
-                    ), aggregate_benchmark_labels=aggregate_benchmark_labels: (
-                        f"Each row corresponds to a {_format_percent_list(ir_shock_sizes)} percent TFP shock in "
-                        f"{sector_label}; the left column shows negative shocks and the right column positive shocks. "
-                        f"The panels plot the responses of aggregate "
-                        f"{_join_labels([subfigure.get('note_label', _caption_label(subfigure['caption'])) for subfigure in subfigures])} "
-                        f"MATLAB benchmark IRs are anchored at the deterministic steady state, "
-                        f"while global-solution IRs start from and return to the stochastic steady state. "
-                        f"The horizontal axis reports periods after impact. "
-                        f"The vertical axis reports impulse responses in percent. "
-                        f"Solid lines report the DEQN stochastic-steady-state impulse response and dashed lines report the "
-                        f"{aggregate_benchmark_labels}; all benchmark overlays are aggregated with fixed ergodic-price weights."
-                    ),
-                    "subfigures": aggregate_specs,
-                }
+            figure_caption = aggregate_variable_captions.get(variable_name, variable_name)
+            note_label = aggregate_variable_note_labels.get(variable_name, variable_name)
+            shock_layout_text = (
+                f"The rows correspond to {_format_percent_list(ir_shock_sizes)} percent TFP shocks in {sector_label}; "
+                "the left column shows negative shocks and the right column positive shocks. "
+                if ir_shock_sizes
+                else ""
             )
-    add_grouped_figure_section("2. Aggregate Impulse Responses", aggregate_ir_groups)
+            aggregate_ir_figures.append(
+                _build_simple_figure_spec(
+                    _analysis_named_path(irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
+                    f"Aggregate {_caption_label(figure_caption)} response to a TFP shock in {sector_label}.",
+                    note_text=(
+                        f"{shock_layout_text}"
+                        f"The figure plots the response of aggregate {note_label}. "
+                        "MATLAB benchmark IRs are anchored at the deterministic steady state, "
+                        "while global-solution IRs start from and return to the stochastic steady state. "
+                        "The horizontal axis reports periods after impact. "
+                        "The vertical axis reports impulse responses in percent. "
+                        "Solid lines report the DEQN stochastic-steady-state impulse response and dashed lines report "
+                        f"the {aggregate_benchmark_labels}; all benchmark overlays are aggregated with fixed "
+                        "ergodic-price weights."
+                    ),
+                )
+            )
+    add_figure_section("2. Aggregate Impulse Responses", aggregate_ir_figures)
 
     add_figure_section(
         "3. Sectoral Variables in Stochastic Steady State",
@@ -529,33 +535,26 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
         return variable_name.replace(" ", "_").replace(".", "").replace("/", "_")
 
     histogram_group_note_path = os.path.join(simulation_dir, f"aggregate_histograms_{analysis_name}_note.tex")
-    add_nested_grouped_figure_section(
-        "6. Aggregate Distribution Histograms",
-        [
-            {
-                "caption": "Aggregate distributions: Global solution, 1st Order Approx., and MIT shocks.",
-                "note_path": histogram_group_note_path,
-                "subfigure_groups": [
-                    {
-                        "title": group_title,
-                        "subfigures": [
-                            {
-                                "path": _analysis_named_path(
-                                    simulation_dir,
-                                    f"Histogram_{_histogram_filename(variable_name)}",
-                                    analysis_name,
-                                    ".png",
-                                ),
-                                "caption": variable_caption,
-                            }
-                            for variable_name, variable_caption in variable_specs
-                        ],
-                    }
-                    for group_title, variable_specs in histogram_variable_groups
-                ],
-            }
-        ],
-    )
+    aggregate_histogram_figures = []
+    for _, variable_specs in histogram_variable_groups:
+        for variable_name, variable_caption in variable_specs:
+            aggregate_histogram_figures.append(
+                _build_simple_figure_spec(
+                    _analysis_named_path(
+                        simulation_dir,
+                        f"Histogram_{_histogram_filename(variable_name)}",
+                        analysis_name,
+                        ".png",
+                    ),
+                    f"Aggregate {_caption_label(variable_caption)} distribution: Global solution, 1st Order Approx., and MIT shocks.",
+                    note_text=(
+                        f"The figure compares the distribution of aggregate {_caption_label(variable_caption)} across "
+                        "the nonlinear global solution, the first-order approximation, and the MIT-shocks benchmark."
+                    ),
+                    note_path=histogram_group_note_path,
+                )
+            )
+    add_figure_section("6. Aggregate Distribution Histograms", aggregate_histogram_figures)
 
     add_table_section(
         "7. Welfare Cost of Business Cycles",
@@ -1003,6 +1002,9 @@ def _build_output_display_label_map(config_dict):
     experiment_label = experiment_labels[0]
     return {
         experiment_label: "Global Solution",
+        f"{experiment_label} ({WELFARE_CONSUMPTION_RECENTERED_LABEL})": WELFARE_CONSUMPTION_RECENTERED_LABEL,
+        f"{experiment_label} ({WELFARE_LABOR_RECENTERED_LABEL})": WELFARE_LABOR_RECENTERED_LABEL,
+        f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})": WELFARE_BOTH_RECENTERED_LABEL,
     }
 
 
@@ -1039,10 +1041,87 @@ def _apply_display_labels_to_sequence(labels, label_map):
     return [label_map.get(label, label) for label in labels]
 
 
+def _build_display_welfare_costs(welfare_costs, label_map):
+    display_welfare_costs = _apply_display_labels_to_mapping(welfare_costs, label_map)
+    ordered_welfare_costs = {
+        label: display_welfare_costs[label] for label in WELFARE_OUTPUT_ORDER if label in display_welfare_costs
+    }
+    return ordered_welfare_costs or display_welfare_costs
+
+
+def _compute_welfare_cost_from_utilities(*, econ_model, welfare_fn, welfare_ss, utilities, rng_key):
+    welfare = welfare_fn(utilities, welfare_ss, rng_key)
+    return -econ_model.consumption_equivalent(welfare) * 100
+
+
 def _compute_welfare_cost_from_sample(*, econ_model, welfare_fn, welfare_ss, policies_logdev, config_dict):
     simul_utilities = jax.vmap(econ_model.utility_from_policies)(policies_logdev)
-    welfare = welfare_fn(simul_utilities, welfare_ss, random.PRNGKey(config_dict["welfare_seed"]))
-    return -econ_model.consumption_equivalent(welfare) * 100
+    return _compute_welfare_cost_from_utilities(
+        econ_model=econ_model,
+        welfare_fn=welfare_fn,
+        welfare_ss=welfare_ss,
+        utilities=simul_utilities,
+        rng_key=random.PRNGKey(config_dict["welfare_seed"]),
+    )
+
+
+def _recenter_logdev_path_to_dss(path_logdev):
+    return path_logdev - jnp.mean(path_logdev)
+
+
+def _compute_counterfactual_utilities_from_sample(
+    *,
+    econ_model,
+    policies_logdev,
+    recenter_consumption=False,
+    recenter_labor=False,
+):
+    if not recenter_consumption and not recenter_labor:
+        raise ValueError("At least one welfare counterfactual must be recentered.")
+
+    consumption_logdev = policies_logdev[:, econ_model.c_util_idx]
+    labor_logdev = policies_logdev[:, econ_model.l_util_idx]
+
+    if recenter_consumption:
+        consumption_logdev = _recenter_logdev_path_to_dss(consumption_logdev)
+    if recenter_labor:
+        labor_logdev = _recenter_logdev_path_to_dss(labor_logdev)
+
+    consumption_level = jnp.exp(consumption_logdev + econ_model.policies_ss[econ_model.c_util_idx])
+    labor_level = jnp.exp(labor_logdev + econ_model.policies_ss[econ_model.l_util_idx])
+    labor_exponent = 1 + econ_model.eps_l ** (-1)
+    labor_disutility = econ_model.theta * (1 / (1 + econ_model.eps_l ** (-1))) * labor_level**labor_exponent
+    utility_intratemp = consumption_level - labor_disutility
+
+    if float(jnp.min(utility_intratemp)) <= 0:
+        raise ValueError("Counterfactual intratemporal utility became non-positive.")
+
+    return econ_model._utility_from_intratemp_level(utility_intratemp)
+
+
+def _compute_counterfactual_welfare_cost_from_sample(
+    *,
+    econ_model,
+    welfare_fn,
+    welfare_ss,
+    policies_logdev,
+    config_dict,
+    recenter_consumption=False,
+    recenter_labor=False,
+):
+    simul_utilities = _compute_counterfactual_utilities_from_sample(
+        econ_model=econ_model,
+        policies_logdev=policies_logdev,
+        recenter_consumption=recenter_consumption,
+        recenter_labor=recenter_labor,
+    )
+    return _compute_welfare_cost_from_utilities(
+        econ_model=econ_model,
+        welfare_fn=welfare_fn,
+        welfare_ss=welfare_ss,
+        utilities=simul_utilities,
+        rng_key=random.PRNGKey(config_dict["welfare_seed"]),
+    )
 
 
 def _compute_stochastic_ss_from_sample(
@@ -1167,11 +1246,43 @@ def _run_experiment_analysis(
             stochastic_ss_loss[label] = stochss_results["stochastic_ss_loss"]
         return welfare_cost_ce
 
+    def store_counterfactual_welfare(label, *, recenter_consumption=False, recenter_labor=False):
+        try:
+            welfare_cost_ce = _compute_counterfactual_welfare_cost_from_sample(
+                econ_model=econ_model,
+                welfare_fn=welfare_fn,
+                welfare_ss=welfare_ss,
+                policies_logdev=selected_results["simul_policies"],
+                config_dict=config_dict,
+                recenter_consumption=recenter_consumption,
+                recenter_labor=recenter_labor,
+            )
+        except ValueError as exc:
+            print(f"    Warning: welfare counterfactual {label} skipped ({exc}).", flush=True)
+            return None
+
+        welfare_costs[label] = welfare_cost_ce
+        print(f"    {label}: welfare cost (CE) {welfare_cost_ce:.4f}%")
+        return welfare_cost_ce
+
     store_variant(
         experiment_label,
         selected_results,
         analysis_context_for_reporting=selected_analysis_context,
         required_stochss=True,
+    )
+    store_counterfactual_welfare(
+        f"{experiment_label} ({WELFARE_CONSUMPTION_RECENTERED_LABEL})",
+        recenter_consumption=True,
+    )
+    store_counterfactual_welfare(
+        f"{experiment_label} ({WELFARE_LABOR_RECENTERED_LABEL})",
+        recenter_labor=True,
+    )
+    store_counterfactual_welfare(
+        f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})",
+        recenter_consumption=True,
+        recenter_labor=True,
     )
 
     gir_results = gir_fn(
@@ -1384,13 +1495,54 @@ def _welfare_cost_from_dynare_simul(
         return None
 
     method_seed = sum(ord(c) for c in method_name)
-    welfare = welfare_fn(
-        jax.vmap(econ_model.utility_from_policies)(policies_logdev),
-        welfare_ss,
-        random.PRNGKey(config_dict["welfare_seed"] + method_seed),
+    return _compute_welfare_cost_from_utilities(
+        econ_model=econ_model,
+        welfare_fn=welfare_fn,
+        welfare_ss=welfare_ss,
+        utilities=jax.vmap(econ_model.utility_from_policies)(policies_logdev),
+        rng_key=random.PRNGKey(config_dict["welfare_seed"] + method_seed),
     )
-    Vc = econ_model.consumption_equivalent(welfare)
-    return -Vc * 100
+
+
+def _welfare_cost_from_loglinear_long_simulation(
+    *,
+    method_name,
+    state_transition_matrix,
+    state_shock_matrix,
+    policy_state_matrix,
+    policy_shock_matrix,
+    econ_model,
+    welfare_fn,
+    welfare_ss,
+    config_dict,
+):
+    episode_utility_fn = jax.jit(
+        create_loglinear_episode_utility_fn(
+            econ_model=econ_model,
+            config=config_dict,
+            state_transition_matrix=state_transition_matrix,
+            state_shock_matrix=state_shock_matrix,
+            policy_state_matrix=policy_state_matrix,
+            policy_shock_matrix=policy_shock_matrix,
+        )
+    )
+    simul_utilities = simulate_ergodic_utilities(
+        analysis_config=config_dict,
+        episode_utility_fn=episode_utility_fn,
+        label=f"Long ergodic {method_name} simulation",
+    )
+    if simul_utilities.shape[0] == 0:
+        print(f"  ⚠ Skipping welfare for {method_name}: retained long simulation sample is empty.")
+        return None
+
+    method_seed = sum(ord(c) for c in method_name)
+    return _compute_welfare_cost_from_utilities(
+        econ_model=econ_model,
+        welfare_fn=welfare_fn,
+        welfare_ss=welfare_ss,
+        utilities=simul_utilities,
+        rng_key=random.PRNGKey(config_dict["welfare_seed"] + method_seed),
+    )
 
 
 # ============================================================================
@@ -1467,11 +1619,17 @@ def main():
     state_sd = jnp.array(stats["states_sd"], dtype=precision)
     policies_sd = jnp.array(stats["policies_sd"], dtype=precision)
 
-    C_matrix = md["Solution"]["StateSpace"]["C"]
+    state_space = md["Solution"]["StateSpace"]
+    A_matrix = jnp.array(state_space["A"], dtype=precision)
+    B_matrix = jnp.array(state_space["B"], dtype=precision)
+    C_matrix = jnp.array(state_space["C"], dtype=precision)
+    D_matrix = jnp.array(state_space["D"], dtype=precision)
 
     if len(policies_ss) != len(policies_sd):
         n_policies = len(policies_sd)
         policies_ss = policies_ss[:n_policies]
+        C_matrix = C_matrix[:n_policies, :]
+        D_matrix = D_matrix[:n_policies, :]
 
     expected_n_vars = state_ss.shape[0] + policies_ss.shape[0]
 
@@ -1632,6 +1790,24 @@ def main():
         gir_data[experiment_label] = experiment_results["gir_data"]
         nonlinear_method_labels.extend(experiment_results.get("nonlinear_method_labels", []))
 
+    long_loglinear_welfare_cost = None
+    if bool(config.get("long_simulation", False)):
+        print("  Computing matched long ergodic welfare sample for FirstOrder.", flush=True)
+        long_loglinear_welfare_cost = _welfare_cost_from_loglinear_long_simulation(
+            method_name="FirstOrder",
+            state_transition_matrix=A_matrix,
+            state_shock_matrix=B_matrix,
+            policy_state_matrix=C_matrix,
+            policy_shock_matrix=D_matrix,
+            econ_model=econ_model,
+            welfare_fn=welfare_fn,
+            welfare_ss=welfare_ss,
+            config_dict=config,
+        )
+        if long_loglinear_welfare_cost is not None:
+            welfare_costs["FirstOrder"] = long_loglinear_welfare_cost
+            print(f"    Welfare cost (FirstOrder, long ergodic): {float(long_loglinear_welfare_cost):.4f}%")
+
     # Add welfare costs from Dynare simulation methods (if available).
     dynare_welfare_inputs = {
         "FirstOrder": dynare_1st_artifact["active_simul"] if model_data_simulation_file is not None else None,
@@ -1640,6 +1816,8 @@ def main():
         "MITShocks": dynare_mit_artifact["active_simul"] if model_data_simulation_file is not None else None,
     }
     for method_name, simul_data in dynare_welfare_inputs.items():
+        if method_name == "FirstOrder" and long_loglinear_welfare_cost is not None:
+            continue
         welfare_cost = _welfare_cost_from_dynare_simul(
             simul_data,
             method_name,
@@ -1719,7 +1897,7 @@ def main():
     display_stochastic_ss_states = _apply_display_labels_to_mapping(stochastic_ss_states, output_display_label_map)
     display_stochastic_ss_policies = _apply_display_labels_to_mapping(stochastic_ss_policies, output_display_label_map)
     display_stochastic_ss_data = _apply_display_labels_to_mapping(stochastic_ss_data, output_display_label_map)
-    display_welfare_costs = _apply_display_labels_to_mapping(welfare_costs, output_display_label_map)
+    display_welfare_costs = _build_display_welfare_costs(welfare_costs, output_display_label_map)
     display_raw_simulation_data = _apply_display_labels_to_mapping(raw_simulation_data, output_display_label_map)
     display_stochss_methods_to_include = cast(
         "list[str] | None",

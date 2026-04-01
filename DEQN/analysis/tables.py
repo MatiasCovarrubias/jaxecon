@@ -37,24 +37,14 @@ _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
 
 _MODEL_VS_DATA_PANELS = [
     (
-        "Volatility of aggregates",
+        "Targeted moments",
         [
-            ("$\\sigma(C_t)$", "sigma_C_agg", "sigma_C_agg", "sigma(C_t)"),
-            ("$\\sigma(I_t)$", "sigma_I_agg", "sigma_I_agg", "sigma(I_t)"),
-            ("$\\sigma(\\mathrm{GDP}_t)$", "sigma_VA_agg", "sigma_VA_agg", "sigma(GDP_t)"),
-            ("$\\sigma(L_t)$", "sigma_L_hc_agg", "sigma_L_agg", "sigma(L_t)"),
-        ],
-    ),
-    (
-        "Correlation of aggregates",
-        [
-            ("$\\mathrm{corr}(C_t,L_t)$", "corr_L_C_agg", ("correlations", "L_C_agg"), "corr(C_t,L_t)"),
-            ("$\\mathrm{corr}(C_t,I_t)$", "corr_I_C_agg", ("correlations", "I_C_agg"), "corr(C_t,I_t)"),
+            ("$\\sum_j \\omega_j^{VA}\\sigma(I_{jt})$", "sigma_I_avg", "sigma_I_avg", "sum w^VA sigma(I_jt)"),
             (
-                "$\\mathrm{corr}(L_t,A_t)$",
-                "corr_L_TFP_agg",
-                ("correlations", "L_TFP_agg"),
-                "corr(L_t,A_t)",
+                "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt},A_{jt})$",
+                "corr_L_TFP_sectoral_avg_vashare",
+                ("correlations", "L_TFP_sectoral_avg_vashare"),
+                "sum w^VA corr(L_jt,A_jt)",
             ),
         ],
     ),
@@ -92,21 +82,44 @@ _MODEL_VS_DATA_PANELS = [
         [
             ("$\\sum_j \\omega_j^{VA}\\sigma(VA_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(VA_jt)"),
             ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
-            ("$\\sum_j \\omega_j^{VA}\\sigma(I_{jt})$", "sigma_I_avg", "sigma_I_avg", "sum w^VA sigma(I_jt)"),
-        ],
-    ),
-    (
-        "Targeted moments",
-        [
             (
-                "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt},A_{jt})$",
-                "corr_L_TFP_sectoral_avg_vashare",
-                ("correlations", "L_TFP_sectoral_avg_vashare"),
-                "sum w^VA corr(L_jt,A_jt)",
+                "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}_{jt})$",
+                "sigma_Domar_avg",
+                "sigma_Domar_avg",
+                "sum w^GO sigma(Domar_jt)",
             ),
         ],
     ),
+    (
+        "Volatility of aggregates",
+        [
+            ("$\\sigma(C_t)$", "sigma_C_agg", "sigma_C_agg", "sigma(C_t)"),
+            ("$\\sigma(I_t)$", "sigma_I_agg", "sigma_I_agg", "sigma(I_t)"),
+            ("$\\sigma(\\mathrm{GDP}_t)$", "sigma_VA_agg", "sigma_VA_agg", "sigma(GDP_t)"),
+            ("$\\sigma(L_t)$", "sigma_L_hc_agg", "sigma_L_agg", "sigma(L_t)"),
+        ],
+    ),
+    (
+        "Correlation of aggregates",
+        [
+            ("$\\mathrm{corr}(C_t,L_t)$", "corr_L_C_agg", ("correlations", "L_C_agg"), "corr(C_t,L_t)"),
+            ("$\\mathrm{corr}(C_t,I_t)$", "corr_I_C_agg", ("correlations", "I_C_agg"), "corr(C_t,I_t)"),
+        ],
+    ),
 ]
+
+_MODEL_VS_DATA_MODEL_KEY_ALIASES = {
+    "sigma_VA_agg": ["sigma_VA_agg", "sigma_GDP_agg"],
+    "sigma_L_hc_agg": ["sigma_L_hc_agg", "sigma_L_agg", "sigma_L_headcount_agg"],
+    "corr_I_C_agg": ["corr_I_C_agg", "corr_CI_agg"],
+    "sigma_Domar_avg": ["sigma_Domar_avg", "sigma_Domar_avg_legacy"],
+}
+
+_MODEL_VS_DATA_DATA_KEY_ALIASES = {
+    "sigma_VA_agg": ["sigma_VA_agg", "sigma_GDP_agg"],
+    "sigma_L_agg": ["sigma_L_agg", "sigma_L_hc_agg", "sigma_L_headcount_agg"],
+    "sigma_Domar_avg": ["sigma_Domar_avg", "sigma_Domar_avg_legacy"],
+}
 
 _MODEL_VS_DATA_ROW_DEFS = [
     (row_label, model_key, data_key)
@@ -156,6 +169,30 @@ def _nonlinear_method_note(method_names: list[str]) -> str:
             r"Global Solution (Common Shocks) uses the short common-shock simulation sample."
         )
     return ""
+
+
+def _welfare_counterfactual_note(method_names: list[str]) -> str:
+    has_c_recentered = any("C-recentered" in method_name for method_name in method_names)
+    has_l_recentered = any("L-recentered" in method_name for method_name in method_names)
+    has_both_recentered = any("C and L recentered" in method_name for method_name in method_names)
+
+    note_parts = []
+    if has_c_recentered:
+        note_parts.append(
+            r"\texttt{C-recentered} recenters the utility-relevant consumption log-deviation path to mean zero while holding labor fixed."
+        )
+    if has_l_recentered:
+        note_parts.append(
+            r"\texttt{L-recentered} recenters the utility-relevant labor log-deviation path to mean zero while holding consumption fixed."
+        )
+    if has_both_recentered:
+        note_parts.append(
+            r"\texttt{C and L recentered} recenters both utility-relevant consumption and labor log-deviation paths to mean zero."
+        )
+
+    if not note_parts:
+        return ""
+    return " " + " ".join(note_parts)
 
 
 def _selected_nonlinear_sample_note(method_names: list[str]) -> str:
@@ -355,11 +392,17 @@ def _resolve_empirical_value(empirical_targets: Dict[str, Any], data_key: Any) -
                 return _weighted_mean_ignore_nan(sectoral, weights)
         return _first_available_scalar(
             empirical_targets,
-            [data_key[1], f"corr_{data_key[1]}", f"avg_{data_key[1]}"],
+            _MODEL_VS_DATA_DATA_KEY_ALIASES.get(
+                data_key[1],
+                [data_key[1], f"corr_{data_key[1]}", f"avg_{data_key[1]}"],
+            ),
         )
     return _first_available_scalar(
         empirical_targets,
-        [data_key, f"corr_{data_key}", f"avg_{data_key}"],
+        _MODEL_VS_DATA_DATA_KEY_ALIASES.get(
+            data_key,
+            [data_key, f"corr_{data_key}", f"avg_{data_key}"],
+        ),
     )
 
 
@@ -393,6 +436,15 @@ def _weighted_mean_ignore_nan(values: np.ndarray, weights: np.ndarray) -> Option
     return float(np.sum(weights * values))
 
 
+def _resolve_model_vs_data_method_value(method_stats: Optional[Dict[str, Any]], model_key: str) -> Optional[float]:
+    if method_stats is None:
+        return None
+    return _first_available_scalar(
+        method_stats,
+        _MODEL_VS_DATA_MODEL_KEY_ALIASES.get(model_key, [model_key]),
+    )
+
+
 def _create_model_vs_data_moments_table(
     empirical_targets: Dict[str, Any],
     method_model_stats: Dict[str, Dict[str, Any]],
@@ -420,17 +472,14 @@ def _create_model_vs_data_moments_table(
     panel_labels = ["Panel A", "Panel B", "Panel C", "Panel D", "Panel E"]
     for panel_index, (panel_title, panel_rows) in enumerate(_MODEL_VS_DATA_PANELS):
         panel_prefix = panel_labels[panel_index] if panel_index < len(panel_labels) else f"Panel {panel_index + 1}"
-        panel_title_display = panel_title
-        if panel_title == "Sectoral weighted-average volatilities":
-            panel_title_display = panel_title + r"$^{a}$"
         latex_code += (
-            rf"\multicolumn{{{total_columns}}}{{c}}{{\textit{{{panel_prefix}. {panel_title_display}}}}} \\" + "\n"
+            rf"\multicolumn{{{total_columns}}}{{c}}{{\textit{{{panel_prefix}. {panel_title}}}}} \\" + "\n"
         )
         for row_label, model_key, data_key, _ in panel_rows:
             latex_code += row_label
             for method_name in method_order:
                 method_stats = method_model_stats.get(method_name)
-                value = _first_available_scalar(method_stats, [model_key]) if method_stats else None
+                value = _resolve_model_vs_data_method_value(method_stats, model_key)
                 latex_code += f" & {value:.4f}" if value is not None else " & ---"
             data_value = _resolve_empirical_value(empirical_targets, data_key)
             latex_code += f" & {data_value:.4f}" if data_value is not None else " & ---"
@@ -443,16 +492,11 @@ def _create_model_vs_data_moments_table(
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
-        r"$^{a}$ Panel E reports sectoral weighted averages using value-added shares."
-        + "\n"
-        r"\end{minipage}" + "\n"
-        r"\begin{minipage}{0.92\textwidth}" + "\n"
-        r"\vspace{0.5em}" + "\n"
-        r"\footnotesize" + "\n"
         r"\textit{Notes:} Entries are business cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
         r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
         r" Boldface objects such as $\mathbf{C}_t$ denote the full sectoral vector."
         r" Comovement means the correlation between sectors in a specific variable; the reported rows summarize those sector-to-sector correlations by their average."
+        r" Targeted and sectoral weighted-average rows use value-added shares unless the row is explicitly Domar-weighted, in which case the weights are normalized gross-output shares."
         r" Aggregate rows are re-aggregated in Python using fixed ergodic-price weights so the aggregate definition is consistent across methods."
         + _selected_nonlinear_sample_note(
             [_MODEL_VS_DATA_METHOD_CONSOLE_HEADERS.get(method_name, method_name) for method_name in method_order]
@@ -504,7 +548,7 @@ def _generate_model_vs_data_console_table(
         row = f"{console_label:<{row_label_width}}"
         for method_name in method_order:
             method_stats = method_model_stats.get(method_name)
-            value = _first_available_scalar(method_stats, [model_key]) if method_stats else None
+            value = _resolve_model_vs_data_method_value(method_stats, model_key)
             row += f"{value:{method_col_width}.4f}" if value is not None else f"{'---':>{method_col_width}}"
         data_value = _resolve_empirical_value(empirical_targets, data_key)
         row += f"{data_value:{method_col_width}.4f}" if data_value is not None else f"{'---':>{method_col_width}}"
@@ -1027,6 +1071,7 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
         label="tab:welfare_costs",
         note_text=(
             r"$V_c$ is the consumption-equivalent amount of consumption agents would be willing to give up in order to eliminate shocks and remain forever at the deterministic steady state."
+            + _welfare_counterfactual_note(method_names)
             + _nonlinear_method_note(method_names)
             + r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would give up 1\% of consumption to remove business cycle risk."
         ),

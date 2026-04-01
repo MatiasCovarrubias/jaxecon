@@ -107,30 +107,46 @@ The representative household's period utility is:
     U_t = \frac{1}{1 - \varepsilon_c^{-1}} \left( C^{agg}_t - \theta \frac{1}{1 + \varepsilon_l^{-1}} (L^{agg}_t)^{1 + \varepsilon_l^{-1}} \right)^{1 - \varepsilon_c^{-1}}
 \end{equation}
 
-\subsubsection{Welfare Cost Calculation}
-The welfare cost measures the consumption-equivalent loss from business cycle fluctuations:
+\subsubsection{Consumption-Equivalent Welfare Calculation}
+The welfare calculation uses the consumption-equivalent object $V_c$ rather than the deprecated ratio $1-W/W_{ss}$.
 
 \begin{enumerate}
-    \item Compute steady-state welfare:
+    \item The model stores the intratemporal utility composite directly in the policy vector:
     \begin{equation}
-        W_{ss} = \frac{U_{ss}}{1 - \beta}
+        X_t = C^{agg}_t - \theta \frac{1}{1 + \varepsilon_l^{-1}} (L^{agg}_t)^{1 + \varepsilon_l^{-1}}
     \end{equation}
-    
-    \item Estimate stochastic welfare from simulation trajectories using multiple random starting points:
+    In the saved policy block, \texttt{utility\_intratemp} is the log of $X_t$, so period utility is recovered as
     \begin{equation}
-        W = \mathbb{E}\left[ \sum_{t=0}^{T} \beta^t U_t \right]
+        U_t = \frac{X_t^{1 - \varepsilon_c^{-1}}}{1 - \varepsilon_c^{-1}}.
     \end{equation}
-    
-    \item Welfare loss (in percentage):
+
+    \item Compute deterministic steady-state welfare:
     \begin{equation}
-        \text{Welfare Loss} = \left(1 - \frac{W}{W_{ss}}\right) \times 100
+        W_{ss} = \frac{U_{ss}}{1 - \beta}.
     \end{equation}
+
+    \item Sample simulation trajectories of length $T$ and append a deterministic steady-state continuation value:
+    \begin{equation}
+        W_{\tau} = \sum_{t=0}^{T-1} \beta^t U_{\tau+t} + \beta^T W_{ss}.
+    \end{equation}
+
+    \item Average discounted welfare across sampled trajectories:
+    \begin{equation}
+        W = \mathbb{E}[W_{\tau}].
+    \end{equation}
+
+    \item Convert expected welfare into a consumption-equivalent amount:
+    \begin{equation}
+        V_c = \frac{\left((1-\beta)(1-\varepsilon_c^{-1})W\right)^{\frac{1}{1-\varepsilon_c^{-1}}}
+        + \theta \frac{1}{1 + \varepsilon_l^{-1}} (L^{agg}_{ss})^{1 + \varepsilon_l^{-1}}}{C^{agg}_{ss}} - 1.
+    \end{equation}
+    Reported welfare cost is $-100 \times V_c$, so a positive number means business cycles reduce welfare.
 \end{enumerate}
 
 \subsubsection{Configuration}
 \begin{itemize}
     \item \textbf{Number of trajectories}: 16,000
-    \item \textbf{Trajectory length}: 100 periods
+    \item \textbf{Trajectory length}: 200 periods
     \item \textbf{Random seed}: Configurable for reproducibility
 \end{itemize}
 

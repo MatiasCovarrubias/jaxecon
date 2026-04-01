@@ -323,7 +323,7 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
     Parameters:
     -----------
     welfare_data : dict
-        Dictionary with experiment names as keys and welfare losses as values
+        Dictionary with experiment names as keys and consumption-equivalent welfare costs as values
 
     Returns:
     --------
@@ -333,7 +333,7 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
     latex_code = (
         r"\begin{tabularx}{\textwidth}{l X}" + "\n"
         r"\toprule" + "\n"
-        r"\textbf{Experiment} & \textbf{Welfare Loss (\%)} \\" + "\n"
+        r"\textbf{Experiment} & \textbf{Welfare Cost ($V_c$, \%)} \\" + "\n"
         r"\midrule" + "\n"
     )
 

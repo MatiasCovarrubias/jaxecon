@@ -233,13 +233,12 @@ DEFAULT_AGGREGATE_LABELS = [
 ]
 
 DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
-WELFARE_CONSUMPTION_RECENTERED_LABEL = "C-recentered"
-WELFARE_LABOR_RECENTERED_LABEL = "L-recentered"
-WELFARE_BOTH_RECENTERED_LABEL = "C and L recentered"
+WELFARE_BOTH_RECENTERED_LABEL = "C and L recentered at determ SS"
+WELFARE_L_FIXED_AT_DSS_LABEL = "L fixed at determ SS"
 WELFARE_OUTPUT_ORDER = [
     "Global Solution",
     WELFARE_BOTH_RECENTERED_LABEL,
-    WELFARE_CONSUMPTION_RECENTERED_LABEL,
+    WELFARE_L_FIXED_AT_DSS_LABEL,
     "FirstOrder",
     "MITShocks",
     "PerfectForesight",
@@ -1002,9 +1001,8 @@ def _build_output_display_label_map(config_dict):
     experiment_label = experiment_labels[0]
     return {
         experiment_label: "Global Solution",
-        f"{experiment_label} ({WELFARE_CONSUMPTION_RECENTERED_LABEL})": WELFARE_CONSUMPTION_RECENTERED_LABEL,
-        f"{experiment_label} ({WELFARE_LABOR_RECENTERED_LABEL})": WELFARE_LABOR_RECENTERED_LABEL,
         f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})": WELFARE_BOTH_RECENTERED_LABEL,
+        f"{experiment_label} ({WELFARE_L_FIXED_AT_DSS_LABEL})": WELFARE_L_FIXED_AT_DSS_LABEL,
     }
 
 
@@ -1075,9 +1073,12 @@ def _compute_counterfactual_utilities_from_sample(
     policies_logdev,
     recenter_consumption=False,
     recenter_labor=False,
+    fix_labor_at_dss=False,
 ):
-    if not recenter_consumption and not recenter_labor:
-        raise ValueError("At least one welfare counterfactual must be recentered.")
+    if not recenter_consumption and not recenter_labor and not fix_labor_at_dss:
+        raise ValueError("At least one welfare counterfactual adjustment must be requested.")
+    if recenter_labor and fix_labor_at_dss:
+        raise ValueError("Labor cannot be both recentered and fixed at the deterministic steady state.")
 
     consumption_logdev = policies_logdev[:, econ_model.c_util_idx]
     labor_logdev = policies_logdev[:, econ_model.l_util_idx]
@@ -1086,6 +1087,8 @@ def _compute_counterfactual_utilities_from_sample(
         consumption_logdev = _recenter_logdev_path_to_dss(consumption_logdev)
     if recenter_labor:
         labor_logdev = _recenter_logdev_path_to_dss(labor_logdev)
+    if fix_labor_at_dss:
+        labor_logdev = jnp.zeros_like(labor_logdev)
 
     consumption_level = jnp.exp(consumption_logdev + econ_model.policies_ss[econ_model.c_util_idx])
     labor_level = jnp.exp(labor_logdev + econ_model.policies_ss[econ_model.l_util_idx])
@@ -1108,12 +1111,14 @@ def _compute_counterfactual_welfare_cost_from_sample(
     config_dict,
     recenter_consumption=False,
     recenter_labor=False,
+    fix_labor_at_dss=False,
 ):
     simul_utilities = _compute_counterfactual_utilities_from_sample(
         econ_model=econ_model,
         policies_logdev=policies_logdev,
         recenter_consumption=recenter_consumption,
         recenter_labor=recenter_labor,
+        fix_labor_at_dss=fix_labor_at_dss,
     )
     return _compute_welfare_cost_from_utilities(
         econ_model=econ_model,
@@ -1246,7 +1251,13 @@ def _run_experiment_analysis(
             stochastic_ss_loss[label] = stochss_results["stochastic_ss_loss"]
         return welfare_cost_ce
 
-    def store_counterfactual_welfare(label, *, recenter_consumption=False, recenter_labor=False):
+    def store_counterfactual_welfare(
+        label,
+        *,
+        recenter_consumption=False,
+        recenter_labor=False,
+        fix_labor_at_dss=False,
+    ):
         try:
             welfare_cost_ce = _compute_counterfactual_welfare_cost_from_sample(
                 econ_model=econ_model,
@@ -1256,6 +1267,7 @@ def _run_experiment_analysis(
                 config_dict=config_dict,
                 recenter_consumption=recenter_consumption,
                 recenter_labor=recenter_labor,
+                fix_labor_at_dss=fix_labor_at_dss,
             )
         except ValueError as exc:
             print(f"    Warning: welfare counterfactual {label} skipped ({exc}).", flush=True)
@@ -1272,17 +1284,13 @@ def _run_experiment_analysis(
         required_stochss=True,
     )
     store_counterfactual_welfare(
-        f"{experiment_label} ({WELFARE_CONSUMPTION_RECENTERED_LABEL})",
-        recenter_consumption=True,
-    )
-    store_counterfactual_welfare(
-        f"{experiment_label} ({WELFARE_LABOR_RECENTERED_LABEL})",
-        recenter_labor=True,
-    )
-    store_counterfactual_welfare(
         f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})",
         recenter_consumption=True,
         recenter_labor=True,
+    )
+    store_counterfactual_welfare(
+        f"{experiment_label} ({WELFARE_L_FIXED_AT_DSS_LABEL})",
+        fix_labor_at_dss=True,
     )
 
     gir_results = gir_fn(

@@ -172,22 +172,17 @@ def _nonlinear_method_note(method_names: list[str]) -> str:
 
 
 def _welfare_counterfactual_note(method_names: list[str]) -> str:
-    has_c_recentered = any("C-recentered" in method_name for method_name in method_names)
-    has_l_recentered = any("L-recentered" in method_name for method_name in method_names)
-    has_both_recentered = any("C and L recentered" in method_name for method_name in method_names)
+    has_both_recentered = any("C and L recentered at determ SS" in method_name for method_name in method_names)
+    has_l_fixed = any("L fixed at determ SS" in method_name for method_name in method_names)
 
     note_parts = []
-    if has_c_recentered:
-        note_parts.append(
-            r"\texttt{C-recentered} recenters the utility-relevant consumption log-deviation path to mean zero while holding labor fixed."
-        )
-    if has_l_recentered:
-        note_parts.append(
-            r"\texttt{L-recentered} recenters the utility-relevant labor log-deviation path to mean zero while holding consumption fixed."
-        )
     if has_both_recentered:
         note_parts.append(
-            r"\texttt{C and L recentered} recenters both utility-relevant consumption and labor log-deviation paths to mean zero."
+            r"\texttt{C and L recentered at determ SS} recenters both utility-relevant consumption and labor log-deviation paths so their sample means match the deterministic steady state."
+        )
+    if has_l_fixed:
+        note_parts.append(
+            r"\texttt{L fixed at determ SS} fixes utility-relevant labor at the deterministic steady state and measures welfare from consumption variation alone along the simulated path."
         )
 
     if not note_parts:

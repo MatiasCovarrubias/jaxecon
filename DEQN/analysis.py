@@ -131,9 +131,9 @@ config = {
         "benchmark": "GO_shocks_newWDS_v2",
     },
     # Simulation configuration
-    # False (default): use the common-shock simulation as the sole nonlinear sample.
-    # True: use the long ergodic simulation as the sole nonlinear sample.
-    "long_simulation": False,
+    # False: use the common-shock simulation as the sole nonlinear sample.
+    # True (current default): use the long ergodic simulation as the sole nonlinear sample.
+    "long_simulation": True,
     "init_range": 6,
     "periods_per_epis": 64000,
     "burn_in_periods": 3200,
@@ -332,6 +332,38 @@ def _format_percent_list(values):
     return ", ".join(values[:-1]) + f", and {values[-1]}"
 
 
+def _build_output_note_context(config_dict, matlab_common_shock_schedule=None):
+    periods_per_episode = int(config_dict.get("periods_per_epis", 0) or 0)
+    burn_in_periods = int(config_dict.get("burn_in_periods", 0) or 0)
+    n_simul_seeds = int(config_dict.get("n_simul_seeds", 0) or 0)
+    retained_periods_per_seed = max(periods_per_episode - burn_in_periods, 0)
+    note_context = {
+        "long_simulation": bool(config_dict.get("long_simulation", False)),
+        "periods_per_episode": periods_per_episode,
+        "burn_in_periods": burn_in_periods,
+        "n_simul_seeds": n_simul_seeds,
+        "retained_periods_per_seed": retained_periods_per_seed,
+        "total_retained_periods": retained_periods_per_seed * n_simul_seeds,
+        "common_shock_burn_in": None,
+        "common_shock_active_periods": None,
+        "common_shock_burn_out": None,
+        "common_shock_total_periods": None,
+    }
+
+    schedule = matlab_common_shock_schedule or {}
+    active_shocks = schedule.get("active_shocks")
+    full_shocks = schedule.get("full_shocks")
+    note_context.update(
+        {
+            "common_shock_burn_in": int(schedule.get("burn_in", 0)),
+            "common_shock_active_periods": int(active_shocks.shape[0]) if active_shocks is not None else None,
+            "common_shock_burn_out": int(schedule.get("burn_out", 0)),
+            "common_shock_total_periods": int(full_shocks.shape[0]) if full_shocks is not None else None,
+        }
+    )
+    return note_context
+
+
 def _resolve_ir_benchmark_methods(config_dict):
     configured_methods = config_dict.get("ir_benchmark_methods")
     if configured_methods is None:
@@ -349,15 +381,47 @@ def _resolve_ir_benchmark_methods(config_dict):
 
 def _describe_ir_benchmark_methods(config_dict):
     benchmark_method_labels = {
-        "FirstOrder": "MATLAB first-order benchmark",
-        "SecondOrder": "MATLAB second-order benchmark",
-        "PerfectForesight": "MATLAB perfect-foresight benchmark",
+        "FirstOrder": "1st-order approximation",
+        "SecondOrder": "2nd-order approximation",
+        "PerfectForesight": "perfect foresight",
+        "MITShocks": "MIT shocks",
     }
     labels = [
-        benchmark_method_labels.get(method, f"MATLAB {method} benchmark")
+        benchmark_method_labels.get(method, method)
         for method in _resolve_ir_benchmark_methods(config_dict)
     ]
-    return _join_labels(labels) if labels else "MATLAB benchmarks"
+    return _join_labels(labels)
+
+
+def _resolve_ir_response_source(config_dict):
+    use_gir = config_dict.get("use_gir")
+    if use_gir is not None:
+        return "GIR" if bool(use_gir) else "IR_stoch_ss"
+
+    configured_methods = config_dict.get("ir_methods")
+    if configured_methods is None:
+        legacy_method = config_dict.get("ir_method")
+        configured_methods = [legacy_method] if legacy_method else []
+    elif isinstance(configured_methods, str):
+        configured_methods = [configured_methods]
+
+    return "GIR" if "GIR" in configured_methods else "IR_stoch_ss"
+
+
+def _describe_deqn_ir_note(config_dict):
+    if _resolve_ir_response_source(config_dict) == "GIR":
+        return (
+            "Solid lines report the DEQN generalized impulse response: initial states are sampled from the "
+            "ergodic distribution and, for each draw, a zero-shock baseline path is compared with a path "
+            "whose TFP state is shifted on impact, with both paths then simulated forward with zero shocks; "
+            "the plotted response is the average difference across draws. "
+        )
+
+    return (
+        "Solid lines report the DEQN stochastic-steady-state impulse response: the baseline and "
+        "counterfactual paths start from the stochastic steady state, the TFP shock is applied on impact, "
+        "and both paths are then simulated forward with zero shocks. "
+    )
 
 
 def _existing_subfigures(figure_specs):
@@ -445,6 +509,7 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
     }
     ir_shock_sizes = list(config_dict.get("ir_shock_sizes", []))
     aggregate_benchmark_labels = _describe_ir_benchmark_methods(config_dict)
+    deqn_ir_note = _describe_deqn_ir_note(config_dict)
     aggregate_ir_variables = list(getattr(analysis_hooks, "DEFAULT_AGGREGATE_IR_LABELS", DEFAULT_AGGREGATE_LABELS))
     for sector_idx in config_dict.get("ir_sectors_to_plot", []):
         sector_label = (
@@ -468,13 +533,12 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                     note_text=(
                         f"{shock_layout_text}"
                         f"The figure plots the response of aggregate {note_label}. "
-                        "MATLAB benchmark IRs are anchored at the deterministic steady state, "
-                        "while global-solution IRs start from and return to the stochastic steady state. "
+                        f"{deqn_ir_note}"
                         "The horizontal axis reports periods after impact. "
                         "The vertical axis reports impulse responses in percent. "
-                        "Solid lines report the DEQN stochastic-steady-state impulse response and dashed lines report "
-                        f"the {aggregate_benchmark_labels}; all benchmark overlays are aggregated with fixed "
-                        "ergodic-price weights."
+                        "Dashed lines report comparison IRs from the "
+                        f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
+                        "steady state."
                     ),
                 )
             )
@@ -545,10 +609,10 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                         analysis_name,
                         ".png",
                     ),
-                    f"Aggregate {_caption_label(variable_caption)} distribution: Global solution, 1st Order Approx., and MIT shocks.",
+                    f"Aggregate {_caption_label(variable_caption)} distribution: Global Solution, 1st Order Approximation, and MIT shocks.",
                     note_text=(
                         f"The figure compares the distribution of aggregate {_caption_label(variable_caption)} across "
-                        "the nonlinear global solution, the first-order approximation, and the MIT-shocks benchmark."
+                        "the global solution, the 1st-order approximation, and MIT shocks."
                     ),
                     note_path=histogram_group_note_path,
                 )
@@ -634,12 +698,13 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                     {
                         "caption": f"{group_title} for {sector_label}.",
                         "note_text": (
-                            f"Follows the MATLAB grouping. {shock_text} "
-                            "MATLAB benchmark IRs are anchored at the deterministic steady state, "
-                            "while global-solution IRs start from and return to the stochastic steady state. "
+                            f"{shock_text} "
+                            f"{deqn_ir_note}"
                             "The horizontal axis reports periods after impact. "
                             "The vertical axis reports impulse responses in percent. "
-                            f"Dashed lines report the {sectoral_benchmark_labels}."
+                            "Dashed lines report comparison IRs from the "
+                            f"{sectoral_benchmark_labels}; these comparison IRs are anchored at the deterministic "
+                            "steady state."
                         ),
                         "subfigures": subfigures,
                     }
@@ -1916,6 +1981,7 @@ def main():
     )
     if not display_stochss_methods_to_include:
         display_stochss_methods_to_include = cast("list[str] | None", list(display_stochastic_ss_data.keys()))
+    output_note_context = _build_output_note_context(config, matlab_common_shock_schedule)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # MODEL VS DATA MOMENTS TABLE
@@ -1977,6 +2043,7 @@ def main():
             method_model_stats=filtered_calibration_method_stats,
             save_path=os.path.join(analysis_dir, "calibration_table.tex"),
             analysis_name=config["analysis_name"],
+            note_context=output_note_context,
         )
     else:
         print(
@@ -2082,7 +2149,7 @@ def main():
     desc_display_label_map = dict(output_display_label_map)
     desc_display_label_map.update(
         {
-            "Log-Linear": "1st Order Approx.",
+            "Log-Linear": "1st Order Approximation",
             "MITShocks": "MIT shocks",
         }
     )
@@ -2100,6 +2167,7 @@ def main():
         save_path=os.path.join(simulation_dir, "descriptive_stats_table.tex"),
         analysis_name=config["analysis_name"],
         theoretical_stats=display_theoretical_stats,
+        note_context=output_note_context,
     )
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -2130,6 +2198,7 @@ def main():
         welfare_data=display_welfare_costs,
         save_path=os.path.join(analysis_dir, "welfare_table.tex"),
         analysis_name=config["analysis_name"],
+        note_context=output_note_context,
     )
 
     # ═══════════════════════════════════════════════════════════════════════════

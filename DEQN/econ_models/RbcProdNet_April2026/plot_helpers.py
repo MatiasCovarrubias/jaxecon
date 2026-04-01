@@ -113,17 +113,25 @@ def _join_text_list(values: list[str]) -> str:
 
 def _describe_response_source(response_source: str) -> str:
     if response_source == "GIR":
-        return "The solid DEQN line reports the generalized impulse response averaged over ergodic draws."
-    return "The solid DEQN line reports the impulse response computed from the stochastic steady state."
+        return (
+            "The solid DEQN line reports the generalized impulse response, averaging the difference "
+            "between a zero-shock path and a path whose TFP state is shifted on impact across draws "
+            "from the ergodic distribution."
+        )
+    return (
+        "The solid DEQN line reports the stochastic-steady-state impulse response, comparing "
+        "shocked and unshocked paths that start from the stochastic steady state."
+    )
 
 
 def _describe_benchmark_method(benchmark_method: str) -> str:
     benchmark_labels = {
-        "FirstOrder": "first-order benchmark",
-        "SecondOrder": "second-order benchmark",
-        "PerfectForesight": "perfect-foresight benchmark",
+        "FirstOrder": "1st-order approximation",
+        "SecondOrder": "2nd-order approximation",
+        "PerfectForesight": "perfect foresight",
+        "MITShocks": "MIT shocks",
     }
-    return benchmark_labels.get(benchmark_method, f"{benchmark_method} benchmark")
+    return benchmark_labels.get(benchmark_method, benchmark_method)
 
 
 def _resolve_ir_benchmark_methods(
@@ -185,10 +193,7 @@ def _build_ir_note(
             else f"The figure compares positive and negative TFP shocks to {sector_label}."
         )
 
-    anchor_text = (
-        "MATLAB benchmark IRs are anchored at the deterministic steady state, "
-        "while global-solution IRs start from and return to the stochastic steady state."
-    )
+    anchor_text = "Dashed comparison IRs are anchored at the deterministic steady state."
     axis_text = (
         "The horizontal axis reports periods after impact. The vertical axis reports impulse responses in percent."
     )
@@ -199,24 +204,31 @@ def _build_ir_note(
         )
 
     described_benchmarks = [_describe_benchmark_method(method) for method in benchmark_methods]
-    if len(described_benchmarks) == 1:
-        benchmark_text = f"The dashed benchmark line is the {described_benchmarks[0]}."
+    if not described_benchmarks:
+        benchmark_text = ""
+    elif len(described_benchmarks) == 1:
+        benchmark_text = f"The dashed line reports the {described_benchmarks[0]}."
     else:
-        benchmark_text = f"The dashed benchmark lines are the {_join_text_list(described_benchmarks)}."
-    if is_aggregate:
-        benchmark_text += (
-            " For aggregate consumption, investment, GDP, capital, labor, and intratemporal utility, the benchmarks are "
-            "re-aggregated with fixed ergodic prices so that the aggregate definition matches the nonlinear solution."
-        )
-    elif "_client" in variable_to_plot:
+        benchmark_text = f"The dashed lines report {_join_text_list(described_benchmarks)}."
+    if not is_aggregate and "_client" in variable_to_plot:
         benchmark_text += (
             " Variables with the suffix 'client' refer to the petroleum client sector of the shocked sector in the "
             "input-output network."
         )
-    else:
+    elif not is_aggregate:
         benchmark_text += " Un-suffixed sectoral variables refer to the shocked sector itself."
 
-    return " ".join([layout_text, anchor_text, axis_text, _describe_response_source(response_source), benchmark_text])
+    return " ".join(
+        part
+        for part in [
+            layout_text,
+            _describe_response_source(response_source),
+            anchor_text,
+            axis_text,
+            benchmark_text,
+        ]
+        if part
+    )
 
 
 def _build_sectoral_distribution_note(

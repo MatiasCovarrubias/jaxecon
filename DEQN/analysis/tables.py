@@ -49,6 +49,19 @@ _MODEL_VS_DATA_PANELS = [
         ],
     ),
     (
+        "Sectoral weighted-average volatilities",
+        [
+            ("$\\sum_j \\omega_j^{VA}\\sigma(VA_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(VA_jt)"),
+            ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
+            (
+                "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}_{jt})$",
+                "sigma_Domar_avg",
+                "sigma_Domar_avg",
+                "sum w^GO sigma(Domar_jt)",
+            ),
+        ],
+    ),
+    (
         "Sectoral comovement",
         [
             (
@@ -74,19 +87,6 @@ _MODEL_VS_DATA_PANELS = [
                 "avg_pairwise_corr_L",
                 "avg_pairwise_corr_L",
                 "avg corr across sectors in L",
-            ),
-        ],
-    ),
-    (
-        "Sectoral weighted-average volatilities",
-        [
-            ("$\\sum_j \\omega_j^{VA}\\sigma(VA_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(VA_jt)"),
-            ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
-            (
-                "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}_{jt})$",
-                "sigma_Domar_avg",
-                "sigma_Domar_avg",
-                "sum w^GO sigma(Domar_jt)",
             ),
         ],
     ),
@@ -152,8 +152,180 @@ _LOGDEV_PERCENT_NOTE = (
 
 _DESCRIPTIVE_SHAPE_NOTE = (
     r"Skewness is positive when the distribution has a longer right tail and negative when it has a longer left tail. "
-    r"Excess kurtosis is reported relative to the Gaussian benchmark, so positive values indicate fatter tails and more extreme events, while negative values indicate thinner tails."
+    r"Excess kurtosis is reported relative to the Gaussian distribution, so positive values indicate fatter tails and more extreme events, while negative values indicate thinner tails."
 )
+
+
+def _format_count(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return None
+
+
+def _common_shock_window_text(note_context: Optional[Dict[str, Any]]) -> str:
+    if not note_context:
+        return "the shorter common-shock window"
+
+    burn_in = _format_count(note_context.get("common_shock_burn_in"))
+    active_periods = _format_count(note_context.get("common_shock_active_periods"))
+    burn_out = _format_count(note_context.get("common_shock_burn_out"))
+    total_periods = _format_count(note_context.get("common_shock_total_periods"))
+
+    if burn_in and active_periods and burn_out and total_periods:
+        return (
+            "the shorter common-shock window "
+            f"({burn_in} burn-in, {active_periods} active, {burn_out} burn-out; {total_periods} total)"
+        )
+
+    return "the shorter common-shock window"
+
+
+def _long_simulation_sentence(note_context: Optional[Dict[str, Any]], *, subject: str) -> str:
+    if not note_context or not note_context.get("long_simulation"):
+        return ""
+
+    n_simul_seeds = _format_count(note_context.get("n_simul_seeds"))
+    periods_per_episode = _format_count(note_context.get("periods_per_episode"))
+    burn_in_periods = _format_count(note_context.get("burn_in_periods"))
+    retained_periods_per_seed = _format_count(note_context.get("retained_periods_per_seed"))
+    total_retained_periods = _format_count(note_context.get("total_retained_periods"))
+
+    if all(
+        [
+            n_simul_seeds,
+            periods_per_episode,
+            burn_in_periods,
+            retained_periods_per_seed,
+            total_retained_periods,
+        ]
+    ):
+        return (
+            f" {subject} uses the long simulation, pooling {n_simul_seeds} simulated paths with "
+            f"different seeds. Each path has {periods_per_episode} periods; after dropping "
+            f"{burn_in_periods} burn-in periods, {retained_periods_per_seed} observations per seed are "
+            f"retained ({total_retained_periods} total)."
+        )
+
+    return f" {subject} uses the long simulation drawn from multiple seeds."
+
+
+def _has_method(method_names: list[str], target_names: set[str]) -> bool:
+    return any(method_name in target_names for method_name in method_names)
+
+
+def _build_model_vs_data_note(method_order: list[str], note_context: Optional[Dict[str, Any]]) -> str:
+    note_text = (
+        r"Entries are business cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
+        r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
+        r" Boldface objects such as $\mathbf{C}_t$ denote the full sectoral vector."
+        r" Comovement means the correlation between sectors in a specific variable; the reported rows summarize those sector-to-sector correlations by their average."
+        r" Targeted and sectoral weighted-average rows use value-added shares unless the row is explicitly Domar-weighted, in which case the weights are normalized gross-output shares."
+        r" Aggregate rows use a common aggregate definition across methods."
+    )
+
+    if "Nonlinear" in method_order:
+        if note_context and note_context.get("long_simulation"):
+            note_text += _long_simulation_sentence(note_context, subject="The Global Solution column")
+        else:
+            note_text += (
+                f" The Global Solution column uses {_common_shock_window_text(note_context)}."
+            )
+
+    if "1st" in method_order:
+        note_text += (
+            f" The 1st Order Approximation column uses {_common_shock_window_text(note_context)}."
+        )
+
+    if "PF" not in method_order and "MITShocks" not in method_order:
+        note_text += r" Perfect foresight and MIT shocks are not shown in this table."
+
+    note_text += r" Data moments come from the empirical targets used in the calibration."
+    return note_text
+
+
+def _build_descriptive_stats_note(
+    method_names: list[str],
+    note_context: Optional[Dict[str, Any]],
+    *,
+    uses_theoretical_first_order: bool,
+) -> str:
+    note_text = (
+        r"For each variable, rows compare the reported methods."
+    )
+
+    if _has_method(method_names, {"Global Solution", "Global Solution (Long Simulation)"}):
+        if note_context and note_context.get("long_simulation"):
+            note_text += _long_simulation_sentence(note_context, subject="The Global Solution")
+        else:
+            note_text += f" The Global Solution uses {_common_shock_window_text(note_context)}."
+
+    if _has_method(method_names, {"1st Order Approx.", "1st Order Approximation"}):
+        if uses_theoretical_first_order:
+            note_text += (
+                r" The 1st Order Approximation reports the Gaussian moments implied by the first-order "
+                r"theoretical solution rather than simulation moments."
+            )
+        else:
+            note_text += (
+                f" The 1st Order Approximation uses {_common_shock_window_text(note_context)}."
+            )
+
+    if _has_method(method_names, {"SecondOrder", "PerfectForesight", "Perfect Foresight", "MIT shocks", "MITShocks"}):
+        note_text += (
+            r" Rows other than the 1st Order Approximation use their corresponding simulation series when available."
+        )
+
+    if _has_method(method_names, {"PerfectForesight", "Perfect Foresight", "MIT shocks", "MITShocks"}):
+        note_text += (
+            f" Perfect Foresight and MIT shocks, when reported, use {_common_shock_window_text(note_context)} "
+            r"because those exercises are more computationally intensive."
+        )
+
+    note_text += (
+        r" Mean and standard deviation are reported for log differences from the deterministic steady state; "
+        + _LOGDEV_PERCENT_NOTE
+        + r" Skewness and excess kurtosis are unit-free, and kurtosis is reported as excess kurtosis. "
+        + _DESCRIPTIVE_SHAPE_NOTE
+    )
+    return note_text
+
+
+def _build_welfare_note(method_names: list[str], note_context: Optional[Dict[str, Any]]) -> str:
+    note_text = (
+        r"$V_c$ is the consumption-equivalent amount of consumption agents would be willing to give up in order to eliminate shocks and remain forever at the deterministic steady state."
+    )
+
+    if _has_method(method_names, {"Global Solution", "Global Solution (Long Simulation)"}):
+        if note_context and note_context.get("long_simulation"):
+            note_text += _long_simulation_sentence(note_context, subject="The Global Solution welfare row")
+        else:
+            note_text += f" The Global Solution welfare row uses {_common_shock_window_text(note_context)}."
+
+    if _has_method(method_names, {"FirstOrder", "1st Order Approx.", "1st Order Approximation"}):
+        if note_context and note_context.get("long_simulation"):
+            note_text += (
+                r" The 1st Order Approximation is evaluated on a matched long simulation with the same "
+                r"seeds, periods per seed, and burn-in as the Global Solution."
+            )
+        else:
+            note_text += (
+                f" The 1st Order Approximation uses {_common_shock_window_text(note_context)}."
+            )
+
+    if _has_method(method_names, {"PerfectForesight", "Perfect Foresight", "MITShocks", "MIT shocks"}):
+        note_text += (
+            f" Perfect Foresight and MIT shocks use {_common_shock_window_text(note_context)} because those "
+            r"exercises are more computationally intensive."
+        )
+
+    note_text += _welfare_counterfactual_note(method_names)
+    note_text += (
+        r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would give up 1\% of consumption to remove business cycle risk."
+    )
+    return note_text
 
 
 def _format_method_display_name(method_name: str, method_names: Optional[list[str]] = None) -> str:
@@ -165,8 +337,8 @@ def _format_method_display_name(method_name: str, method_names: Optional[list[st
 def _nonlinear_method_note(method_names: list[str]) -> str:
     if "Global Solution" in method_names and "Global Solution (Common Shocks)" in method_names:
         return (
-            r" Global Solution (Long Simulation) uses the long ergodic simulation sample, while "
-            r"Global Solution (Common Shocks) uses the short common-shock simulation sample."
+            r" Global Solution (Long Simulation) uses the long simulation sample, while "
+            r"Global Solution (Common Shocks) uses the shorter common-shock sample."
         )
     return ""
 
@@ -178,16 +350,16 @@ def _welfare_counterfactual_note(method_names: list[str]) -> str:
     note_parts = []
     if has_both_recentered:
         note_parts.append(
-            r"\texttt{C and L recentered at determ SS} recenters both utility-relevant consumption and labor log-deviation paths so their sample means match the deterministic steady state."
+            r"\texttt{C and L recentered at determ SS} shifts the utility-relevant consumption and labor log-deviation paths by constants so that each sample mean equals the deterministic steady state, while preserving the within-sample time variation of both series."
         )
     if has_l_fixed:
         note_parts.append(
-            r"\texttt{L fixed at determ SS} fixes utility-relevant labor at the deterministic steady state and measures welfare from consumption variation alone along the simulated path."
+            r"\texttt{L fixed at determ SS} sets utility-relevant labor to its deterministic-steady-state level in every period and keeps the simulated consumption path unchanged, so the row isolates the welfare cost coming from consumption variation alone."
         )
 
     if not note_parts:
         return ""
-    return " " + " ".join(note_parts)
+    return " " + " ".join(note_parts) + r" These counterfactual rows use the same discounting and trajectory-sampling procedure as the baseline welfare calculation."
 
 
 def _selected_nonlinear_sample_note(method_names: list[str]) -> str:
@@ -203,12 +375,12 @@ def _descriptive_distribution_source_note(method_names: list[str]) -> str:
         return (
             r" The reported moments summarize the distribution of the simulated series for the displayed method."
             + _selected_nonlinear_sample_note(method_names)
-            + r" Benchmark moments use the corresponding benchmark simulation series when those are available, except that the reported moments for the 1st Order Approximation are taken from its theoretical moments when those are available."
+            + r" Other reported methods use their corresponding simulation series when those are available, except that the 1st Order Approximation uses theoretical moments when those are available."
         )
     return (
         r" The reported moments summarize the distribution of the simulated series for each displayed method."
         + _selected_nonlinear_row_note(method_names)
-        + r" Benchmark moments use the corresponding benchmark simulation series when those are available, except that the reported moments for the 1st Order Approximation are taken from its theoretical moments when those are available."
+        + r" Other reported methods use their corresponding simulation series when those are available, except that the 1st Order Approximation uses theoretical moments when those are available."
     )
 
 
@@ -272,6 +444,7 @@ def create_calibration_table(
     method_model_stats: Optional[Dict[str, Dict[str, Any]]] = None,
     save_path: Optional[str] = None,
     analysis_name: Optional[str] = None,
+    note_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Create a LaTeX table comparing first-order model moments to empirical targets.
@@ -298,6 +471,7 @@ def create_calibration_table(
         latex_code = _create_model_vs_data_moments_table(
             empirical_targets=empirical_targets,
             method_model_stats=method_model_stats,
+            note_context=note_context,
         )
         console_output = _generate_model_vs_data_console_table(
             empirical_targets=empirical_targets,
@@ -443,6 +617,7 @@ def _resolve_model_vs_data_method_value(method_stats: Optional[Dict[str, Any]], 
 def _create_model_vs_data_moments_table(
     empirical_targets: Dict[str, Any],
     method_model_stats: Dict[str, Dict[str, Any]],
+    note_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     method_order = [name for name in _MODEL_VS_DATA_METHOD_ORDER if name in method_model_stats]
     method_order.extend(name for name in method_model_stats if name not in method_order)
@@ -487,16 +662,8 @@ def _create_model_vs_data_moments_table(
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
-        r"\textit{Notes:} Entries are business cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
-        r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
-        r" Boldface objects such as $\mathbf{C}_t$ denote the full sectoral vector."
-        r" Comovement means the correlation between sectors in a specific variable; the reported rows summarize those sector-to-sector correlations by their average."
-        r" Targeted and sectoral weighted-average rows use value-added shares unless the row is explicitly Domar-weighted, in which case the weights are normalized gross-output shares."
-        r" Aggregate rows are re-aggregated in Python using fixed ergodic-price weights so the aggregate definition is consistent across methods."
-        + _selected_nonlinear_sample_note(
-            [_MODEL_VS_DATA_METHOD_CONSOLE_HEADERS.get(method_name, method_name) for method_name in method_order]
-        )
-        + r" Data moments come from the empirical targets used in the calibration."
+        r"\textit{Notes:} "
+        + _build_model_vs_data_note(method_order, note_context)
         + "\n"
         r"\end{minipage}" + "\n"
     )
@@ -651,6 +818,7 @@ def create_descriptive_stats_table(
     save_path: Optional[str] = None,
     analysis_name: Optional[str] = None,
     theoretical_stats: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
+    note_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Create a LaTeX table with descriptive statistics organized by variable.
@@ -715,10 +883,24 @@ def create_descriptive_stats_table(
                         }
 
     if len(experiment_names) == 1:
-        latex_code = _generate_single_method_latex_table(stats_data, experiment_names[0])
+        latex_code = _generate_single_method_latex_table(
+            stats_data,
+            experiment_names[0],
+            note_context=note_context,
+            uses_theoretical_first_order=bool(theoretical_stats and experiment_names[0] in theoretical_stats),
+        )
         console_output = _generate_single_method_console_table(stats_data, experiment_names[0])
     else:
-        latex_code = _generate_variable_organized_latex_table(stats_data, experiment_names)
+        uses_theoretical_first_order = bool(
+            theoretical_stats
+            and any(exp_name in theoretical_stats for exp_name in experiment_names if "1st Order" in exp_name)
+        )
+        latex_code = _generate_variable_organized_latex_table(
+            stats_data,
+            experiment_names,
+            note_context=note_context,
+            uses_theoretical_first_order=uses_theoretical_first_order,
+        )
         console_output = _generate_console_table(stats_data, experiment_names)
 
     if save_path:
@@ -786,7 +968,13 @@ def _generate_single_method_console_table(stats_data: Dict[str, Dict[str, Dict[s
     return "\n".join(output)
 
 
-def _generate_single_method_latex_table(stats_data: Dict[str, Dict[str, Dict[str, float]]], method_name: str) -> str:
+def _generate_single_method_latex_table(
+    stats_data: Dict[str, Dict[str, Dict[str, float]]],
+    method_name: str,
+    *,
+    note_context: Optional[Dict[str, Any]] = None,
+    uses_theoretical_first_order: bool = False,
+) -> str:
     """LaTeX table for single-method case: variables as rows, metrics as columns."""
     tabular_code = (
         r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
@@ -810,19 +998,20 @@ def _generate_single_method_latex_table(stats_data: Dict[str, Dict[str, Dict[str
         tabular_code,
         caption="Descriptive statistics",
         label="tab:descriptive_statistics",
-        note_text=(
-            _descriptive_distribution_source_note([method_name])
-            + " "
-            r"Mean and standard deviation are reported for log differences from the deterministic steady state; "
-            + _LOGDEV_PERCENT_NOTE
-            + r" Skewness and excess kurtosis are unit-free, and kurtosis is reported as excess kurtosis. "
-            + _DESCRIPTIVE_SHAPE_NOTE
+        note_text=_build_descriptive_stats_note(
+            [method_name],
+            note_context,
+            uses_theoretical_first_order=uses_theoretical_first_order,
         ),
     )
 
 
 def _generate_variable_organized_latex_table(
-    stats_data: Dict[str, Dict[str, Dict[str, float]]], experiment_names: list
+    stats_data: Dict[str, Dict[str, Dict[str, float]]],
+    experiment_names: list,
+    *,
+    note_context: Optional[Dict[str, Any]] = None,
+    uses_theoretical_first_order: bool = False,
 ) -> str:
     """Generate LaTeX table organized by variable with experiments as rows within each variable section."""
     method_names = list(experiment_names)
@@ -856,14 +1045,10 @@ def _generate_variable_organized_latex_table(
         tabular_code,
         caption="Descriptive statistics",
         label="tab:descriptive_statistics",
-        note_text=(
-            r"For each variable, rows compare the reported simulation methods."
-            + _nonlinear_method_note(method_names)
-            + _descriptive_distribution_source_note(method_names)
-            + r" Mean and standard deviation are reported for log differences from the deterministic steady state; "
-            + _LOGDEV_PERCENT_NOTE
-            + r" Skewness and excess kurtosis are unit-free, and kurtosis is reported as excess kurtosis. "
-            + _DESCRIPTIVE_SHAPE_NOTE
+        note_text=_build_descriptive_stats_note(
+            method_names,
+            note_context,
+            uses_theoretical_first_order=uses_theoretical_first_order,
         ),
     )
 
@@ -991,6 +1176,7 @@ def create_welfare_table(
     welfare_data: Dict[str, float],
     save_path: Optional[str] = None,
     analysis_name: Optional[str] = None,
+    note_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Create a LaTeX table with welfare costs for different experiments.
@@ -1008,7 +1194,7 @@ def create_welfare_table(
     --------
     str : The LaTeX table code
     """
-    latex_code = _generate_welfare_latex_table(welfare_data)
+    latex_code = _generate_welfare_latex_table(welfare_data, note_context=note_context)
 
     if save_path:
         if analysis_name:
@@ -1039,13 +1225,17 @@ def _generate_welfare_console_table(welfare_data: Dict[str, float]) -> str:
     output.append("  " + "─" * 68)
 
     for exp_name, welfare_cost in welfare_data.items():
-        output.append(f"    {exp_name:<40} {welfare_cost:>15.4f}%")
+        output.append(f"    {exp_name:<40} {welfare_cost:>15.3f}%")
 
     output.append("\n" + "═" * 72)
     return "\n".join(output)
 
 
-def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
+def _generate_welfare_latex_table(
+    welfare_data: Dict[str, float],
+    *,
+    note_context: Optional[Dict[str, Any]] = None,
+) -> str:
     """Generate LaTeX table code for welfare costs."""
     method_names = list(welfare_data.keys())
     tabular_code = (
@@ -1057,19 +1247,14 @@ def _generate_welfare_latex_table(welfare_data: Dict[str, float]) -> str:
 
     for exp_name, welfare_cost in welfare_data.items():
         exp_display = _format_method_display_name(exp_name, method_names).replace("_", r"\_")
-        tabular_code += f"{exp_display} & {welfare_cost:.4f} \\\\\n"
+        tabular_code += f"{exp_display} & {welfare_cost:.3f} \\\\\n"
 
     tabular_code += r"\bottomrule" + "\n" + r"\end{tabular}" + "\n"
     return _wrap_table_environment(
         tabular_code,
         caption="Welfare cost of business cycles",
         label="tab:welfare_costs",
-        note_text=(
-            r"$V_c$ is the consumption-equivalent amount of consumption agents would be willing to give up in order to eliminate shocks and remain forever at the deterministic steady state."
-            + _welfare_counterfactual_note(method_names)
-            + _nonlinear_method_note(method_names)
-            + r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would give up 1\% of consumption to remove business cycle risk."
-        ),
+        note_text=_build_welfare_note(method_names, note_context),
     )
 
 

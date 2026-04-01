@@ -37,7 +37,7 @@ DEFAULT_AGGREGATE_IR_LABELS = [
 ]
 
 AGGREGATE_HISTOGRAM_BENCHMARKS = [
-    ("Log-Linear", "1st Order Approx."),
+    ("Log-Linear", "1st Order Approximation"),
     ("MITShocks", "MIT shocks"),
 ]
 
@@ -533,7 +533,7 @@ def prepare_postprocess_analysis(
         loglinear_hist_params = get_loglinear_distribution_params(theo_stats)
         if loglinear_hist_params:
             aggregate_histogram_context["theoretical_distribution_params"] = {
-                "1st Order Approx.": loglinear_hist_params
+                "1st Order Approximation": loglinear_hist_params
             }
 
     return {
@@ -570,7 +570,23 @@ def _build_aggregate_histogram_context(
         "note_path": os.path.splitext(note_anchor_path)[0] + "_note.tex",
         "long_simulation": bool(config.get("long_simulation", False)),
         "benchmark_labels": [display_label for _, display_label in AGGREGATE_HISTOGRAM_BENCHMARKS],
+        "common_shock_burn_in": None,
+        "common_shock_active_periods": None,
+        "common_shock_burn_out": None,
+        "common_shock_total_periods": None,
     }
+
+    schedule = matlab_common_shock_schedule or {}
+    active_shocks = schedule.get("active_shocks")
+    full_shocks = schedule.get("full_shocks")
+    context.update(
+        {
+            "common_shock_burn_in": int(schedule.get("burn_in", 0)),
+            "common_shock_active_periods": int(active_shocks.shape[0]) if active_shocks is not None else None,
+            "common_shock_burn_out": int(schedule.get("burn_out", 0)),
+            "common_shock_total_periods": int(full_shocks.shape[0]) if full_shocks is not None else None,
+        }
+    )
 
     if context["long_simulation"]:
         reference_sim_data = raw_simulation_data.get(reference_experiment_label, {})
@@ -592,10 +608,7 @@ def _build_aggregate_histogram_context(
         )
         return context
 
-    schedule = matlab_common_shock_schedule or {}
-    active_shocks = schedule.get("active_shocks")
     active_periods = int(active_shocks.shape[0]) if active_shocks is not None else 0
-    full_shocks = schedule.get("full_shocks")
     total_periods = int(full_shocks.shape[0]) if full_shocks is not None else active_periods
     context.update(
         {
@@ -610,49 +623,80 @@ def _build_aggregate_histogram_context(
     return context
 
 
+def _format_histogram_count(value):
+    if value is None:
+        return None
+    return f"{int(value):,}"
+
+
+def _common_shock_window_text(histogram_context):
+    burn_in = _format_histogram_count(histogram_context.get("common_shock_burn_in"))
+    active_periods = _format_histogram_count(histogram_context.get("common_shock_active_periods"))
+    burn_out = _format_histogram_count(histogram_context.get("common_shock_burn_out"))
+    total_periods = _format_histogram_count(histogram_context.get("common_shock_total_periods"))
+    if burn_in and active_periods and burn_out and total_periods:
+        return (
+            "the shorter common-shock window "
+            f"({burn_in} burn-in, {active_periods} active, {burn_out} burn-out; {total_periods} total)"
+        )
+    return "the shorter common-shock window"
+
+
 def _build_aggregate_histogram_note(histogram_context):
-    benchmark_labels = histogram_context.get("benchmark_labels", [])
-    benchmark_labels = [
-        "1st Order Approximation" if label == "1st Order Approx." else label for label in benchmark_labels
-    ]
-    if not benchmark_labels:
-        benchmark_text = "MATLAB benchmarks"
-    elif len(benchmark_labels) == 1:
-        benchmark_text = benchmark_labels[0]
-    elif len(benchmark_labels) == 2:
-        benchmark_text = f"{benchmark_labels[0]} and {benchmark_labels[1]}"
+    comparison_labels = histogram_context.get("benchmark_labels", [])
+    if not comparison_labels:
+        comparison_text = "the comparison methods"
+    elif len(comparison_labels) == 1:
+        comparison_text = comparison_labels[0]
+    elif len(comparison_labels) == 2:
+        comparison_text = f"{comparison_labels[0]} and {comparison_labels[1]}"
     else:
-        benchmark_text = ", ".join(benchmark_labels[:-1]) + f", and {benchmark_labels[-1]}"
+        comparison_text = ", ".join(comparison_labels[:-1]) + f", and {comparison_labels[-1]}"
     base_text = (
         "The reported histograms summarize the distribution of the simulated series for each displayed aggregate. "
-        "Each panel plots percent log deviations from deterministic steady state. "
-        f"The solid colored line reports the Global solution; dashed gray lines report {benchmark_text}. "
+        "Each panel plots percent log deviations from the deterministic steady state. "
+        f"The solid colored line reports the global solution; dashed gray lines report {comparison_text}. "
     )
     if histogram_context.get("theoretical_distribution_params"):
-        benchmark_source_text = (
-            "For the 1st Order Approximation, the reported benchmark is the Gaussian density implied by its theoretical moments. The remaining benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+        comparison_source_text = (
+            "For the 1st Order Approximation, the dashed curve is the Gaussian density implied by its theoretical moments rather than a simulated histogram. "
+            f"The remaining comparison distributions use {_common_shock_window_text(histogram_context)}."
         )
     else:
-        benchmark_source_text = (
-            "Benchmark histograms use the MATLAB `shocks_simul` active windows stored in `ModelData_simulation`."
+        comparison_source_text = (
+            f"The comparison distributions use {_common_shock_window_text(histogram_context)}."
         )
     if histogram_context.get("mode") == "long_ergodic":
+        periods_per_episode = _format_histogram_count(histogram_context.get("periods_per_episode"))
+        burn_in = _format_histogram_count(histogram_context.get("burn_in"))
+        kept_periods_per_seed = _format_histogram_count(histogram_context.get("kept_periods_per_seed"))
+        active_observations = _format_histogram_count(histogram_context.get("active_observations"))
+        n_simul_seeds = _format_histogram_count(histogram_context.get("n_simul_seeds"))
+        if periods_per_episode and burn_in and kept_periods_per_seed and active_observations and n_simul_seeds:
+            nonlinear_text = (
+                "The global-solution histogram uses the long simulation, pooling "
+                f"{n_simul_seeds} simulated paths with different seeds. Each path has {periods_per_episode} periods; "
+                f"after dropping {burn_in} burn-in periods, {kept_periods_per_seed} observations per seed are retained "
+                f"({active_observations} total). "
+            )
+        else:
+            nonlinear_text = (
+                "The global-solution histogram uses the retained long simulation sample. "
+            )
         return (
             base_text
-            + "The global-solution histogram is computed from the retained ergodic simulation sample after discarding "
-            f"{histogram_context.get('burn_in', 0)} burn-in periods from each simulation path. "
-            f"The reported nonlinear sample contains {histogram_context.get('active_observations', 0)} observations. "
-            + benchmark_source_text
+            + nonlinear_text
+            + comparison_source_text
         )
     return (
         base_text
-        + "The global-solution histogram is computed from the active window of the common-shock simulation, with "
+        + "The global-solution histogram is computed from the shorter common-shock sample, with "
         f"{histogram_context.get('burn_in', 0)} burn-in periods, "
         f"{histogram_context.get('active_periods', 0)} active-shock periods, and "
         f"{histogram_context.get('burn_out', 0)} burn-out periods "
         f"({histogram_context.get('total_periods', 0)} total). "
         f"The reported nonlinear sample contains {histogram_context.get('active_periods', 0)} observations. "
-        + benchmark_source_text
+        + comparison_source_text
     )
 
 

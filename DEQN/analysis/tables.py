@@ -977,7 +977,8 @@ def _generate_single_method_latex_table(
 ) -> str:
     """LaTeX table for single-method case: variables as rows, metrics as columns."""
     tabular_code = (
-        r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
+        r"{\small" + "\n"
+        + r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
         r"\textbf{Variable} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\"
         + "\n"
@@ -993,7 +994,7 @@ def _generate_single_method_latex_table(
                 f" & {s['Skewness']:.3f} & {s['Excess Kurtosis']:.3f} \\\\\n"
             )
 
-    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n" + r"}" + "\n"
     return _wrap_table_environment(
         tabular_code,
         caption="Descriptive statistics",
@@ -1003,6 +1004,7 @@ def _generate_single_method_latex_table(
             note_context,
             uses_theoretical_first_order=uses_theoretical_first_order,
         ),
+        note_width="0.98",
     )
 
 
@@ -1018,7 +1020,8 @@ def _generate_variable_organized_latex_table(
     n_experiments = len(method_names)
 
     tabular_code = (
-        r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
+        r"{\small" + "\n"
+        + r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
         r"\textbf{Method} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\"
         + "\n"
@@ -1038,9 +1041,9 @@ def _generate_variable_organized_latex_table(
                 )
 
         if var_idx < len(stats_data) - 1:
-            tabular_code += r"\addlinespace[0.5em]" + "\n"
+            tabular_code += r"\addlinespace[0.25em]" + "\n"
 
-    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n"
+    tabular_code += r"\bottomrule" + "\n" + r"\end{tabularx}" + "\n" + r"}" + "\n"
     return _wrap_table_environment(
         tabular_code,
         caption="Descriptive statistics",
@@ -1050,6 +1053,7 @@ def _generate_variable_organized_latex_table(
             note_context,
             uses_theoretical_first_order=uses_theoretical_first_order,
         ),
+        note_width="0.98",
     )
 
 

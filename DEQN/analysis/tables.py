@@ -131,19 +131,7 @@ _MODEL_VS_DATA_CONSOLE_LABELS = [
     console_label for _, panel_rows in _MODEL_VS_DATA_PANELS for _, _, _, console_label in panel_rows
 ]
 
-_MODEL_VS_DATA_METHOD_ORDER = ["1st", "Nonlinear", "Nonlinear-CS"]
-
-_MODEL_VS_DATA_METHOD_HEADERS = {
-    "1st": r"\shortstack{1st Order\\Approx.}",
-    "Nonlinear": r"\shortstack{Global Solution}",
-    "Nonlinear-CS": r"\shortstack{Global Solution\\(common shocks)}",
-}
-
-_MODEL_VS_DATA_METHOD_CONSOLE_HEADERS = {
-    "1st": "1st Order Approx.",
-    "Nonlinear": "Global Solution",
-    "Nonlinear-CS": "Global Solution (common shocks)",
-}
+_MODEL_VS_DATA_METHOD_ORDER = ["Nonlinear", "Nonlinear-CS", "1st"]
 
 _LOGDEV_PERCENT_NOTE = (
     r"Reported log-difference objects are measured relative to the deterministic steady state; "
@@ -216,33 +204,28 @@ def _has_method(method_names: list[str], target_names: set[str]) -> bool:
     return any(method_name in target_names for method_name in method_names)
 
 
-def _build_model_vs_data_note(method_order: list[str], note_context: Optional[Dict[str, Any]]) -> str:
+def _select_model_vs_data_display_method(method_model_stats: Dict[str, Dict[str, Any]]) -> Optional[str]:
+    for method_name in _MODEL_VS_DATA_METHOD_ORDER:
+        if method_name == "1st":
+            continue
+        if method_name in method_model_stats:
+            return method_name
+    for method_name in method_model_stats:
+        if method_name != "1st":
+            return method_name
+    return None
+
+
+def _build_model_vs_data_note(selected_method: Optional[str], note_context: Optional[Dict[str, Any]]) -> str:
+    del selected_method, note_context
     note_text = (
         r"Entries are business cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
         r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
-        r" Boldface objects such as $\mathbf{C}_t$ denote the full sectoral vector."
-        r" Comovement means the correlation between sectors in a specific variable; the reported rows summarize those sector-to-sector correlations by their average."
-        r" Targeted and sectoral weighted-average rows use value-added shares unless the row is explicitly Domar-weighted, in which case the weights are normalized gross-output shares."
-        r" Aggregate rows use a common aggregate definition across methods."
+        r" The data column reports the empirical moments used in the calibration, and the model column reports the corresponding moments implied by the model."
+        r" Comovement refers to average correlation across sectors in a given variable."
+        r" Targeted and sectoral weighted-average rows use value-added shares unless a row is explicitly Domar-weighted, in which case normalized gross-output shares are used."
+        r" Aggregate rows use the same definitions in the data and the model."
     )
-
-    if "Nonlinear" in method_order:
-        if note_context and note_context.get("long_simulation"):
-            note_text += _long_simulation_sentence(note_context, subject="The Global Solution column")
-        else:
-            note_text += (
-                f" The Global Solution column uses {_common_shock_window_text(note_context)}."
-            )
-
-    if "1st" in method_order:
-        note_text += (
-            f" The 1st Order Approximation column uses {_common_shock_window_text(note_context)}."
-        )
-
-    if "PF" not in method_order and "MITShocks" not in method_order:
-        note_text += r" Perfect foresight and MIT shocks are not shown in this table."
-
-    note_text += r" Data moments come from the empirical targets used in the calibration."
     return note_text
 
 
@@ -447,17 +430,14 @@ def create_calibration_table(
     note_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    Create a LaTeX table comparing first-order model moments to empirical targets.
-
-    Structure: targeted sectoral volatilities first, then untargeted aggregates.
-    No ratio column.
+    Create a LaTeX table comparing model moments to empirical targets.
 
     Parameters:
     -----------
     empirical_targets : dict
         From ModelData.calibration.empirical_targets or ModelData.EmpiricalTargets.
     first_order_model_stats : dict, optional
-        From ModelData.Statistics.FirstOrder.ModelStats. If None, model column shows N/A.
+        Legacy fallback for the older single-model version of this table.
     save_path : str, optional
         If provided, save the LaTeX table to this path.
     analysis_name : str, optional
@@ -619,26 +599,21 @@ def _create_model_vs_data_moments_table(
     method_model_stats: Dict[str, Dict[str, Any]],
     note_context: Optional[Dict[str, Any]] = None,
 ) -> str:
-    method_order = [name for name in _MODEL_VS_DATA_METHOD_ORDER if name in method_model_stats]
-    method_order.extend(name for name in method_model_stats if name not in method_order)
-    method_order = [name for name in method_order if name in _MODEL_VS_DATA_METHOD_ORDER]
-    n_methods = len(method_order)
+    selected_method = _select_model_vs_data_display_method(method_model_stats)
     latex_code = (
         r"\begin{table}[H]" + "\n"
         r"\centering" + "\n"
         r"\caption{Model vs. data business cycle moments}" + "\n"
         r"\label{tab:model_vs_data_moments}"
         + "\n"
-        + f"\\begin{{tabular}}{{l *{{{n_methods + 1}}}{{r}}}}\n"
+        + r"\begin{tabular}{lrr}" + "\n"
         + r"\toprule"
         + "\n"
         + r"\textbf{Moment}"
     )
-    for method_name in method_order:
-        latex_code += " & " + _MODEL_VS_DATA_METHOD_HEADERS.get(method_name, method_name)
-    latex_code += r" & \textbf{Data} \\" + "\n" + r"\midrule" + "\n"
+    latex_code += r" & \textbf{Data} & \textbf{Model} \\" + "\n" + r"\midrule" + "\n"
 
-    total_columns = n_methods + 2
+    total_columns = 3
     panel_labels = ["Panel A", "Panel B", "Panel C", "Panel D", "Panel E"]
     for panel_index, (panel_title, panel_rows) in enumerate(_MODEL_VS_DATA_PANELS):
         panel_prefix = panel_labels[panel_index] if panel_index < len(panel_labels) else f"Panel {panel_index + 1}"
@@ -647,12 +622,11 @@ def _create_model_vs_data_moments_table(
         )
         for row_label, model_key, data_key, _ in panel_rows:
             latex_code += row_label
-            for method_name in method_order:
-                method_stats = method_model_stats.get(method_name)
-                value = _resolve_model_vs_data_method_value(method_stats, model_key)
-                latex_code += f" & {value:.4f}" if value is not None else " & ---"
             data_value = _resolve_empirical_value(empirical_targets, data_key)
             latex_code += f" & {data_value:.4f}" if data_value is not None else " & ---"
+            method_stats = method_model_stats.get(selected_method) if selected_method is not None else None
+            value = _resolve_model_vs_data_method_value(method_stats, model_key)
+            latex_code += f" & {value:.4f}" if value is not None else " & ---"
             latex_code += r" \\" + "\n"
         if panel_index < len(_MODEL_VS_DATA_PANELS) - 1:
             latex_code += r"\addlinespace[0.4em]" + "\n"
@@ -663,7 +637,7 @@ def _create_model_vs_data_moments_table(
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
         r"\textit{Notes:} "
-        + _build_model_vs_data_note(method_order, note_context)
+        + _build_model_vs_data_note(selected_method, note_context)
         + "\n"
         r"\end{minipage}" + "\n"
     )
@@ -676,14 +650,8 @@ def _generate_model_vs_data_console_table(
     method_model_stats: Dict[str, Dict[str, Any]],
     analysis_name: Optional[str] = None,
 ) -> str:
-    method_order = [name for name in _MODEL_VS_DATA_METHOD_ORDER if name in method_model_stats]
-    method_order.extend(name for name in method_model_stats if name not in method_order)
-    method_order = [name for name in method_order if name in _MODEL_VS_DATA_METHOD_ORDER]
-    method_col_width = max(
-        11,
-        len("Data"),
-        *(len(_MODEL_VS_DATA_METHOD_CONSOLE_HEADERS.get(method_name, method_name)) for method_name in method_order),
-    )
+    selected_method = _select_model_vs_data_display_method(method_model_stats)
+    method_col_width = max(11, len("Data"), len("Model"))
     row_label_width = max(
         22,
         len("Moment"),
@@ -698,22 +666,19 @@ def _generate_model_vs_data_console_table(
         output.append("")
 
     header = f"{'Moment':<{row_label_width}}"
-    for method_name in method_order:
-        display_name = _MODEL_VS_DATA_METHOD_CONSOLE_HEADERS.get(method_name, method_name)
-        header += f"{display_name:>{method_col_width}}"
     header += f"{'Data':>{method_col_width}}"
+    header += f"{'Model':>{method_col_width}}"
     output.append(header)
     output.append("-" * len(header))
 
     for (row_label, model_key, data_key), console_label in zip(_MODEL_VS_DATA_ROW_DEFS, _MODEL_VS_DATA_CONSOLE_LABELS):
         del row_label
         row = f"{console_label:<{row_label_width}}"
-        for method_name in method_order:
-            method_stats = method_model_stats.get(method_name)
-            value = _resolve_model_vs_data_method_value(method_stats, model_key)
-            row += f"{value:{method_col_width}.4f}" if value is not None else f"{'---':>{method_col_width}}"
         data_value = _resolve_empirical_value(empirical_targets, data_key)
         row += f"{data_value:{method_col_width}.4f}" if data_value is not None else f"{'---':>{method_col_width}}"
+        method_stats = method_model_stats.get(selected_method) if selected_method is not None else None
+        value = _resolve_model_vs_data_method_value(method_stats, model_key)
+        row += f"{value:{method_col_width}.4f}" if value is not None else f"{'---':>{method_col_width}}"
         output.append(row)
 
     output.append("")

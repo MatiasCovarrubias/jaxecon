@@ -1049,6 +1049,7 @@ def plot_sector_ir_by_shock_size(
     response_source: str = "IR_stoch_ss",
     agg_consumption_mode: bool = False,
     negative_only: bool = False,
+    filename_suffix: Optional[str] = None,
     policies_ss: Optional[np.ndarray] = None,
     P_ergodic: Optional[np.ndarray] = None,
     Pk_ergodic: Optional[np.ndarray] = None,
@@ -1112,6 +1113,9 @@ def plot_sector_ir_by_shock_size(
         If True, use one-sided y-axis (neg panel: neg territory, pos panel: pos territory).
     negative_only : bool
         If True, create only the negative-shock panel (single column).
+    filename_suffix : str, optional
+        Extra token appended to the saved filename before ``analysis_name`` so
+        alternative layouts can coexist without overwriting one another.
 
     Returns:
     --------
@@ -1496,10 +1500,14 @@ def plot_sector_ir_by_shock_size(
 
         safe_sector = make_safe_filename(sector_label)
         safe_var = make_safe_filename(variable_to_plot)
+        safe_filename_suffix = make_safe_filename(str(filename_suffix)) if filename_suffix else None
+        filename_stem = f"IR_{safe_var}_{safe_sector}"
+        if safe_filename_suffix:
+            filename_stem = f"{filename_stem}_{safe_filename_suffix}"
         if analysis_name:
-            filename = f"IR_{safe_var}_{safe_sector}_{analysis_name}.png"
+            filename = f"{filename_stem}_{analysis_name}.png"
         else:
-            filename = f"IR_{safe_var}_{safe_sector}.png"
+            filename = f"{filename_stem}.png"
         save_path = os.path.join(save_dir, filename)
         plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
         _write_figure_note_tex(

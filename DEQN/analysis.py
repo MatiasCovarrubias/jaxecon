@@ -508,9 +508,48 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
         "Intratemporal Utility": "intratemporal utility",
     }
     ir_shock_sizes = list(config_dict.get("ir_shock_sizes", []))
+    largest_ir_shock = max(ir_shock_sizes) if ir_shock_sizes else None
     aggregate_benchmark_labels = _describe_ir_benchmark_methods(config_dict)
     deqn_ir_note = _describe_deqn_ir_note(config_dict)
     aggregate_ir_variables = list(getattr(analysis_hooks, "DEFAULT_AGGREGATE_IR_LABELS", DEFAULT_AGGREGATE_LABELS))
+    aggregate_ir_main_text_figures = []
+    aggregate_ir_appendix_figures = []
+    paper_main_aggregate_variables = ["Agg. Consumption", "Agg. GDP"]
+    paper_appendix_aggregate_variables = ["Agg. Investment", "Agg. Capital", "Agg. Labor"]
+
+    def _aggregate_ir_largest_negative_path(variable_name, safe_sector):
+        safe_variable = _make_safe_plot_label(variable_name)
+        return _analysis_named_path(
+            irs_dir,
+            f"IR_{safe_variable}_{safe_sector}_largest_negative",
+            analysis_name,
+            ".png",
+        )
+
+    def _aggregate_note_label(variable_name):
+        return aggregate_variable_note_labels.get(variable_name, _caption_label(variable_name))
+
+    def _aggregate_caption_label(variable_name):
+        return aggregate_variable_captions.get(variable_name, variable_name)
+
+    def _build_grouped_aggregate_ir_note(*, sector_label, variable_names):
+        displayed_labels = [_aggregate_note_label(variable_name) for variable_name in variable_names]
+        shock_text = (
+            f"The panels show responses to the largest discovered negative TFP shock in {sector_label} "
+            f"({largest_ir_shock} percent). "
+            if largest_ir_shock is not None
+            else f"The panels show responses to a negative TFP shock in {sector_label}. "
+        )
+        return (
+            f"{shock_text}"
+            f"The panels report aggregate {_join_labels(displayed_labels)}. "
+            f"{deqn_ir_note}"
+            "The horizontal axis reports periods after impact. "
+            "The vertical axis reports impulse responses in percent. "
+            "Dashed lines report comparison IRs from the "
+            f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
+            "steady state."
+        )
     for sector_idx in config_dict.get("ir_sectors_to_plot", []):
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
@@ -542,7 +581,58 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                     ),
                 )
             )
+        main_subfigures = [
+            {
+                "path": _aggregate_ir_largest_negative_path(variable_name, safe_sector),
+                "caption": _aggregate_caption_label(variable_name),
+            }
+            for variable_name in paper_main_aggregate_variables
+            if variable_name in aggregate_ir_variables
+        ]
+        if len(main_subfigures) == len(paper_main_aggregate_variables) and all(
+            os.path.exists(subfigure["path"]) for subfigure in main_subfigures
+        ):
+            aggregate_ir_main_text_figures.append(
+                {
+                    "caption": f"Aggregate consumption and GDP responses to the largest negative TFP shock in {sector_label}.",
+                    "note_text": _build_grouped_aggregate_ir_note(
+                        sector_label=sector_label,
+                        variable_names=paper_main_aggregate_variables,
+                    ),
+                    "subfigure_groups": [{"subfigures": main_subfigures}],
+                }
+            )
+
+        appendix_subfigures = [
+            {
+                "path": _aggregate_ir_largest_negative_path(variable_name, safe_sector),
+                "caption": _aggregate_caption_label(variable_name),
+            }
+            for variable_name in paper_appendix_aggregate_variables
+            if variable_name in aggregate_ir_variables
+        ]
+        if len(appendix_subfigures) == len(paper_appendix_aggregate_variables) and all(
+            os.path.exists(subfigure["path"]) for subfigure in appendix_subfigures
+        ):
+            aggregate_ir_appendix_figures.append(
+                {
+                    "caption": f"Aggregate investment, capital, and labor responses to the largest negative TFP shock in {sector_label}.",
+                    "note_text": _build_grouped_aggregate_ir_note(
+                        sector_label=sector_label,
+                        variable_names=paper_appendix_aggregate_variables,
+                    ),
+                    "subfigure_groups": [{"subfigures": appendix_subfigures}],
+                }
+            )
     add_figure_section("2. Aggregate Impulse Responses", aggregate_ir_figures)
+    add_nested_grouped_figure_section(
+        "2A. Paper Aggregate Impulse Responses",
+        aggregate_ir_main_text_figures,
+    )
+    add_nested_grouped_figure_section(
+        "2B. Appendix Aggregate Impulse Responses",
+        aggregate_ir_appendix_figures,
+    )
 
     add_figure_section(
         "3. Sectoral Variables in Stochastic Steady State",

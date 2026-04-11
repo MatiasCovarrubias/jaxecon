@@ -68,9 +68,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
-- Aggregate IR PNGs and aggregate histogram PNGs are now inserted into the combined LaTeX wrapper one at a time as standalone figures rather than grouped subfigure blocks.
+- The combined LaTeX wrapper now assembles the simplified largest-negative aggregate IR PNGs into paper-ready grouped figures: consumption and GDP for the main text, plus investment, capital, and labor for the appendix.
+- Aggregate IRs now also export a simplified single-panel PNG for the largest discovered negative shock, one figure per reported aggregate variable.
 - Welfare now reports `C and L recentered at determ SS` and `L fixed at determ SS`, which jointly recenter both utility inputs or hold labor fixed at the deterministic steady state while leaving consumption variation active.
-- When `long_simulation = true`, Python now also simulates the Dynare first-order state-space policy on the matched long ergodic schedule and uses that sample only for the `FirstOrder` welfare calculation.
 
 ## Current defaults and compatibility
 
@@ -78,7 +78,8 @@ The active April 2026 analysis contract is intentionally comprehensive by defaul
 
 - All six reported aggregates are always used in aggregate tables, aggregate IR figures, and aggregate histogram figures: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
 - Each aggregate IR PNG is itself a full panel: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
-- In the combined LaTeX wrapper, aggregate IR PNGs and aggregate histogram PNGs are shown one at a time as standalone figures rather than grouped subfigures.
+- Python also exports a simpler aggregate IR PNG for each reported aggregate variable that keeps only the largest discovered negative shock in a single panel.
+- In the combined LaTeX wrapper, the full aggregate IR PNGs and aggregate histogram PNGs are shown one at a time as standalone figures, while the simplified largest-negative aggregate IR PNGs are combined into paper-oriented grouped figures.
 - Shock sizes are no longer meant to be hardcoded in the main config. Python discovers them from `ModelData_IRs.mat` and stores the discovered list back into `config["ir_shock_sizes"]` for downstream rendering and LaTeX assembly.
 - IR selection is now controlled by `config["use_gir"]`: `False` renders the stochastic-steady-state IR and `True` renders the generalized impulse response averaged over ergodic draws.
 - `config["long_simulation"]` selects the single nonlinear DEQN simulation source used throughout the analysis: `False` uses the common-shock run and `True` uses the long ergodic run. When it is `True`, Python also computes a matched long first-order log-linear simulation from the Dynare state-space matrices for welfare only.
@@ -240,8 +241,8 @@ For the current `basefinal` output, use this map:
 | Caption `Welfare cost of business cycles`                                                                                            | inside `welfare_basefinal.tex`                                          | `DEQN/analysis/tables.py` → `create_welfare_table(...)`                                                    | Edit here for welfare-table title or note changes.                                                                                                                                                                         |
 | Aggregate histogram figure captions and ordering                                                                                     | emitted directly into `figures_tables_basefinal.tex`                    | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | The wrapper decides which histogram PNGs are included, emits them as standalone figures, and places them immediately after descriptive statistics in the master output.                                                     |
 | Aggregate histogram note text                                                                                                        | `analysis/basefinal/simulation/aggregate_histograms_basefinal_note.tex` | `analysis_hooks.py`                                                                                         | The histogram note is generated from the active nonlinear simulation workflow and benchmark simulation metadata inside the model-specific postprocess hook.                                                                  |
-| Figure captions and notes such as `Aggregate consumption response to a TFP shock in ...`                                             | emitted directly into `figures_tables_basefinal.tex`                    | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | The aggregate-IR figure captions and note text, plus the grouped captions and note text for sectoral IRs, stochastic-SS sectoral figures, and ergodic sectoral figures, are assembled in the wrapper builder, not in `tables.py`. |
-| Which figures appear, in what order                                                                                                  | `figures_tables_basefinal.tex`                                          | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | This is where the wrapper decides the sequence: model-vs-data table, aggregate IRs, stochastic-SS sectoral figures, aggregate stochastic-SS table, descriptive stats, aggregate histograms, welfare, sectoral IRs, and ergodic sectoral figures. |
+| Figure captions and notes such as `Aggregate consumption response to a TFP shock in ...` or the grouped paper-ready largest-negative aggregate IR captions | emitted directly into `figures_tables_basefinal.tex`                    | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | The aggregate-IR figure captions and note text, the grouped paper and appendix captions and note text for the simplified aggregate IRs, and the grouped captions and note text for sectoral IRs, stochastic-SS sectoral figures, and ergodic sectoral figures, are assembled in the wrapper builder, not in `tables.py`. |
+| Which figures appear, in what order                                                                                                  | `figures_tables_basefinal.tex`                                          | `DEQN/analysis.py` → `_build_analysis_latex_sections(...)`                                                 | This is where the wrapper decides the sequence: model-vs-data table, aggregate IRs, grouped paper-ready aggregate IRs for the largest negative shock, grouped appendix aggregate IRs for the largest negative shock, stochastic-SS sectoral figures, aggregate stochastic-SS table, descriptive stats, aggregate histograms, welfare, sectoral IRs, and ergodic sectoral figures. |
 | Wrapper-only LaTeX such as figure height limits, subfigure widths, first-figure sizing, `\clearpage`, and section-header suppression | `figures_tables_basefinal.tex`                                          | `DEQN/analysis.py` → `_write_analysis_results_latex(...)`                                                  | These choices are not stored in the fragment files; they are emitted only when the master wrapper is assembled.                                                                                                            |
 | The PNG image itself looks wrong: panel count, legend, axes, line styles, note written onto the image                                | `analysis/basefinal/IRs/*.png` or `analysis/basefinal/simulation/*.png` | `plot_helpers.py` and the relevant render call in `analysis_hooks.py`                                      | Change `plot_helpers.py` for the visual design of the PNG. Change `analysis_hooks.py` if the wrong variables or wrong simulation object are feeding that plot.                                                             |
 
@@ -270,13 +271,15 @@ Main displayed exercises:
 
 1. model vs data moments
 2. aggregate IRs
-3. sectoral variables in stochastic SS
-4. aggregate stochastic SS
-5. descriptive statistics
-6. aggregate histograms
-7. welfare costs
-8. sectoral IRs
-9. ergodic mean sectoral variables
+3. grouped paper-ready aggregate IRs for the largest negative shock
+4. grouped appendix aggregate IRs for the largest negative shock
+5. sectoral variables in stochastic SS
+6. aggregate stochastic SS
+7. descriptive statistics
+8. aggregate histograms
+9. welfare costs
+10. sectoral IRs
+11. ergodic mean sectoral variables
 
 For the exact current execution inventory, see:
 

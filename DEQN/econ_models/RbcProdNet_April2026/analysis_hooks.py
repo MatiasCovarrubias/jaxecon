@@ -711,7 +711,7 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
         )
         print(f"\n  Aggregate IRs: {sector_label} (sector {sector_idx + 1})")
         for ir_variable in ir_render_context["ir_variables"]:
-            print(f"    Plotting aggregate variable: {ir_variable}")
+            print(f"    Plotting aggregate variable: {ir_variable} [full panel]")
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
                 matlab_ir_data=ir_render_context["matlab_ir_data"],
@@ -727,6 +727,28 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 response_source=ir_render_context["ir_response_source"],
                 agg_consumption_mode=True,
                 negative_only=False,
+                policies_ss=ir_render_context["policies_ss_np"],
+                state_ss=ir_render_context["state_ss_np"],
+                P_ergodic=ir_render_context["P_ergodic_np"],
+                Pk_ergodic=ir_render_context["Pk_ergodic_np"],
+                ergodic_price_aggregation=ir_render_context["ergodic_price_aggregation"],
+            )
+            print(f"    Plotting aggregate variable: {ir_variable} [largest negative shock]")
+            plot_sector_ir_by_shock_size(
+                gir_data=gir_data,
+                matlab_ir_data=ir_render_context["matlab_ir_data"],
+                sector_idx=sector_idx,
+                sector_label=sector_label,
+                variable_to_plot=ir_variable,
+                shock_sizes=[ir_render_context["largest_shock"]],
+                save_dir=irs_dir,
+                analysis_name=config["analysis_name"],
+                max_periods=ir_render_context["max_periods"],
+                n_sectors=ir_render_context["n_sectors"],
+                benchmark_methods=_resolve_ir_benchmark_methods(config),
+                response_source=ir_render_context["ir_response_source"],
+                negative_only=True,
+                filename_suffix="largest_negative",
                 policies_ss=ir_render_context["policies_ss_np"],
                 state_ss=ir_render_context["state_ss_np"],
                 P_ergodic=ir_render_context["P_ergodic_np"],

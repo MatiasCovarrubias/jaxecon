@@ -231,6 +231,8 @@ The active April 2026 IR contract is intentionally comprehensive by default.
 
 - All six reported aggregates are rendered in the aggregate IR section: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
 - Each aggregate figure is a full panel: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
+- Python also exports a simplified aggregate IR figure for each reported aggregate variable using only the largest discovered negative shock.
+- In the combined LaTeX wrapper, those simplified aggregate IR PNGs are recombined into a paper figure with consumption and GDP side by side, plus an appendix figure with investment, capital, and labor.
 - Shock sizes are discovered from `ModelData_IRs.mat`, not hardcoded in the main analysis config.
 - The nonlinear DEQN line is always solid. `config["use_gir"] = True` switches that solid line to the generalized impulse response; `False` switches it to the stochastic-steady-state IR.
 - The default benchmark overlays are `["PerfectForesight", "FirstOrder"]`, though `ir_benchmark_methods` can still override the set or ordering.

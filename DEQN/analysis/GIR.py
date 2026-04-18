@@ -319,6 +319,30 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
 
         return ir_analysis_variables
 
+    def _resolve_requested_ir_methods(stoch_ss_state_logdev):
+        use_gir = config.get("use_gir")
+        if use_gir is not None:
+            if bool(use_gir):
+                return ["GIR"]
+            if stoch_ss_state_logdev is None:
+                raise ValueError(
+                    "config['use_gir']=False requires a stochastic steady state so the "
+                    "stochastic-steady-state IR can be computed."
+                )
+            return ["IR_stoch_ss"]
+
+        configured_methods = config.get("ir_methods")
+        if configured_methods is None:
+            configured_methods = [config.get("ir_method", "GIR")]
+        elif isinstance(configured_methods, str):
+            configured_methods = [configured_methods]
+
+        resolved_methods = []
+        for method in configured_methods:
+            if method and method not in resolved_methods:
+                resolved_methods.append(method)
+        return resolved_methods or ["GIR"]
+
     def GIR_fn(simul_obs, train_state, simul_policies_data=None, stoch_ss_state_logdev=None):
         """
         Main GIR function that computes TFP impulse responses for specified sectors.
@@ -378,15 +402,12 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
         # Get shock sizes from config (as percentages, e.g., [5, 10, 20])
         ir_shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
 
-        # Determine IR methods to compute.
-        configured_methods = config.get("ir_methods")
-        if configured_methods is None:
-            configured_methods = [config.get("ir_method", "GIR")]
-        elif isinstance(configured_methods, str):
-            configured_methods = [configured_methods]
+        # `use_gir` is the current selector between GIR and stochastic-SS IRs.
+        # Fall back to the legacy `ir_methods`/`ir_method` config only when needed.
+        configured_methods = _resolve_requested_ir_methods(stoch_ss_state_logdev)
 
         compute_gir = "GIR" in configured_methods
-        compute_stochss_irs = ("IR_stoch_ss" in configured_methods) and (stoch_ss_state_logdev is not None)
+        compute_stochss_irs = "IR_stoch_ss" in configured_methods
 
         gir_results = {}
 
@@ -409,7 +430,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
                 shock_size = shock_size_pct / 100.0  # Convert percentage to fraction
 
                 for shock_sign in ["pos", "neg"]:
-                    # Compute GIR averaged over the active common-shock sample.
+                    # Compute GIR averaged over whichever nonlinear reference sample was supplied.
                     if compute_gir:
                         current_computation += 1
                         print(

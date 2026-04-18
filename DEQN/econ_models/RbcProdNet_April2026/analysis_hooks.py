@@ -392,6 +392,9 @@ def prepare_postprocess_analysis(
 
     reference_experiment_label = _resolve_reference_experiment_label(config, raw_simulation_data)
     reference_sim_data = raw_simulation_data[reference_experiment_label]
+    reference_analysis_variables = analysis_variables_data.get(reference_experiment_label)
+    if reference_analysis_variables is None:
+        reference_analysis_variables = reference_sim_data.get("simul_analysis_variables")
     simul_policies = reference_sim_data.get("simul_policies_full", reference_sim_data["simul_policies"])
     P_ss = jnp.exp(policies_ss[8 * n_sectors : 9 * n_sectors])
     Pk_ss = jnp.exp(policies_ss[2 * n_sectors : 3 * n_sectors])
@@ -509,7 +512,16 @@ def prepare_postprocess_analysis(
     ergodic_experiment_labels = [
         label for label, sim_data in raw_simulation_data.items() if sim_data.get("simulation_kind", "ergodic") == "ergodic"
     ]
-    if not ergodic_experiment_labels and reference_experiment_label in raw_simulation_data:
+    ergodic_labels_with_stochss = [label for label in ergodic_experiment_labels if label in stochastic_ss_policies]
+    if ergodic_labels_with_stochss:
+        ergodic_experiment_labels = ergodic_labels_with_stochss
+    elif reference_experiment_label in stochastic_ss_policies:
+        ergodic_experiment_labels = [reference_experiment_label]
+    elif reference_experiment_label.endswith(" (ergodic)"):
+        base_reference_label = reference_experiment_label[: -len(" (ergodic)")]
+        if base_reference_label in stochastic_ss_policies:
+            ergodic_experiment_labels = [base_reference_label]
+    elif not ergodic_experiment_labels and reference_experiment_label in raw_simulation_data:
         ergodic_experiment_labels = [reference_experiment_label]
     ir_render_context = _build_ir_render_context(
         config=config,
@@ -526,6 +538,7 @@ def prepare_postprocess_analysis(
         config=config,
         simulation_dir=simulation_dir,
         raw_simulation_data=raw_simulation_data,
+        reference_sim_data=reference_sim_data,
         reference_experiment_label=reference_experiment_label,
         matlab_common_shock_schedule=matlab_common_shock_schedule,
     )
@@ -548,6 +561,7 @@ def prepare_postprocess_analysis(
             "upstreamness_data": upstreamness_data,
             "ergodic_experiment_labels": ergodic_experiment_labels,
             "reference_experiment_label": reference_experiment_label,
+            "reference_analysis_variables": reference_analysis_variables,
             "aggregate_histogram_context": aggregate_histogram_context,
         },
     }
@@ -558,6 +572,7 @@ def _build_aggregate_histogram_context(
     config,
     simulation_dir,
     raw_simulation_data,
+    reference_sim_data,
     reference_experiment_label,
     matlab_common_shock_schedule,
 ):
@@ -574,6 +589,7 @@ def _build_aggregate_histogram_context(
         "common_shock_active_periods": None,
         "common_shock_burn_out": None,
         "common_shock_total_periods": None,
+        "uses_auxiliary_ergodic_reference": False,
     }
 
     schedule = matlab_common_shock_schedule or {}
@@ -588,8 +604,8 @@ def _build_aggregate_histogram_context(
         }
     )
 
-    if context["long_simulation"]:
-        reference_sim_data = raw_simulation_data.get(reference_experiment_label, {})
+    reference_sim_data = reference_sim_data or raw_simulation_data.get(reference_experiment_label, {})
+    if reference_sim_data.get("simulation_kind") == "ergodic":
         active_obs = reference_sim_data.get("simul_obs")
         periods_per_episode = int(config.get("periods_per_epis", 0))
         burn_in = int(config.get("burn_in_periods", 0))
@@ -604,6 +620,7 @@ def _build_aggregate_histogram_context(
                 "burn_out": 0,
                 "n_simul_seeds": int(config.get("n_simul_seeds", 0)),
                 "periods_per_episode": periods_per_episode,
+                "uses_auxiliary_ergodic_reference": not bool(config.get("long_simulation", False)),
             }
         )
         return context
@@ -672,6 +689,13 @@ def _build_aggregate_histogram_note(histogram_context):
         kept_periods_per_seed = _format_histogram_count(histogram_context.get("kept_periods_per_seed"))
         active_observations = _format_histogram_count(histogram_context.get("active_observations"))
         n_simul_seeds = _format_histogram_count(histogram_context.get("n_simul_seeds"))
+        reference_prefix = ""
+        if histogram_context.get("uses_auxiliary_ergodic_reference"):
+            reference_prefix = (
+                "Because fixed-price aggregation is anchored to ergodic prices, "
+                "the global-solution histogram uses the auxiliary long ergodic reference sample rather "
+                "than the shorter common-shock window. "
+            )
         if periods_per_episode and burn_in and kept_periods_per_seed and active_observations and n_simul_seeds:
             nonlinear_text = (
                 "The global-solution histogram uses the long simulation, pooling "
@@ -685,6 +709,7 @@ def _build_aggregate_histogram_note(histogram_context):
             )
         return (
             base_text
+            + reference_prefix
             + nonlinear_text
             + comparison_source_text
         )
@@ -762,25 +787,26 @@ def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_varia
         return
 
     reference_experiment_label = postprocess_context.get("reference_experiment_label")
-    if not reference_experiment_label or reference_experiment_label not in analysis_variables_data:
+    reference_analysis_variables = postprocess_context.get("reference_analysis_variables")
+    if not reference_experiment_label:
         return
     histogram_context = postprocess_context.get("aggregate_histogram_context") or {}
     histogram_theoretical_params = histogram_context.get("theoretical_distribution_params")
 
-    selected_methods = [
-        (reference_experiment_label, "Global solution"),
-        *AGGREGATE_HISTOGRAM_BENCHMARKS,
-    ]
+    selected_methods = [("__reference__", "Global solution"), *AGGREGATE_HISTOGRAM_BENCHMARKS]
     ordered_histogram_data = {}
     missing_methods = []
 
     for source_label, display_label in selected_methods:
-        series = analysis_variables_data.get(source_label)
+        if source_label == "__reference__":
+            series = analysis_variables_data.get(reference_experiment_label, reference_analysis_variables)
+        else:
+            series = analysis_variables_data.get(source_label)
         if series is None:
             if histogram_theoretical_params and display_label in histogram_theoretical_params:
                 ordered_histogram_data[display_label] = {}
                 continue
-            missing_methods.append(source_label)
+            missing_methods.append(reference_experiment_label if source_label == "__reference__" else source_label)
             continue
         filtered_series = {
             variable_label: series[variable_label]
@@ -1074,6 +1100,11 @@ def _build_calibration_method_stats(
     else:
         common_shock_label = f"{reference_experiment_label} (common shocks)"
     common_shock_sim_data = raw_simulation_data.get(common_shock_label)
+    if common_shock_sim_data is None and reference_experiment_label.endswith(" (ergodic)"):
+        base_label = reference_experiment_label[: -len(" (ergodic)")]
+        fallback_common_shock = raw_simulation_data.get(base_label)
+        if fallback_common_shock is not None and fallback_common_shock.get("simulation_kind") == "common_shock":
+            common_shock_sim_data = fallback_common_shock
     if common_shock_sim_data is not None:
         method_stats["Nonlinear-CS"] = compute_model_moments_with_consistent_aggregation(
             simul_obs=common_shock_sim_data["simul_obs"],

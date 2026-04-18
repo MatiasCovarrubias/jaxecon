@@ -52,14 +52,16 @@ The main execution flow in `DEQN/analysis.py` is:
 2. Load `ModelData.mat`.
 3. Build the Python `Model`.
 4. Optionally load `ModelData_simulation.mat` and extract benchmark simulation windows.
-5. Build the nonlinear DEQN simulation runner selected by `config["long_simulation"]`.
-6. Use that selected nonlinear run as the single DEQN source for stochastic SS, GIRs, welfare, and nonlinear reporting.
+5. Build the primary nonlinear DEQN simulation runner selected by `config["long_simulation"]`.
+6. If `ergodic_price_aggregation = true` and the primary runner is common-shock, also build an auxiliary long ergodic reference runner.
 7. For each analyzed experiment:
 
-- run the selected nonlinear simulation
-- compute stochastic SS from that simulation
-- compute GIR objects
-- compute welfare inputs
+- run the primary nonlinear simulation
+- if needed, run the auxiliary long ergodic reference simulation
+- build the fixed-price aggregation context from the ergodic reference when `ergodic_price_aggregation = true`
+- re-aggregate the primary nonlinear sample, Dynare benchmarks, and MATLAB IR overlays under that shared context when needed
+- compute stochastic SS and GIR objects from the ergodic reference whenever the workflow needs an ergodic object
+- compute welfare inputs from the primary nonlinear reporting sample
 
 8. Call `analysis_hooks.prepare_postprocess_analysis(...)`.
 9. Render tables and figures in the analysis order.
@@ -68,9 +70,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- When `ergodic_price_aggregation = true` and the main nonlinear run is common-shock, Python now also runs an auxiliary long ergodic reference sample and reuses that context for fixed-price aggregation, GIR averaging, stochastic SS, and ergodic-only outputs.
 - The combined LaTeX wrapper now assembles the simplified largest-negative aggregate IR PNGs into paper-ready grouped figures: consumption and GDP for the main text, plus investment, capital, and labor for the appendix.
 - Aggregate IRs now also export a simplified single-panel PNG for the largest discovered negative shock, one figure per reported aggregate variable.
-- Welfare now reports `C and L recentered at determ SS` and `L fixed at determ SS`, which jointly recenter both utility inputs or hold labor fixed at the deterministic steady state while leaving consumption variation active.
 
 ## Current defaults and compatibility
 
@@ -82,7 +84,7 @@ The active April 2026 analysis contract is intentionally comprehensive by defaul
 - In the combined LaTeX wrapper, the full aggregate IR PNGs and aggregate histogram PNGs are shown one at a time as standalone figures, while the simplified largest-negative aggregate IR PNGs are combined into paper-oriented grouped figures.
 - Shock sizes are no longer meant to be hardcoded in the main config. Python discovers them from `ModelData_IRs.mat` and stores the discovered list back into `config["ir_shock_sizes"]` for downstream rendering and LaTeX assembly.
 - IR selection is now controlled by `config["use_gir"]`: `False` renders the stochastic-steady-state IR and `True` renders the generalized impulse response averaged over ergodic draws.
-- `config["long_simulation"]` selects the single nonlinear DEQN simulation source used throughout the analysis: `False` uses the common-shock run and `True` uses the long ergodic run. When it is `True`, Python also computes a matched long first-order log-linear simulation from the Dynare state-space matrices for welfare only.
+- `config["long_simulation"]` selects the main nonlinear reporting sample: `False` uses the common-shock run and `True` uses the long ergodic run. When `long_simulation = false` and `ergodic_price_aggregation = true`, Python also runs an auxiliary long ergodic reference sample for fixed-price weights, GIR averaging, stochastic SS, histograms, and ergodic-only sectoral outputs. When `long_simulation = true`, Python also computes a matched long first-order log-linear simulation from the Dynare state-space matrices for welfare only.
 - Welfare reporting now keeps the baseline nonlinear sample and, for each nonlinear DEQN experiment, also adds `C and L recentered at determ SS` and `L fixed at determ SS`. These are welfare-only counterfactuals that either recenter both utility-relevant inputs so their sample means match the deterministic steady state or fix labor at the deterministic steady state while preserving the simulated consumption path.
 - The default IR benchmark overlays are `["PerfectForesight", "FirstOrder"]`. The config still accepts `ir_benchmark_methods` to override the set or ordering, and still accepts the legacy single-string `ir_benchmark_method` for backward compatibility.
 - Descriptive-statistics and stochastic-steady-state tables include all available simulation methods by default. For aggregate stochastic-SS tables, when `stochss_methods_to_include` is absent or empty, Python now falls back directly to the available keys in `stochastic_ss_data`. Older keys such as `ergodic_methods_to_include`, `stochss_methods_to_include`, `model_vs_data_methods_to_include`, and `descriptive_stats_variables` now act as compatibility filters rather than the intended default workflow.
@@ -94,6 +96,7 @@ The active April 2026 analysis contract is intentionally comprehensive by defaul
 For the current April pipeline, the intended MATLAB/Python comparison convention is:
 
 - `ergodic_price_aggregation = false` means aggregate `C`, `I`, `GDP`, `L`, `K`, and `Intratemporal Utility` are read directly from the model-implied aggregate endogenous variables.
+- `ergodic_price_aggregation = true` means the fixed price vector is always taken from a long ergodic DEQN reference sample. If `long_simulation = false`, Python still runs that auxiliary ergodic reference and re-aggregates the shorter common-shock reporting sample under the ergodic price vector rather than using the short window itself as the price source.
 - Sectoral value added is still treated with fixed prices in both MATLAB and Python: `VA_j = \bar P_j (Q_j - M_j^{out})`. It does not switch to time-varying prices when aggregate re-aggregation is off.
 - Volatility calculations are matched to MATLAB's default `std` normalization, so Python uses the sample standard deviation (`N-1`) rather than NumPy's population default.
 
@@ -129,18 +132,19 @@ Important distinction:
 
 - `long_simulation = true` makes the long ergodic simulation the main nonlinear analysis object
 - `long_simulation = false` makes the common-shock simulation the main nonlinear analysis object
+- when `ergodic_price_aggregation = true` and `long_simulation = false`, Python still runs a long ergodic reference sample so the fixed-price workflow can be anchored to ergodic prices and reused across aggregation, GIR, and stochastic-SS steps
 
 ### `DEQN/analysis/stochastic_ss.py`
 
 This computes stochastic steady states from simulated paths and evaluates equilibrium accuracy.
 
-For this model, the stochastic-SS objects are computed from the selected nonlinear simulation source.
+For this model, the stochastic-SS objects are computed from the ergodic reference sample whenever the fixed-price workflow creates one; otherwise they come from the selected nonlinear reporting sample.
 
 ### `DEQN/analysis/GIR.py`
 
 This computes GIR or stochastic-SS impulse responses depending on `config["use_gir"]`.
 
-For this model, the IR exercises are anchored to the selected nonlinear simulation source.
+For this model, the IR exercises are anchored to the ergodic reference sample whenever the fixed-price workflow creates one; otherwise they use the selected nonlinear reporting sample.
 
 ### `DEQN/analysis/tables.py`
 
@@ -162,6 +166,7 @@ This is the model-specific bridge between generic DEQN analysis utilities and `R
 Main responsibilities:
 
 - prepare model-specific aggregation context
+- choose the ergodic aggregation reference when the fixed-price workflow needs one
 - choose between model-implied aggregate rows and optional ergodic-price reaggregation
 - load simulation-based MATLAB benchmark series into `analysis_variables_data`
 - build model-vs-data moment columns
@@ -187,7 +192,7 @@ Current contract:
 - Default mode: `ergodic_price_aggregation = false`
   Python reads `c_agg`, `l_agg`, `gdp_agg`, `i_agg`, `k_agg`, and `utility_intratemp` directly from the policy arrays.
 - Optional mode: `ergodic_price_aggregation = true`
-  Python re-aggregates nonlinear simulations, Dynare simulations, and MATLAB IRs using fixed ergodic-mean prices.
+  Python re-aggregates the primary nonlinear sample, Dynare simulations, and MATLAB IRs using fixed ergodic-mean prices from the long ergodic reference sample. When the main reporting run is common-shock, that reference comes from an auxiliary ergodic simulation.
 
 ### `plot_helpers.py`
 
@@ -307,10 +312,9 @@ This is separate from `ModelData.mat`, which may still contain benchmark summary
 
 The current Python analysis logic follows these conventions:
 
-- Exactly one nonlinear DEQN simulation source is active per run.
-- `long_simulation = true` selects the long ergodic run; `long_simulation = false` selects the common-shock run.
-- Sectoral stochastic-SS figures should use the selected nonlinear run.
-- GIR exercises should use the selected nonlinear run.
+- `long_simulation = true` selects the long ergodic run as the main nonlinear reporting sample; `long_simulation = false` selects the common-shock run as the main nonlinear reporting sample.
+- `ergodic_price_aggregation = true` is the exception to the old single-sample rule: if the reporting sample is common-shock, Python also runs an auxiliary long ergodic reference sample.
+- Sectoral stochastic-SS figures and GIR exercises use the ergodic reference whenever that auxiliary run exists.
 - MATLAB simulation benchmarks should only appear when the corresponding method blocks exist in `ModelData_simulation.mat`.
 - Theoretical moments are no longer part of the descriptive-statistics table.
 

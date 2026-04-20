@@ -82,6 +82,7 @@ from DEQN.analysis.model_hooks import (  # noqa: E402
     run_model_postprocess,
 )
 from DEQN.analysis.simul_analysis import (  # noqa: E402
+    compute_analysis_dataset_with_context,
     create_episode_simulation_fn_verbose,
     create_loglinear_episode_utility_fn,
     create_shock_path_simulation_fn,
@@ -124,15 +125,17 @@ config = {
     "model_data_simulation_file": "ModelData_simulation_newwds_v2.mat",  # Set to None to skip MATLAB simulation comparison
     # Aggregation convention
     # False (default): use aggregate endogenous policy variables directly from the model / Dynare objects.
-    # True: re-aggregate using fixed ergodic-mean prices computed from the selected nonlinear simulation.
+    # True: re-aggregate using fixed ergodic-mean prices computed from a long ergodic reference run.
+    #       When long_simulation=False, Python also runs that ergodic reference alongside the
+    #       primary common-shock sample so the fixed-price workflow stays anchored to ergodic data.
     "ergodic_price_aggregation": False,
     # Experiments to analyze
     "experiments_to_analyze": {
         "benchmark": "GO_shocks_newWDS_v2",
     },
     # Simulation configuration
-    # False: use the common-shock simulation as the sole nonlinear sample.
-    # True (current default): use the long ergodic simulation as the sole nonlinear sample.
+    # False: use the common-shock simulation as the main nonlinear reporting sample.
+    # True (current default): use the long ergodic simulation as the main nonlinear reporting sample.
     "long_simulation": True,
     "init_range": 6,
     "periods_per_epis": 64000,
@@ -443,6 +446,13 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
     analysis_name = config_dict.get("analysis_name") or "analysis"
     sections = []
 
+    print(
+        f"  DEBUG_WRAPPER_ACTIVE: building LaTeX sections for '{analysis_name}'",
+        flush=True,
+    )
+    print(f"    analysis_dir={analysis_dir}", flush=True)
+    print(f"    irs_dir={irs_dir}", flush=True)
+
     def add_table_section(title, tex_paths):
         existing_paths = [path for path in tex_paths if os.path.exists(path)]
         if existing_paths:
@@ -517,6 +527,15 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
     paper_main_aggregate_variables = ["Agg. Consumption", "Agg. GDP"]
     paper_appendix_aggregate_variables = ["Agg. Investment", "Agg. Capital", "Agg. Labor"]
 
+    print(
+        f"    DEBUG_WRAPPER_AGGREGATES: aggregate_ir_variables={aggregate_ir_variables}",
+        flush=True,
+    )
+    print(
+        f"    DEBUG_WRAPPER_AGGREGATES: ir_shock_sizes={ir_shock_sizes}, largest_ir_shock={largest_ir_shock}",
+        flush=True,
+    )
+
     def _aggregate_ir_largest_negative_path(variable_name, safe_sector):
         safe_variable = _make_safe_plot_label(variable_name)
         return _analysis_named_path(
@@ -589,9 +608,17 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
             for variable_name in paper_main_aggregate_variables
             if variable_name in aggregate_ir_variables
         ]
-        if len(main_subfigures) == len(paper_main_aggregate_variables) and all(
-            os.path.exists(subfigure["path"]) for subfigure in main_subfigures
-        ):
+        main_exists = [os.path.exists(subfigure["path"]) for subfigure in main_subfigures]
+        print(
+            f"    DEBUG_PAPER_AGGREGATES[{sector_label}]: expected={paper_main_aggregate_variables}",
+            flush=True,
+        )
+        for subfigure, exists_flag in zip(main_subfigures, main_exists):
+            print(
+                f"      main path exists={exists_flag} file={os.path.basename(subfigure['path'])}",
+                flush=True,
+            )
+        if len(main_subfigures) == len(paper_main_aggregate_variables) and all(main_exists):
             aggregate_ir_main_text_figures.append(
                 {
                     "caption": f"Aggregate consumption and GDP responses to the largest negative TFP shock in {sector_label}.",
@@ -602,6 +629,16 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                     "subfigure_groups": [{"subfigures": main_subfigures}],
                 }
             )
+            print(
+                f"      -> added grouped paper aggregate figure for {sector_label}",
+                flush=True,
+            )
+        else:
+            print(
+                f"      -> skipped grouped paper aggregate figure for {sector_label} "
+                f"(found {len(main_subfigures)} of {len(paper_main_aggregate_variables)} required panels)",
+                flush=True,
+            )
 
         appendix_subfigures = [
             {
@@ -611,9 +648,17 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
             for variable_name in paper_appendix_aggregate_variables
             if variable_name in aggregate_ir_variables
         ]
-        if len(appendix_subfigures) == len(paper_appendix_aggregate_variables) and all(
-            os.path.exists(subfigure["path"]) for subfigure in appendix_subfigures
-        ):
+        appendix_exists = [os.path.exists(subfigure["path"]) for subfigure in appendix_subfigures]
+        print(
+            f"    DEBUG_APPENDIX_AGGREGATES[{sector_label}]: expected={paper_appendix_aggregate_variables}",
+            flush=True,
+        )
+        for subfigure, exists_flag in zip(appendix_subfigures, appendix_exists):
+            print(
+                f"      appendix path exists={exists_flag} file={os.path.basename(subfigure['path'])}",
+                flush=True,
+            )
+        if len(appendix_subfigures) == len(paper_appendix_aggregate_variables) and all(appendix_exists):
             aggregate_ir_appendix_figures.append(
                 {
                     "caption": f"Aggregate investment, capital, and labor responses to the largest negative TFP shock in {sector_label}.",
@@ -623,6 +668,16 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
                     ),
                     "subfigure_groups": [{"subfigures": appendix_subfigures}],
                 }
+            )
+            print(
+                f"      -> added grouped appendix aggregate figure for {sector_label}",
+                flush=True,
+            )
+        else:
+            print(
+                f"      -> skipped grouped appendix aggregate figure for {sector_label} "
+                f"(found {len(appendix_subfigures)} of {len(paper_appendix_aggregate_variables)} required panels)",
+                flush=True,
             )
     add_figure_section("2. Aggregate Impulse Responses", aggregate_ir_figures)
     add_nested_grouped_figure_section(
@@ -818,11 +873,22 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
         ],
     )
 
+    print("  DEBUG_WRAPPER_SECTIONS:", flush=True)
+    for section in sections:
+        print(
+            f"    section='{section['title']}' tables={len(section['tables'])} figures={len(section['figures'])}",
+            flush=True,
+        )
+
     return sections
 
 
 def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, irs_dir, econ_model):
     analysis_name = config_dict.get("analysis_name") or "analysis"
+    print(
+        f"  DEBUG_WRAPPER_ACTIVE: entering _write_analysis_results_latex for '{analysis_name}'",
+        flush=True,
+    )
     sections = _build_analysis_latex_sections(
         config_dict=config_dict,
         analysis_dir=analysis_dir,
@@ -1076,6 +1142,7 @@ def _create_nonlinear_simulation_runners(
     matlab_common_shock_schedule,
 ):
     use_long_simulation = bool(config_dict.get("long_simulation", False))
+    use_ergodic_price_aggregation = bool(config_dict.get("ergodic_price_aggregation", False))
     ergodic_simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config_dict))
 
     def run_ergodic_simulation(train_state):
@@ -1143,9 +1210,16 @@ def _create_nonlinear_simulation_runners(
         f"({matlab_common_shock_schedule['reference_method']})",
         flush=True,
     )
-    return {
+    runners = {
         "primary": run_common_shock_simulation,
     }
+    if use_ergodic_price_aggregation:
+        print(
+            "  Fixed-price aggregation: also running an auxiliary long ergodic reference sample.",
+            flush=True,
+        )
+        runners["aggregation_reference"] = run_ergodic_simulation
+    return runners
 
 
 def _build_output_display_label_map(config_dict):
@@ -1156,6 +1230,8 @@ def _build_output_display_label_map(config_dict):
     experiment_label = experiment_labels[0]
     return {
         experiment_label: "Global Solution",
+        f"{experiment_label} (ergodic)": "Ergodic Reference",
+        f"{experiment_label} (common shocks)": "Global Solution (common shocks)",
         f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})": WELFARE_BOTH_RECENTERED_LABEL,
         f"{experiment_label} ({WELFARE_L_FIXED_AT_DSS_LABEL})": WELFARE_L_FIXED_AT_DSS_LABEL,
     }
@@ -1360,6 +1436,24 @@ def _run_experiment_analysis(
 
     selected_results = nonlinear_simulation_runners["primary"](train_state)
     selected_analysis_context = selected_results["analysis_context"]
+    aggregation_reference_results = None
+    if "aggregation_reference" in nonlinear_simulation_runners:
+        aggregation_reference_results = nonlinear_simulation_runners["aggregation_reference"](train_state)
+        selected_analysis_variables, selected_analysis_context = compute_analysis_dataset_with_context(
+            econ_model=econ_model,
+            simul_obs=selected_results["simul_obs"],
+            simul_policies=selected_results["simul_policies"],
+            analysis_config=config_dict,
+            analysis_context=aggregation_reference_results["analysis_context"],
+            analysis_hooks=analysis_hooks,
+        )
+        selected_results = dict(selected_results)
+        selected_results["simul_analysis_variables"] = selected_analysis_variables
+        selected_results["analysis_context"] = selected_analysis_context
+        print(
+            f"    {experiment_label}: re-aggregated the primary sample under the auxiliary ergodic reference.",
+            flush=True,
+        )
 
     welfare_costs = {}
     raw_simulation_data = {}
@@ -1370,7 +1464,15 @@ def _run_experiment_analysis(
     stochastic_ss_loss = {}
     method_labels = []
 
-    def store_variant(label, sample_results, *, analysis_context_for_reporting, required_stochss):
+    def store_variant(
+        label,
+        sample_results,
+        *,
+        analysis_context_for_reporting,
+        required_stochss,
+        stochss_source_results=None,
+        stochss_analysis_context=None,
+    ):
         welfare_cost_ce = _compute_welfare_cost_from_sample(
             econ_model=econ_model,
             welfare_fn=welfare_fn,
@@ -1387,13 +1489,17 @@ def _run_experiment_analysis(
         analysis_variables[label] = sample_results["simul_analysis_variables"]
         method_labels.append(label)
 
+        if stochss_source_results is None:
+            stochss_source_results = sample_results
+        if stochss_analysis_context is None:
+            stochss_analysis_context = analysis_context_for_reporting
         stochss_results = _compute_stochastic_ss_from_sample(
             sample_label=label,
-            simul_obs=sample_results["simul_obs"],
+            simul_obs=stochss_source_results["simul_obs"],
             train_state=train_state,
             stoch_ss_fn=stoch_ss_fn,
             stoch_ss_loss_fn=stoch_ss_loss_fn,
-            analysis_context=analysis_context_for_reporting,
+            analysis_context=stochss_analysis_context,
             econ_model=econ_model,
             analysis_hooks=analysis_hooks,
             config_dict=config_dict,
@@ -1432,11 +1538,20 @@ def _run_experiment_analysis(
         print(f"    {label}: welfare cost (CE) {welfare_cost_ce:.4f}%")
         return welfare_cost_ce
 
+    if aggregation_reference_results is not None:
+        aggregation_reference_label = f"{experiment_label} (ergodic)"
+        aggregation_reference_entry = dict(aggregation_reference_results)
+        aggregation_reference_entry["analysis_context"] = aggregation_reference_results["analysis_context"]
+        raw_simulation_data[aggregation_reference_label] = aggregation_reference_entry
+
+    stochss_and_gir_source_results = aggregation_reference_results or selected_results
     store_variant(
         experiment_label,
         selected_results,
         analysis_context_for_reporting=selected_analysis_context,
         required_stochss=True,
+        stochss_source_results=stochss_and_gir_source_results,
+        stochss_analysis_context=stochss_and_gir_source_results["analysis_context"],
     )
     store_counterfactual_welfare(
         f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})",
@@ -1449,9 +1564,9 @@ def _run_experiment_analysis(
     )
 
     gir_results = gir_fn(
-        selected_results["simul_obs"],
+        stochss_and_gir_source_results["simul_obs"],
         train_state,
-        selected_results["simul_policies"],
+        stochss_and_gir_source_results["simul_policies"],
         stochastic_ss_states[experiment_label],
     )
 

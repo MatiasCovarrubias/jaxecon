@@ -1126,6 +1126,31 @@ def plot_sector_ir_by_shock_size(
         get_matlab_ir_for_analysis_variable,
     )
 
+    def _should_print_global_consumption_ir() -> bool:
+        return variable_to_plot == "Agg. Consumption" and filename_suffix is None
+
+    def _format_ir_values(series: np.ndarray) -> str:
+        return np.array2string(
+            np.asarray(series, dtype=float),
+            separator=", ",
+            max_line_width=1_000_000,
+            formatter={"float_kind": lambda x: f"{x:.10f}"},
+        )
+
+    def _print_global_consumption_ir(*, experiment_name: str, sign_label: str, shock_size_value, series: np.ndarray) -> None:
+        if not _should_print_global_consumption_ir():
+            return
+        print(
+            "      Global solution aggregate consumption IR "
+            f"| sector={sector_label} "
+            f"| response={response_source} "
+            f"| experiment={experiment_name} "
+            f"| sign={sign_label} "
+            f"| shock={shock_size_value}%",
+            flush=True,
+        )
+        print(f"        {_format_ir_values(series)}", flush=True)
+
     def _format_solution_ir_label(exp_name: str, response_kind: str, distinguish_response_kinds: bool) -> str:
         response_labels = {
             "GIR": "GIR",
@@ -1343,6 +1368,12 @@ def plot_sector_ir_by_shock_size(
                         gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
                         if variable_to_plot in gir_vars_pos:
                             response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
+                            _print_global_consumption_ir(
+                                experiment_name=exp_name,
+                                sign_label="positive",
+                                shock_size_value=shock_size,
+                                series=response_pos,
+                            )
                             style = _experiment_style(k, "GIR")
                             _plot_line(
                                 ax_pos,
@@ -1358,6 +1389,12 @@ def plot_sector_ir_by_shock_size(
                     gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg:
                         response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
+                        _print_global_consumption_ir(
+                            experiment_name=exp_name,
+                            sign_label="negative",
+                            shock_size_value=shock_size,
+                            series=response_neg,
+                        )
                         style = _experiment_style(k, "GIR")
                         _plot_line(
                             ax_neg,
@@ -1379,6 +1416,12 @@ def plot_sector_ir_by_shock_size(
                         gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
                         if variable_to_plot in gir_vars_pos_stochss:
                             response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
+                            _print_global_consumption_ir(
+                                experiment_name=exp_name,
+                                sign_label="positive",
+                                shock_size_value=shock_size,
+                                series=response_pos_stochss,
+                            )
                             style = _experiment_style(k, "IR_stoch_ss")
                             _plot_line(
                                 ax_pos,
@@ -1394,6 +1437,12 @@ def plot_sector_ir_by_shock_size(
                     gir_vars_neg_stochss = state_gir_data[neg_stochss_key].get("gir_analysis_variables", {})
                     if variable_to_plot in gir_vars_neg_stochss:
                         response_neg_stochss = gir_vars_neg_stochss[variable_to_plot][:max_periods] * 100
+                        _print_global_consumption_ir(
+                            experiment_name=exp_name,
+                            sign_label="negative",
+                            shock_size_value=shock_size,
+                            series=response_neg_stochss,
+                        )
                         style = _experiment_style(k, "IR_stoch_ss")
                         _plot_line(
                             ax_neg,

@@ -721,6 +721,14 @@ def main():
             gir_data=display_gir_data,
             postprocess_context=display_postprocess_context,
         )
+    if analysis_hooks is not None and hasattr(analysis_hooks, "render_cir_analysis_outputs") and postprocess_context:
+        analysis_hooks.render_cir_analysis_outputs(
+            config=config,
+            irs_dir=irs_dir,
+            econ_model=econ_model,
+            gir_data=display_gir_data,
+            postprocess_context=display_postprocess_context,
+        )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # SECTORAL VARIABLES IN STOCHASTIC SS
@@ -892,7 +900,7 @@ def main():
             plot_name = plot_spec["name"]
             plot_function = plot_spec["function"]
 
-            for experiment_label, sim_data in raw_simulation_data.items():
+            for simulation_label, sim_data in raw_simulation_data.items():
                 if sim_data.get("simulation_kind", "ergodic") != "ergodic":
                     continue
                 try:
@@ -900,13 +908,13 @@ def main():
                         simul_obs=sim_data["simul_obs"],
                         simul_policies=sim_data["simul_policies"],
                         simul_analysis_variables=sim_data["simul_analysis_variables"],
-                        save_path=os.path.join(simulation_dir, f"{plot_name}_{experiment_label}.png"),
+                        save_path=os.path.join(simulation_dir, f"{plot_name}_{simulation_label}.png"),
                         analysis_name=config["analysis_name"],
                         econ_model=econ_model,
-                        experiment_label=experiment_label,
+                        experiment_label=simulation_label,
                     )
                 except Exception as e:
-                    print(f"    ✗ Failed to create {plot_name} for {experiment_label}: {e}", flush=True)
+                    print(f"    ✗ Failed to create {plot_name} for {simulation_label}: {e}", flush=True)
 
     _write_analysis_results_latex(
         config_dict=config,

@@ -63,32 +63,48 @@ else:
 # ============================================================================
 
 import importlib  # noqa: E402
-import json  # noqa: E402
 from typing import cast  # noqa: E402
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 import scipy.io as sio  # noqa: E402
 from jax import config as jax_config  # noqa: E402
-from jax import random  # noqa: E402
 
 from DEQN.analysis.GIR import create_GIR_fn  # noqa: E402
+import DEQN.analysis.reporting as analysis_reporting  # noqa: E402
+from DEQN.analysis.artifacts import save_analysis_artifacts  # noqa: E402
+from DEQN.analysis.io import (  # noqa: E402
+    _extract_dynare_simulation_artifact,
+    _extract_matlab_common_shock_schedule,
+    _resolve_data_file,
+    _write_analysis_config,
+)
+from DEQN.analysis.output_labels import (  # noqa: E402
+    apply_display_labels_to_mapping,
+    apply_display_labels_to_postprocess_context,
+    apply_display_labels_to_sequence,
+    build_display_welfare_costs,
+    build_output_display_label_map,
+)
+from DEQN.analysis.reporting import (  # noqa: E402
+    _build_output_note_context,
+    _write_analysis_results_latex,
+)
+from DEQN.analysis.single_experiment import (  # noqa: E402
+    SingleExperimentResult,
+    _create_nonlinear_simulation_runners,
+    _run_experiment_analysis,
+)
+from DEQN.analysis.welfare_outputs import (  # noqa: E402
+    _welfare_cost_from_dynare_simul,
+    _welfare_cost_from_loglinear_long_simulation,
+)
 from DEQN.analysis.model_hooks import (  # noqa: E402
     apply_model_config_defaults,
-    compute_analysis_variables,
     get_shock_dimension,
     get_states_to_shock,
     load_model_analysis_hooks,
     run_model_postprocess,
-)
-from DEQN.analysis.simul_analysis import (  # noqa: E402
-    compute_analysis_dataset_with_context,
-    create_episode_simulation_fn_verbose,
-    create_loglinear_episode_utility_fn,
-    create_shock_path_simulation_fn,
-    simulate_ergodic_utilities,
-    simulation_analysis,
-    simulation_analysis_with_shocks,
 )
 from DEQN.analysis.stochastic_ss import (  # noqa: E402
     create_stochss_fn,
@@ -101,10 +117,7 @@ from DEQN.analysis.tables import (  # noqa: E402
     create_welfare_table,
 )
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
-from DEQN.training.checkpoints import (  # noqa: E402
-    load_experiment_data,
-    load_trained_model_orbax,
-)
+from DEQN.training.checkpoints import load_experiment_data  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
 
@@ -129,7 +142,9 @@ config = {
     #       When long_simulation=False, Python also runs that ergodic reference alongside the
     #       primary common-shock sample so the fixed-price workflow stays anchored to ergodic data.
     "ergodic_price_aggregation": False,
-    # Experiments to analyze
+    # Single experiment to analyze. The legacy experiments_to_analyze key is still accepted below.
+    "experiment_to_analyze": None,
+    # Legacy single-entry format
     "experiments_to_analyze": {
         "benchmark": "GO_shocks_newWDS_v2",
     },
@@ -206,6 +221,7 @@ config = {
 model_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.model")
 Model = model_module.Model
 analysis_hooks = load_model_analysis_hooks(config["model_dir"])
+analysis_reporting.analysis_hooks = analysis_hooks
 config = apply_model_config_defaults(config, analysis_hooks)
 
 # Import model-specific plots module and registry if available
@@ -221,1606 +237,26 @@ except ModuleNotFoundError as exc:
 MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", []) if plots_module is not None else []
 
 
-# ============================================================================
-# ANALYSIS HELPERS
-# ============================================================================
-
-
-DEFAULT_AGGREGATE_LABELS = [
-    "Agg. Consumption",
-    "Agg. Investment",
-    "Agg. GDP",
-    "Agg. Capital",
-    "Agg. Labor",
-    "Intratemporal Utility",
-]
-
-DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
-WELFARE_BOTH_RECENTERED_LABEL = "C and L recentered at determ SS"
-WELFARE_L_FIXED_AT_DSS_LABEL = "L fixed at determ SS"
-WELFARE_OUTPUT_ORDER = [
-    "Global Solution",
-    WELFARE_BOTH_RECENTERED_LABEL,
-    WELFARE_L_FIXED_AT_DSS_LABEL,
-    "FirstOrder",
-    "MITShocks",
-    "PerfectForesight",
-]
-
-
-def _write_analysis_config(config_dict, analysis_dir):
-    config_path = os.path.join(analysis_dir, "config.json")
-    with open(config_path, "w") as f:
-        json.dump(config_dict, f, indent=2)
-
-
-def _analysis_named_path(directory, stem, analysis_name, extension):
-    suffix = f"_{analysis_name}" if analysis_name else ""
-    return os.path.join(directory, f"{stem}{suffix}{extension}")
-
-
-def _escape_latex(text):
-    replacements = {
-        "\\": r"\textbackslash{}",
-        "&": r"\&",
-        "%": r"\%",
-        "$": r"\$",
-        "#": r"\#",
-        "_": r"\_",
-        "{": r"\{",
-        "}": r"\}",
-        "~": r"\textasciitilde{}",
-        "^": r"\textasciicircum{}",
-    }
-    return "".join(replacements.get(char, char) for char in str(text))
-
-
-def _make_safe_plot_label(label):
-    return label.replace(" ", "_").replace(".", "").replace("/", "_")
-
-
-def _latex_relative_path(path, base_dir):
-    return os.path.relpath(path, base_dir).replace(os.sep, "/")
-
-
-def _tex_fragment_has_table_env(tex_path):
-    if not os.path.exists(tex_path):
-        return False
-    with open(tex_path) as tex_file:
-        return r"\begin{table}" in tex_file.read()
-
-
-def _figure_note_path(figure_path):
-    return os.path.splitext(figure_path)[0] + "_note.tex"
-
-
-def _join_labels(labels):
-    labels = [label for label in labels if label]
-    if not labels:
-        return ""
-    if len(labels) == 1:
-        return labels[0]
-    if len(labels) == 2:
-        return f"{labels[0]} and {labels[1]}"
-    return ", ".join(labels[:-1]) + f", and {labels[-1]}"
-
-
-def _build_simple_figure_spec(path, caption, note_text=None, note_path=None):
-    return {
-        "path": path,
-        "caption": caption,
-        "note_text": note_text,
-        "note_path": note_path,
-    }
-
-
-def _caption_label(label):
-    return label if str(label).isupper() else str(label).lower()
-
-
-def _format_percent_list(values):
-    def _format_percent_value(value):
-        rounded = round(float(value), 8)
-        if float(rounded).is_integer():
-            return str(int(round(rounded)))
-        return f"{rounded:.8f}".rstrip("0").rstrip(".")
-
-    values = [_format_percent_value(value) for value in values if value is not None]
-    if not values:
-        return ""
-    if len(values) == 1:
-        return values[0]
-    if len(values) == 2:
-        return f"{values[0]} and {values[1]}"
-    return ", ".join(values[:-1]) + f", and {values[-1]}"
-
-
-def _build_output_note_context(config_dict, matlab_common_shock_schedule=None):
-    periods_per_episode = int(config_dict.get("periods_per_epis", 0) or 0)
-    burn_in_periods = int(config_dict.get("burn_in_periods", 0) or 0)
-    n_simul_seeds = int(config_dict.get("n_simul_seeds", 0) or 0)
-    retained_periods_per_seed = max(periods_per_episode - burn_in_periods, 0)
-    note_context = {
-        "long_simulation": bool(config_dict.get("long_simulation", False)),
-        "periods_per_episode": periods_per_episode,
-        "burn_in_periods": burn_in_periods,
-        "n_simul_seeds": n_simul_seeds,
-        "retained_periods_per_seed": retained_periods_per_seed,
-        "total_retained_periods": retained_periods_per_seed * n_simul_seeds,
-        "common_shock_burn_in": None,
-        "common_shock_active_periods": None,
-        "common_shock_burn_out": None,
-        "common_shock_total_periods": None,
-    }
-
-    schedule = matlab_common_shock_schedule or {}
-    active_shocks = schedule.get("active_shocks")
-    full_shocks = schedule.get("full_shocks")
-    note_context.update(
-        {
-            "common_shock_burn_in": int(schedule.get("burn_in", 0)),
-            "common_shock_active_periods": int(active_shocks.shape[0]) if active_shocks is not None else None,
-            "common_shock_burn_out": int(schedule.get("burn_out", 0)),
-            "common_shock_total_periods": int(full_shocks.shape[0]) if full_shocks is not None else None,
-        }
-    )
-    return note_context
-
-
-def _resolve_ir_benchmark_methods(config_dict):
-    configured_methods = config_dict.get("ir_benchmark_methods")
-    if configured_methods is None:
-        legacy_method = config_dict.get("ir_benchmark_method")
-        configured_methods = [legacy_method] if legacy_method else list(DEFAULT_IR_BENCHMARK_METHODS)
-    elif isinstance(configured_methods, str):
-        configured_methods = [configured_methods]
-
-    resolved_methods = []
-    for method in configured_methods:
-        if method and method not in resolved_methods:
-            resolved_methods.append(method)
-    return resolved_methods or list(DEFAULT_IR_BENCHMARK_METHODS)
-
-
-def _describe_ir_benchmark_methods(config_dict):
-    benchmark_method_labels = {
-        "FirstOrder": "1st-order approximation",
-        "SecondOrder": "2nd-order approximation",
-        "PerfectForesight": "perfect foresight",
-        "MITShocks": "MIT shocks",
-    }
-    labels = [
-        benchmark_method_labels.get(method, method)
-        for method in _resolve_ir_benchmark_methods(config_dict)
-    ]
-    return _join_labels(labels)
-
-
-def _resolve_ir_response_source(config_dict):
-    use_gir = config_dict.get("use_gir")
-    if use_gir is not None:
-        return "GIR" if bool(use_gir) else "IR_stoch_ss"
-
-    configured_methods = config_dict.get("ir_methods")
-    if configured_methods is None:
-        legacy_method = config_dict.get("ir_method")
-        configured_methods = [legacy_method] if legacy_method else []
-    elif isinstance(configured_methods, str):
-        configured_methods = [configured_methods]
-
-    return "GIR" if "GIR" in configured_methods else "IR_stoch_ss"
-
-
-def _describe_deqn_ir_note(config_dict):
-    if _resolve_ir_response_source(config_dict) == "GIR":
-        return (
-            "Solid lines report the DEQN generalized impulse response: initial states are sampled from the "
-            "ergodic distribution and, for each draw, a zero-shock baseline path is compared with a path "
-            "whose TFP state is shifted on impact, with both paths then simulated forward with zero shocks; "
-            "the plotted response is the average difference across draws. "
-        )
-
-    return (
-        "Solid lines report the DEQN stochastic-steady-state impulse response: the baseline and "
-        "counterfactual paths start from the stochastic steady state, the TFP shock is applied on impact, "
-        "and both paths are then simulated forward with zero shocks. "
-    )
-
-
-def _existing_subfigures(figure_specs):
-    return [figure_spec for figure_spec in figure_specs if os.path.exists(figure_spec["path"])]
-
-
-def _existing_subfigure_groups(group_specs):
-    existing_groups = []
-    for group_spec in group_specs:
-        subfigures = _existing_subfigures(group_spec.get("subfigures", []))
-        if subfigures:
-            existing_group = dict(group_spec)
-            existing_group["subfigures"] = subfigures
-            existing_groups.append(existing_group)
-    return existing_groups
-
-
-def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir, irs_dir, econ_model):
-    analysis_name = config_dict.get("analysis_name") or "analysis"
-    sections = []
-
-    print(
-        f"  DEBUG_WRAPPER_ACTIVE: building LaTeX sections for '{analysis_name}'",
-        flush=True,
-    )
-    print(f"    analysis_dir={analysis_dir}", flush=True)
-    print(f"    irs_dir={irs_dir}", flush=True)
-
-    def add_table_section(title, tex_paths):
-        existing_paths = [path for path in tex_paths if os.path.exists(path)]
-        if existing_paths:
-            sections.append({"title": title, "tables": existing_paths, "figures": []})
-
-    def add_figure_section(title, figure_paths):
-        existing_figures = []
-        for figure in figure_paths:
-            figure_path = figure["path"] if isinstance(figure, dict) else figure
-            if os.path.exists(figure_path):
-                existing_figures.append(figure)
-        if existing_figures:
-            sections.append({"title": title, "tables": [], "figures": existing_figures})
-
-    def add_grouped_figure_section(title, figure_groups):
-        existing_groups = []
-        for figure_group in figure_groups:
-            subfigures = _existing_subfigures(figure_group.get("subfigures", []))
-            if subfigures:
-                existing_group = dict(figure_group)
-                existing_group["subfigures"] = subfigures
-                caption_builder = existing_group.get("caption_builder")
-                if caption_builder is not None:
-                    existing_group["caption"] = caption_builder(subfigures)
-                note_builder = existing_group.get("note_builder")
-                if note_builder is not None:
-                    existing_group["note_text"] = note_builder(subfigures)
-                existing_groups.append(existing_group)
-        if existing_groups:
-            sections.append({"title": title, "tables": [], "figures": existing_groups})
-
-    def add_nested_grouped_figure_section(title, figure_specs):
-        existing_figures = []
-        for figure_spec in figure_specs:
-            subfigure_groups = _existing_subfigure_groups(figure_spec.get("subfigure_groups", []))
-            if subfigure_groups:
-                existing_figure = dict(figure_spec)
-                existing_figure["subfigure_groups"] = subfigure_groups
-                existing_figures.append(existing_figure)
-        if existing_figures:
-            sections.append({"title": title, "tables": [], "figures": existing_figures})
-
-    add_table_section(
-        "1. Model vs. Data Moments",
-        [os.path.join(analysis_dir, f"calibration_table_{analysis_name}.tex")],
-    )
-
-    aggregate_ir_figures = []
-    aggregate_variable_captions = {
-        "Agg. Consumption": "Consumption",
-        "Agg. Investment": "Investment",
-        "Agg. GDP": "GDP",
-        "Agg. Labor": "Labor",
-        "Agg. Capital": "Capital",
-        "Intratemporal Utility": "Intratemporal Utility",
-    }
-    aggregate_variable_note_labels = {
-        "Agg. Consumption": "consumption",
-        "Agg. Investment": "investment",
-        "Agg. GDP": "GDP",
-        "Agg. Labor": "labor",
-        "Agg. Capital": "capital",
-        "Intratemporal Utility": "intratemporal utility",
-    }
-    ir_shock_sizes = list(config_dict.get("ir_shock_sizes", []))
-    largest_ir_shock = max(ir_shock_sizes) if ir_shock_sizes else None
-    aggregate_benchmark_labels = _describe_ir_benchmark_methods(config_dict)
-    deqn_ir_note = _describe_deqn_ir_note(config_dict)
-    aggregate_ir_variables = list(getattr(analysis_hooks, "DEFAULT_AGGREGATE_IR_LABELS", DEFAULT_AGGREGATE_LABELS))
-    aggregate_ir_main_text_figures = []
-    aggregate_ir_appendix_figures = []
-    paper_main_aggregate_variables = ["Agg. Consumption", "Agg. GDP"]
-    paper_appendix_aggregate_variables = ["Agg. Investment", "Agg. Capital", "Agg. Labor"]
-
-    print(
-        f"    DEBUG_WRAPPER_AGGREGATES: aggregate_ir_variables={aggregate_ir_variables}",
-        flush=True,
-    )
-    print(
-        f"    DEBUG_WRAPPER_AGGREGATES: ir_shock_sizes={ir_shock_sizes}, largest_ir_shock={largest_ir_shock}",
-        flush=True,
-    )
-
-    def _aggregate_ir_largest_negative_path(variable_name, safe_sector):
-        safe_variable = _make_safe_plot_label(variable_name)
-        return _analysis_named_path(
-            irs_dir,
-            f"IR_{safe_variable}_{safe_sector}_largest_negative",
-            analysis_name,
-            ".png",
-        )
-
-    def _aggregate_note_label(variable_name):
-        return aggregate_variable_note_labels.get(variable_name, _caption_label(variable_name))
-
-    def _aggregate_caption_label(variable_name):
-        return aggregate_variable_captions.get(variable_name, variable_name)
-
-    def _build_grouped_aggregate_ir_note(*, sector_label, variable_names):
-        displayed_labels = [_aggregate_note_label(variable_name) for variable_name in variable_names]
-        shock_text = (
-            f"The panels show responses to the largest discovered negative TFP shock in {sector_label} "
-            f"({largest_ir_shock} percent). "
-            if largest_ir_shock is not None
-            else f"The panels show responses to a negative TFP shock in {sector_label}. "
-        )
-        return (
-            f"{shock_text}"
-            f"The panels report aggregate {_join_labels(displayed_labels)}. "
-            f"{deqn_ir_note}"
-            "The horizontal axis reports periods after impact. "
-            "The vertical axis reports impulse responses in percent. "
-            "Dashed lines report comparison IRs from the "
-            f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
-            "steady state."
-        )
-    for sector_idx in config_dict.get("ir_sectors_to_plot", []):
-        sector_label = (
-            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
-        )
-        safe_sector = _make_safe_plot_label(sector_label)
-        for variable_name in aggregate_ir_variables:
-            safe_variable = _make_safe_plot_label(variable_name)
-            figure_caption = aggregate_variable_captions.get(variable_name, variable_name)
-            note_label = aggregate_variable_note_labels.get(variable_name, variable_name)
-            shock_layout_text = (
-                f"The rows correspond to {_format_percent_list(ir_shock_sizes)} percent TFP shocks in {sector_label}; "
-                "the left column shows negative shocks and the right column positive shocks. "
-                if ir_shock_sizes
-                else ""
-            )
-            aggregate_ir_figures.append(
-                _build_simple_figure_spec(
-                    _analysis_named_path(irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
-                    f"Aggregate {_caption_label(figure_caption)} response to a TFP shock in {sector_label}.",
-                    note_text=(
-                        f"{shock_layout_text}"
-                        f"The figure plots the response of aggregate {note_label}. "
-                        f"{deqn_ir_note}"
-                        "The horizontal axis reports periods after impact. "
-                        "The vertical axis reports impulse responses in percent. "
-                        "Dashed lines report comparison IRs from the "
-                        f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
-                        "steady state."
-                    ),
-                )
-            )
-        main_subfigures = [
-            {
-                "path": _aggregate_ir_largest_negative_path(variable_name, safe_sector),
-                "caption": _aggregate_caption_label(variable_name),
-            }
-            for variable_name in paper_main_aggregate_variables
-            if variable_name in aggregate_ir_variables
-        ]
-        main_exists = [os.path.exists(subfigure["path"]) for subfigure in main_subfigures]
-        print(
-            f"    DEBUG_PAPER_AGGREGATES[{sector_label}]: expected={paper_main_aggregate_variables}",
-            flush=True,
-        )
-        for subfigure, exists_flag in zip(main_subfigures, main_exists):
-            print(
-                f"      main path exists={exists_flag} file={os.path.basename(subfigure['path'])}",
-                flush=True,
-            )
-        if len(main_subfigures) == len(paper_main_aggregate_variables) and all(main_exists):
-            aggregate_ir_main_text_figures.append(
-                {
-                    "caption": f"Aggregate consumption and GDP responses to the largest negative TFP shock in {sector_label}.",
-                    "note_text": _build_grouped_aggregate_ir_note(
-                        sector_label=sector_label,
-                        variable_names=paper_main_aggregate_variables,
-                    ),
-                    "subfigure_groups": [{"subfigures": main_subfigures}],
-                }
-            )
-            print(
-                f"      -> added grouped paper aggregate figure for {sector_label}",
-                flush=True,
-            )
-        else:
-            print(
-                f"      -> skipped grouped paper aggregate figure for {sector_label} "
-                f"(found {len(main_subfigures)} of {len(paper_main_aggregate_variables)} required panels)",
-                flush=True,
-            )
-
-        appendix_subfigures = [
-            {
-                "path": _aggregate_ir_largest_negative_path(variable_name, safe_sector),
-                "caption": _aggregate_caption_label(variable_name),
-            }
-            for variable_name in paper_appendix_aggregate_variables
-            if variable_name in aggregate_ir_variables
-        ]
-        appendix_exists = [os.path.exists(subfigure["path"]) for subfigure in appendix_subfigures]
-        print(
-            f"    DEBUG_APPENDIX_AGGREGATES[{sector_label}]: expected={paper_appendix_aggregate_variables}",
-            flush=True,
-        )
-        for subfigure, exists_flag in zip(appendix_subfigures, appendix_exists):
-            print(
-                f"      appendix path exists={exists_flag} file={os.path.basename(subfigure['path'])}",
-                flush=True,
-            )
-        if len(appendix_subfigures) == len(paper_appendix_aggregate_variables) and all(appendix_exists):
-            aggregate_ir_appendix_figures.append(
-                {
-                    "caption": f"Aggregate investment, capital, and labor responses to the largest negative TFP shock in {sector_label}.",
-                    "note_text": _build_grouped_aggregate_ir_note(
-                        sector_label=sector_label,
-                        variable_names=paper_appendix_aggregate_variables,
-                    ),
-                    "subfigure_groups": [{"subfigures": appendix_subfigures}],
-                }
-            )
-            print(
-                f"      -> added grouped appendix aggregate figure for {sector_label}",
-                flush=True,
-            )
-        else:
-            print(
-                f"      -> skipped grouped appendix aggregate figure for {sector_label} "
-                f"(found {len(appendix_subfigures)} of {len(paper_appendix_aggregate_variables)} required panels)",
-                flush=True,
-            )
-    add_figure_section("2. Aggregate Impulse Responses", aggregate_ir_figures)
-    add_nested_grouped_figure_section(
-        "2A. Paper Aggregate Impulse Responses",
-        aggregate_ir_main_text_figures,
-    )
-    add_nested_grouped_figure_section(
-        "2B. Appendix Aggregate Impulse Responses",
-        aggregate_ir_appendix_figures,
-    )
-
-    add_figure_section(
-        "3. Sectoral Variables in Stochastic Steady State",
-        [
-            _build_simple_figure_spec(
-                _analysis_named_path(simulation_dir, f"sectoral_{variable_name}_stochss", analysis_name, ".png"),
-                f"Sectoral {variable_caption} at the stochastic steady state.",
-            )
-            for variable_name, variable_caption in [
-                ("k", "capital"),
-                ("l", "labor"),
-                ("y", "value added"),
-                ("m", "intermediates"),
-                ("q", "gross output"),
-            ]
-        ],
-    )
-
-    add_table_section(
-        "4. Aggregate Stochastic Steady State",
-        [
-            os.path.join(analysis_dir, f"stochastic_ss_aggregates_{analysis_name}.tex"),
-        ],
-    )
-
-    add_table_section(
-        "5. Descriptive Statistics",
-        [
-            os.path.join(simulation_dir, f"descriptive_stats_{analysis_name}.tex"),
-        ],
-    )
-
-    histogram_variable_groups = [
-        (
-            "Expenditure Aggregates",
-            [
-                ("Agg. Consumption", "Consumption"),
-                ("Agg. Investment", "Investment"),
-                ("Agg. GDP", "GDP"),
-            ],
-        ),
-        (
-            "Inputs and Utility",
-            [
-                ("Agg. Capital", "Capital"),
-                ("Agg. Labor", "Labor"),
-                ("Intratemporal Utility", "Utility"),
-            ],
-        ),
-    ]
-
-    def _histogram_filename(variable_name):
-        return variable_name.replace(" ", "_").replace(".", "").replace("/", "_")
-
-    histogram_group_note_path = os.path.join(simulation_dir, f"aggregate_histograms_{analysis_name}_note.tex")
-    aggregate_histogram_figures = []
-    for _, variable_specs in histogram_variable_groups:
-        for variable_name, variable_caption in variable_specs:
-            aggregate_histogram_figures.append(
-                _build_simple_figure_spec(
-                    _analysis_named_path(
-                        simulation_dir,
-                        f"Histogram_{_histogram_filename(variable_name)}",
-                        analysis_name,
-                        ".png",
-                    ),
-                    f"Aggregate {_caption_label(variable_caption)} distribution: Global Solution, 1st Order Approximation, and MIT shocks.",
-                    note_text=(
-                        f"The figure compares the distribution of aggregate {_caption_label(variable_caption)} across "
-                        "the global solution, the 1st-order approximation, and MIT shocks."
-                    ),
-                    note_path=histogram_group_note_path,
-                )
-            )
-    add_figure_section("6. Aggregate Distribution Histograms", aggregate_histogram_figures)
-
-    add_table_section(
-        "7. Welfare Cost of Business Cycles",
-        [os.path.join(analysis_dir, f"welfare_{analysis_name}.tex")],
-    )
-
-    sectoral_ir_groups = []
-    largest_sectoral_shock = max(config_dict.get("ir_shock_sizes", [0])) if config_dict.get("ir_shock_sizes") else None
-    sectoral_benchmark_labels = _describe_ir_benchmark_methods(config_dict)
-    sectoral_group_specs = [
-        (
-            "Shocked Sector Inputs",
-            [("Lj", "Labor"), ("Ij", "Investment"), ("Mj", "Intermediates"), ("Yj", "Value Added"), ("Kj", "Capital")],
-        ),
-        (
-            "Shocked Sector Outputs",
-            [
-                ("Cj", "Consumption"),
-                ("Pj", "Price"),
-                ("Moutj", "Intermediate Sales"),
-                ("Ioutj", "Investment Sales"),
-                ("Qj", "Gross Output"),
-            ],
-        ),
-        (
-            "Client Sector Inputs",
-            [
-                ("Lj_client", "Labor"),
-                ("Ij_client", "Investment"),
-                ("Mj_client", "Intermediates"),
-                ("Yj_client", "Value Added"),
-                ("Pmj_client", "Intermediate Price"),
-                ("gammaij_client", "Expenditure Share"),
-            ],
-        ),
-        (
-            "Client Sector Outputs",
-            [
-                ("Cj_client", "Consumption"),
-                ("Pj_client", "Price"),
-                ("Moutj_client", "Intermediate Sales"),
-                ("Ioutj_client", "Investment Sales"),
-                ("Qj_client", "Gross Output"),
-            ],
-        ),
-    ]
-    for sector_idx in config_dict.get("ir_sectors_to_plot", []):
-        sector_label = (
-            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
-        )
-        safe_sector = _make_safe_plot_label(sector_label)
-        configured_sectoral_variables = set(config_dict.get("sectoral_ir_variables_to_plot", []))
-        for group_title, variable_specs in sectoral_group_specs:
-            subfigures = []
-            for variable_name, variable_caption in variable_specs:
-                if variable_name not in configured_sectoral_variables:
-                    continue
-                safe_variable = _make_safe_plot_label(variable_name)
-                subfigures.append(
-                    {
-                        "path": _analysis_named_path(
-                            irs_dir,
-                            f"IR_{safe_variable}_{safe_sector}",
-                            analysis_name,
-                            ".png",
-                        ),
-                        "caption": variable_caption,
-                    }
-                )
-
-            if subfigures:
-                shock_text = (
-                    f"The panels plot responses to a negative {largest_sectoral_shock} percent TFP shock in {sector_label}."
-                    if largest_sectoral_shock
-                    else f"The panels plot responses to the sectoral TFP shock used in the analysis for {sector_label}."
-                )
-                sectoral_ir_groups.append(
-                    {
-                        "caption": f"{group_title} for {sector_label}.",
-                        "note_text": (
-                            f"{shock_text} "
-                            f"{deqn_ir_note}"
-                            "The horizontal axis reports periods after impact. "
-                            "The vertical axis reports impulse responses in percent. "
-                            "Dashed lines report comparison IRs from the "
-                            f"{sectoral_benchmark_labels}; these comparison IRs are anchored at the deterministic "
-                            "steady state."
-                        ),
-                        "subfigures": subfigures,
-                    }
-                )
-    add_grouped_figure_section("8. Sectoral Impulse Responses", sectoral_ir_groups)
-
-    add_figure_section(
-        "9. Ergodic Mean Sectoral Variables",
-        [
-            _build_simple_figure_spec(
-                _analysis_named_path(simulation_dir, f"sectoral_{variable_name}_ergodic", analysis_name, ".png"),
-                f"Ergodic mean sectoral {variable_caption}.",
-            )
-            for variable_name, variable_caption in [
-                ("k", "capital"),
-                ("l", "labor"),
-                ("y", "value added"),
-                ("m", "intermediates"),
-                ("q", "gross output"),
-            ]
-        ],
-    )
-
-    print("  DEBUG_WRAPPER_SECTIONS:", flush=True)
-    for section in sections:
-        print(
-            f"    section='{section['title']}' tables={len(section['tables'])} figures={len(section['figures'])}",
-            flush=True,
-        )
-
-    return sections
-
-
-def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, irs_dir, econ_model):
-    analysis_name = config_dict.get("analysis_name") or "analysis"
-    print(
-        f"  DEBUG_WRAPPER_ACTIVE: entering _write_analysis_results_latex for '{analysis_name}'",
-        flush=True,
-    )
-    sections = _build_analysis_latex_sections(
-        config_dict=config_dict,
-        analysis_dir=analysis_dir,
-        simulation_dir=simulation_dir,
-        irs_dir=irs_dir,
-        econ_model=econ_model,
-    )
-    if not sections:
-        print("  ⚠ Combined LaTeX file skipped: no rendered tables or figures were found.")
-        return None
-
-    lines = [
-        r"\documentclass[11pt]{article}",
-        r"\usepackage[utf8]{inputenc}",
-        r"\usepackage[T1]{fontenc}",
-        r"\usepackage{textcomp}",
-        r"\usepackage[margin=1in]{geometry}",
-        r"\usepackage{amsmath}",
-        r"\usepackage{booktabs}",
-        r"\usepackage{tabularx}",
-        r"\usepackage{graphicx}",
-        r"\usepackage{subcaption}",
-        r"\usepackage{float}",
-        r"\floatplacement{table}{H}",
-        r"\floatplacement{figure}{H}",
-        r"\newlength{\FigHfirst}",
-        r"\newlength{\FigHsingle}",
-        r"\newlength{\FigHdouble}",
-        r"\newlength{\FigHpanel}",
-        r"\newlength{\FigHtriple}",
-        r"\setlength{\FigHfirst}{0.70\textheight}",
-        r"\setlength{\FigHsingle}{0.58\textheight}",
-        r"\setlength{\FigHdouble}{0.40\textheight}",
-        r"\setlength{\FigHpanel}{0.23\textheight}",
-        r"\setlength{\FigHtriple}{0.18\textheight}",
-        r"\captionsetup[subfigure]{justification=centering}",
-        r"\setlength{\parindent}{0pt}",
-        r"\setlength{\parskip}{0.75em}",
-        r"\begin{document}",
-    ]
-
-    rendered_figure_count = 0
-
-    def _single_figure_include_options(*, is_first_figure):
-        height_name = r"\FigHfirst" if is_first_figure else r"\FigHsingle"
-        return rf"width=0.96\textwidth,height={height_name},keepaspectratio"
-
-    def _subfigure_layout(*, subfigure_count, is_first_figure):
-        if subfigure_count >= 5:
-            return "0.43\\textwidth", r"\FigHpanel", r"\hspace{0.04\textwidth}"
-        if subfigure_count > 1:
-            return "0.48\\textwidth", r"\FigHdouble", r"\hfill"
-        if is_first_figure:
-            return r"\textwidth", r"\FigHfirst", None
-        return "0.88\\textwidth", r"\FigHsingle", None
-
-    def _grouped_subfigure_layout(subfigure_count):
-        if subfigure_count >= 3:
-            return "0.31\\textwidth", r"\FigHtriple", r"\hfill"
-        if subfigure_count == 2:
-            return "0.48\\textwidth", r"\FigHdouble", r"\hfill"
-        return "0.88\\textwidth", r"\FigHsingle", None
-
-    for section in sections:
-        for tex_path in section["tables"]:
-            relative_path = _latex_relative_path(tex_path, analysis_dir)
-            if _tex_fragment_has_table_env(tex_path):
-                lines.append(rf"\input{{{relative_path}}}")
-            else:
-                lines.extend(
-                    [
-                        r"\begin{table}[H]",
-                        r"\centering",
-                        rf"\input{{{relative_path}}}",
-                        r"\end{table}",
-                    ]
-                )
-            lines.append(r"\clearpage")
-
-        for figure_path in section["figures"]:
-            has_subfigures = isinstance(figure_path, dict) and "subfigures" in figure_path
-            has_subfigure_groups = isinstance(figure_path, dict) and "subfigure_groups" in figure_path
-            if isinstance(figure_path, str) or (not has_subfigures and not has_subfigure_groups):
-                single_figure = (
-                    _build_simple_figure_spec(figure_path, "") if isinstance(figure_path, str) else figure_path
-                )
-                is_first_figure = rendered_figure_count == 0
-                relative_path = _latex_relative_path(single_figure["path"], analysis_dir)
-                note_path = single_figure.get("note_path") or _figure_note_path(single_figure["path"])
-                lines.extend(
-                    [
-                        r"\begin{figure}[H]",
-                        r"\centering",
-                        rf"\includegraphics[{_single_figure_include_options(is_first_figure=is_first_figure)}]{{{relative_path}}}",
-                    ]
-                )
-                if single_figure.get("caption"):
-                    lines.append(rf"\caption{{{_escape_latex(single_figure['caption'])}}}")
-                if os.path.exists(note_path):
-                    lines.extend([r"\par\smallskip", rf"\input{{{_latex_relative_path(note_path, analysis_dir)}}}"])
-                elif single_figure.get("note_text"):
-                    lines.extend(
-                        [
-                            r"\par\smallskip",
-                            r"\begin{minipage}{0.92\textwidth}",
-                            r"\footnotesize",
-                            rf"\textit{{Notes:}} {_escape_latex(single_figure['note_text'])}",
-                            r"\end{minipage}",
-                        ]
-                    )
-                lines.extend([r"\end{figure}", r"\clearpage"])
-                rendered_figure_count += 1
-                continue
-
-            if has_subfigure_groups:
-                subfigure_groups = figure_path.get("subfigure_groups", [])
-                if not subfigure_groups:
-                    continue
-
-                lines.extend([r"\begin{figure}[H]", r"\centering"])
-                for group_idx, subfigure_group in enumerate(subfigure_groups):
-                    group_title = subfigure_group.get("title")
-                    if group_title:
-                        lines.extend(
-                            [
-                                rf"{{\small\textbf{{{_escape_latex(group_title)}}}\par}}",
-                                r"\smallskip",
-                            ]
-                        )
-
-                    grouped_subfigures = subfigure_group.get("subfigures", [])
-                    width, height_name, column_separator = _grouped_subfigure_layout(len(grouped_subfigures))
-                    for idx, subfigure in enumerate(grouped_subfigures):
-                        lines.extend(
-                            [
-                                rf"\begin{{subfigure}}[t]{{{width}}}",
-                                r"\centering",
-                                rf"\includegraphics[width=\linewidth,height={height_name},keepaspectratio]{{{_latex_relative_path(subfigure['path'], analysis_dir)}}}",
-                                rf"\caption{{{_escape_latex(subfigure.get('caption', ''))}}}",
-                                r"\end{subfigure}",
-                            ]
-                        )
-                        if idx != len(grouped_subfigures) - 1:
-                            lines.append(column_separator or r"\hfill")
-
-                    if group_idx != len(subfigure_groups) - 1:
-                        lines.extend([r"\par\medskip", r"\medskip"])
-
-                lines.append(rf"\caption{{{_escape_latex(figure_path.get('caption', ''))}}}")
-                note_path = figure_path.get("note_path")
-                note_text = figure_path.get("note_text")
-                if note_path and os.path.exists(note_path):
-                    lines.extend([r"\par\smallskip", rf"\input{{{_latex_relative_path(note_path, analysis_dir)}}}"])
-                elif note_text:
-                    lines.extend(
-                        [
-                            r"\par\smallskip",
-                            r"\begin{minipage}{0.92\textwidth}",
-                            r"\footnotesize",
-                            rf"\textit{{Notes:}} {_escape_latex(note_text)}",
-                            r"\end{minipage}",
-                        ]
-                    )
-                lines.extend([r"\end{figure}", r"\clearpage"])
-                rendered_figure_count += 1
-                continue
-
-            subfigures = figure_path.get("subfigures", [])
-            if not subfigures:
-                continue
-
-            is_first_figure = rendered_figure_count == 0
-            lines.extend([r"\begin{figure}[H]", r"\centering"])
-            width, height_name, column_separator = _subfigure_layout(
-                subfigure_count=len(subfigures),
-                is_first_figure=is_first_figure,
-            )
-            for idx, subfigure in enumerate(subfigures):
-                lines.extend(
-                    [
-                        rf"\begin{{subfigure}}[t]{{{width}}}",
-                        r"\centering",
-                        rf"\includegraphics[width=\linewidth,height={height_name},keepaspectratio]{{{_latex_relative_path(subfigure['path'], analysis_dir)}}}",
-                        rf"\caption{{{_escape_latex(subfigure.get('caption', ''))}}}",
-                        r"\end{subfigure}",
-                    ]
-                )
-                if len(subfigures) > 1 and idx % 2 == 0 and idx != len(subfigures) - 1:
-                    lines.append(column_separator or r"\hfill")
-                elif idx != len(subfigures) - 1:
-                    lines.append(r"\par\medskip")
-
-            lines.append(rf"\caption{{{_escape_latex(figure_path.get('caption', ''))}}}")
-            note_path = figure_path.get("note_path")
-            note_text = figure_path.get("note_text")
-            if note_path and os.path.exists(note_path):
-                lines.extend([r"\par\smallskip", rf"\input{{{_latex_relative_path(note_path, analysis_dir)}}}"])
-            elif note_text:
-                lines.extend(
-                    [
-                        r"\par\smallskip",
-                        r"\begin{minipage}{0.92\textwidth}",
-                        r"\footnotesize",
-                        rf"\textit{{Notes:}} {_escape_latex(note_text)}",
-                        r"\end{minipage}",
-                    ]
-                )
-            lines.extend([r"\end{figure}", r"\clearpage"])
-            rendered_figure_count += 1
-
-    lines.append(r"\end{document}")
-
-    combined_tex_path = os.path.join(analysis_dir, f"figures_tables_{analysis_name}.tex")
-    with open(combined_tex_path, "w") as combined_file:
-        combined_file.write("\n".join(lines) + "\n")
-
-    table_count = sum(len(section["tables"]) for section in sections)
-    figure_count = sum(len(section["figures"]) for section in sections)
-    print(f"  Combined LaTeX file saved: {combined_tex_path}")
-    print(f"  Included {table_count} tables and {figure_count} figures.")
-    return combined_tex_path
-
-
-def _resolve_data_file(model_dir, configured_name, fallback_names, *, label, required):
-    candidate_names = []
-    for name in [configured_name, *fallback_names]:
-        if name is None or name in candidate_names:
-            continue
-        candidate_names.append(name)
-
-    for filename in candidate_names:
-        path = os.path.join(model_dir, filename)
-        if os.path.exists(path):
-            if configured_name is not None and filename != configured_name:
-                print(f"  Using fallback {label} file: {filename} (configured '{configured_name}' not found)")
-            return filename, path
-
-    if required:
-        raise FileNotFoundError(f"{label} file not found in {model_dir}. Tried: {candidate_names}")
-
-    if configured_name is not None:
-        print(f"  ⚠ {label} file not found. Tried: {candidate_names} (skipping)")
-    return None, None
-
-
-def _create_nonlinear_simulation_runners(
-    *,
-    econ_model,
-    config_dict,
-    analysis_hooks,
-    matlab_common_shock_schedule,
-):
-    use_long_simulation = bool(config_dict.get("long_simulation", False))
-    use_ergodic_price_aggregation = bool(config_dict.get("ergodic_price_aggregation", False))
-    ergodic_simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config_dict))
-
-    def run_ergodic_simulation(train_state):
-        simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
-            train_state=train_state,
-            econ_model=econ_model,
-            analysis_config=config_dict,
-            simulation_fn=ergodic_simulation_fn,
-            analysis_hooks=analysis_hooks,
-        )
-        return {
-            "simul_obs": simul_obs,
-            "simul_policies": simul_policies,
-            "simul_analysis_variables": simul_analysis_variables,
-            "analysis_context": analysis_context,
-            "simul_obs_full": simul_obs,
-            "simul_policies_full": simul_policies,
-            "simulation_kind": "ergodic",
-        }
-
-    if use_long_simulation:
-        print("  Nonlinear simulation mode: long ergodic simulation", flush=True)
-        return {
-            "primary": run_ergodic_simulation,
-        }
-
-    if matlab_common_shock_schedule is None:
+def _resolve_single_experiment(experiments_to_analyze):
+    if len(experiments_to_analyze) != 1:
         raise ValueError(
-            "long_simulation=False requires a MATLAB common-shock schedule in the simulation data file."
+            "DEQN.analysis now runs exactly one experiment. "
+            "Run each experiment separately with a distinct analysis_name, then use DEQN.comparative_analysis "
+            "to compare saved single-experiment analyses."
         )
-
-    shock_path_simulation_fn = jax.jit(create_shock_path_simulation_fn(econ_model))
-
-    def run_common_shock_simulation(train_state):
-        (
-            simul_obs,
-            simul_policies,
-            simul_analysis_variables,
-            analysis_context,
-            simul_obs_full,
-            simul_policies_full,
-        ) = simulation_analysis_with_shocks(
-            train_state=train_state,
-            econ_model=econ_model,
-            shock_path=matlab_common_shock_schedule["full_shocks"],
-            simulation_fn=shock_path_simulation_fn,
-            active_start=matlab_common_shock_schedule["active_start"],
-            active_end=matlab_common_shock_schedule["active_end"],
-            analysis_config=config_dict,
-            analysis_hooks=analysis_hooks,
-            label=(f"Common-shock nonlinear simulation ({matlab_common_shock_schedule['reference_method']})"),
-        )
-        return {
-            "simul_obs": simul_obs,
-            "simul_policies": simul_policies,
-            "simul_analysis_variables": simul_analysis_variables,
-            "analysis_context": analysis_context,
-            "simul_obs_full": simul_obs_full,
-            "simul_policies_full": simul_policies_full,
-            "simulation_kind": "common_shock",
-        }
-
-    print(
-        "  Nonlinear simulation mode: shared MATLAB shock path "
-        f"({matlab_common_shock_schedule['reference_method']})",
-        flush=True,
-    )
-    runners = {
-        "primary": run_common_shock_simulation,
-    }
-    if use_ergodic_price_aggregation:
-        print(
-            "  Fixed-price aggregation: also running an auxiliary long ergodic reference sample.",
-            flush=True,
-        )
-        runners["aggregation_reference"] = run_ergodic_simulation
-    return runners
-
-
-def _build_output_display_label_map(config_dict):
-    experiment_labels = list((config_dict.get("experiments_to_analyze") or {}).keys())
-    if len(experiment_labels) != 1:
-        return {}
-
-    experiment_label = experiment_labels[0]
-    return {
-        experiment_label: "Global Solution",
-        f"{experiment_label} (ergodic)": "Ergodic Reference",
-        f"{experiment_label} (common shocks)": "Global Solution (common shocks)",
-        f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})": WELFARE_BOTH_RECENTERED_LABEL,
-        f"{experiment_label} ({WELFARE_L_FIXED_AT_DSS_LABEL})": WELFARE_L_FIXED_AT_DSS_LABEL,
-    }
-
-
-def _apply_display_labels_to_mapping(values_by_label, label_map):
-    if not label_map:
-        return dict(values_by_label)
-
-    relabeled = {}
-    for label, value in values_by_label.items():
-        relabeled[label_map.get(label, label)] = value
-    return relabeled
-
-
-def _apply_display_labels_to_postprocess_context(postprocess_context, label_map):
-    if not postprocess_context or not label_map:
-        return postprocess_context
-
-    relabeled_context = dict(postprocess_context)
-
-    ergodic_labels = postprocess_context.get("ergodic_experiment_labels")
-    if ergodic_labels is not None:
-        relabeled_context["ergodic_experiment_labels"] = [label_map.get(label, label) for label in ergodic_labels]
-
-    reference_label = postprocess_context.get("reference_experiment_label")
-    if reference_label is not None:
-        relabeled_context["reference_experiment_label"] = label_map.get(reference_label, reference_label)
-
-    return relabeled_context
-
-
-def _apply_display_labels_to_sequence(labels, label_map):
-    if labels is None:
-        return None
-    return [label_map.get(label, label) for label in labels]
-
-
-def _build_display_welfare_costs(welfare_costs, label_map):
-    display_welfare_costs = _apply_display_labels_to_mapping(welfare_costs, label_map)
-    ordered_welfare_costs = {
-        label: display_welfare_costs[label] for label in WELFARE_OUTPUT_ORDER if label in display_welfare_costs
-    }
-    return ordered_welfare_costs or display_welfare_costs
-
-
-def _compute_welfare_cost_from_utilities(*, econ_model, welfare_fn, welfare_ss, utilities, rng_key):
-    welfare = welfare_fn(utilities, welfare_ss, rng_key)
-    return -econ_model.consumption_equivalent(welfare) * 100
-
-
-def _compute_welfare_cost_from_sample(*, econ_model, welfare_fn, welfare_ss, policies_logdev, config_dict):
-    simul_utilities = jax.vmap(econ_model.utility_from_policies)(policies_logdev)
-    return _compute_welfare_cost_from_utilities(
-        econ_model=econ_model,
-        welfare_fn=welfare_fn,
-        welfare_ss=welfare_ss,
-        utilities=simul_utilities,
-        rng_key=random.PRNGKey(config_dict["welfare_seed"]),
-    )
-
-
-def _recenter_logdev_path_to_dss(path_logdev):
-    return path_logdev - jnp.mean(path_logdev)
-
-
-def _compute_counterfactual_utilities_from_sample(
-    *,
-    econ_model,
-    policies_logdev,
-    recenter_consumption=False,
-    recenter_labor=False,
-    fix_labor_at_dss=False,
-):
-    if not recenter_consumption and not recenter_labor and not fix_labor_at_dss:
-        raise ValueError("At least one welfare counterfactual adjustment must be requested.")
-    if recenter_labor and fix_labor_at_dss:
-        raise ValueError("Labor cannot be both recentered and fixed at the deterministic steady state.")
-
-    consumption_logdev = policies_logdev[:, econ_model.c_util_idx]
-    labor_logdev = policies_logdev[:, econ_model.l_util_idx]
-
-    if recenter_consumption:
-        consumption_logdev = _recenter_logdev_path_to_dss(consumption_logdev)
-    if recenter_labor:
-        labor_logdev = _recenter_logdev_path_to_dss(labor_logdev)
-    if fix_labor_at_dss:
-        labor_logdev = jnp.zeros_like(labor_logdev)
-
-    consumption_level = jnp.exp(consumption_logdev + econ_model.policies_ss[econ_model.c_util_idx])
-    labor_level = jnp.exp(labor_logdev + econ_model.policies_ss[econ_model.l_util_idx])
-    labor_exponent = 1 + econ_model.eps_l ** (-1)
-    labor_disutility = econ_model.theta * (1 / (1 + econ_model.eps_l ** (-1))) * labor_level**labor_exponent
-    utility_intratemp = consumption_level - labor_disutility
-
-    if float(jnp.min(utility_intratemp)) <= 0:
-        raise ValueError("Counterfactual intratemporal utility became non-positive.")
-
-    return econ_model._utility_from_intratemp_level(utility_intratemp)
-
-
-def _compute_counterfactual_welfare_cost_from_sample(
-    *,
-    econ_model,
-    welfare_fn,
-    welfare_ss,
-    policies_logdev,
-    config_dict,
-    recenter_consumption=False,
-    recenter_labor=False,
-    fix_labor_at_dss=False,
-):
-    simul_utilities = _compute_counterfactual_utilities_from_sample(
-        econ_model=econ_model,
-        policies_logdev=policies_logdev,
-        recenter_consumption=recenter_consumption,
-        recenter_labor=recenter_labor,
-        fix_labor_at_dss=fix_labor_at_dss,
-    )
-    return _compute_welfare_cost_from_utilities(
-        econ_model=econ_model,
-        welfare_fn=welfare_fn,
-        welfare_ss=welfare_ss,
-        utilities=simul_utilities,
-        rng_key=random.PRNGKey(config_dict["welfare_seed"]),
-    )
-
-
-def _compute_stochastic_ss_from_sample(
-    *,
-    sample_label,
-    simul_obs,
-    train_state,
-    stoch_ss_fn,
-    stoch_ss_loss_fn,
-    analysis_context,
-    econ_model,
-    analysis_hooks,
-    config_dict,
-    required,
-):
-    try:
-        stoch_ss_policy, stoch_ss_obs, stoch_ss_obs_std = stoch_ss_fn(simul_obs, train_state)
-        if stoch_ss_obs_std.max() > 0.001:
-            raise ValueError("Stochastic steady state standard deviation too large")
-
-        stoch_ss_analysis_variables = compute_analysis_variables(
-            econ_model=econ_model,
-            state_logdev=stoch_ss_obs,
-            policy_logdev=stoch_ss_policy,
-            analysis_context=analysis_context,
-            analysis_hooks=analysis_hooks,
-        )
-
-        loss_results = stoch_ss_loss_fn(
-            stoch_ss_obs,
-            stoch_ss_policy,
-            train_state,
-            random.PRNGKey(config_dict["seed"]),
-        )
-        print(
-            f"    {sample_label}: equilibrium accuracy {loss_results['mean_accuracy']:.4f} "
-            f"(min: {loss_results['min_accuracy']:.4f})",
-            flush=True,
-        )
-        return {
-            "stochastic_ss_state": stoch_ss_obs,
-            "stochastic_ss_policy": stoch_ss_policy,
-            "stochastic_ss_data": stoch_ss_analysis_variables,
-            "stochastic_ss_loss": loss_results,
-        }
-    except Exception:
-        if required:
-            raise
-        print(f"    Warning: stochastic steady state failed for {sample_label}; skipping this variant.", flush=True)
-        return None
-
-
-def _run_experiment_analysis(
-    *,
-    experiment_label,
-    exp_data,
-    save_dir,
-    nn_config_base,
-    econ_model,
-    nonlinear_simulation_runners,
-    welfare_fn,
-    welfare_ss,
-    stoch_ss_fn,
-    stoch_ss_loss_fn,
-    gir_fn,
-    config_dict,
-    analysis_hooks,
-):
-    experiment_config = exp_data["config"]
-    experiment_name = exp_data["results"]["exper_name"]
-
-    nn_config = nn_config_base.copy()
-    nn_config["features"] = experiment_config["layers"] + [econ_model.dim_policies]
-
-    train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
-
-    selected_results = nonlinear_simulation_runners["primary"](train_state)
-    selected_analysis_context = selected_results["analysis_context"]
-    aggregation_reference_results = None
-    if "aggregation_reference" in nonlinear_simulation_runners:
-        aggregation_reference_results = nonlinear_simulation_runners["aggregation_reference"](train_state)
-        selected_analysis_variables, selected_analysis_context = compute_analysis_dataset_with_context(
-            econ_model=econ_model,
-            simul_obs=selected_results["simul_obs"],
-            simul_policies=selected_results["simul_policies"],
-            analysis_config=config_dict,
-            analysis_context=aggregation_reference_results["analysis_context"],
-            analysis_hooks=analysis_hooks,
-        )
-        selected_results = dict(selected_results)
-        selected_results["simul_analysis_variables"] = selected_analysis_variables
-        selected_results["analysis_context"] = selected_analysis_context
-        print(
-            f"    {experiment_label}: re-aggregated the primary sample under the auxiliary ergodic reference.",
-            flush=True,
-        )
-
-    welfare_costs = {}
-    raw_simulation_data = {}
-    analysis_variables = {}
-    stochastic_ss_states = {}
-    stochastic_ss_policies = {}
-    stochastic_ss_data = {}
-    stochastic_ss_loss = {}
-    method_labels = []
-
-    def store_variant(
-        label,
-        sample_results,
-        *,
-        analysis_context_for_reporting,
-        required_stochss,
-        stochss_source_results=None,
-        stochss_analysis_context=None,
-    ):
-        welfare_cost_ce = _compute_welfare_cost_from_sample(
-            econ_model=econ_model,
-            welfare_fn=welfare_fn,
-            welfare_ss=welfare_ss,
-            policies_logdev=sample_results["simul_policies"],
-            config_dict=config_dict,
-        )
-        welfare_costs[label] = welfare_cost_ce
-        print(f"    {label}: welfare cost (CE) {welfare_cost_ce:.4f}%")
-
-        raw_entry = dict(sample_results)
-        raw_entry["analysis_context"] = analysis_context_for_reporting
-        raw_simulation_data[label] = raw_entry
-        analysis_variables[label] = sample_results["simul_analysis_variables"]
-        method_labels.append(label)
-
-        if stochss_source_results is None:
-            stochss_source_results = sample_results
-        if stochss_analysis_context is None:
-            stochss_analysis_context = analysis_context_for_reporting
-        stochss_results = _compute_stochastic_ss_from_sample(
-            sample_label=label,
-            simul_obs=stochss_source_results["simul_obs"],
-            train_state=train_state,
-            stoch_ss_fn=stoch_ss_fn,
-            stoch_ss_loss_fn=stoch_ss_loss_fn,
-            analysis_context=stochss_analysis_context,
-            econ_model=econ_model,
-            analysis_hooks=analysis_hooks,
-            config_dict=config_dict,
-            required=required_stochss,
-        )
-        if stochss_results is not None:
-            stochastic_ss_states[label] = stochss_results["stochastic_ss_state"]
-            stochastic_ss_policies[label] = stochss_results["stochastic_ss_policy"]
-            stochastic_ss_data[label] = stochss_results["stochastic_ss_data"]
-            stochastic_ss_loss[label] = stochss_results["stochastic_ss_loss"]
-        return welfare_cost_ce
-
-    def store_counterfactual_welfare(
-        label,
-        *,
-        recenter_consumption=False,
-        recenter_labor=False,
-        fix_labor_at_dss=False,
-    ):
-        try:
-            welfare_cost_ce = _compute_counterfactual_welfare_cost_from_sample(
-                econ_model=econ_model,
-                welfare_fn=welfare_fn,
-                welfare_ss=welfare_ss,
-                policies_logdev=selected_results["simul_policies"],
-                config_dict=config_dict,
-                recenter_consumption=recenter_consumption,
-                recenter_labor=recenter_labor,
-                fix_labor_at_dss=fix_labor_at_dss,
-            )
-        except ValueError as exc:
-            print(f"    Warning: welfare counterfactual {label} skipped ({exc}).", flush=True)
-            return None
-
-        welfare_costs[label] = welfare_cost_ce
-        print(f"    {label}: welfare cost (CE) {welfare_cost_ce:.4f}%")
-        return welfare_cost_ce
-
-    if aggregation_reference_results is not None:
-        aggregation_reference_label = f"{experiment_label} (ergodic)"
-        aggregation_reference_entry = dict(aggregation_reference_results)
-        aggregation_reference_entry["analysis_context"] = aggregation_reference_results["analysis_context"]
-        raw_simulation_data[aggregation_reference_label] = aggregation_reference_entry
-
-    stochss_and_gir_source_results = aggregation_reference_results or selected_results
-    store_variant(
-        experiment_label,
-        selected_results,
-        analysis_context_for_reporting=selected_analysis_context,
-        required_stochss=True,
-        stochss_source_results=stochss_and_gir_source_results,
-        stochss_analysis_context=stochss_and_gir_source_results["analysis_context"],
-    )
-    store_counterfactual_welfare(
-        f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})",
-        recenter_consumption=True,
-        recenter_labor=True,
-    )
-    store_counterfactual_welfare(
-        f"{experiment_label} ({WELFARE_L_FIXED_AT_DSS_LABEL})",
-        fix_labor_at_dss=True,
-    )
-
-    gir_results = gir_fn(
-        stochss_and_gir_source_results["simul_obs"],
-        train_state,
-        stochss_and_gir_source_results["simul_policies"],
-        stochastic_ss_states[experiment_label],
-    )
-
-    return {
-        "raw_simulation_data": raw_simulation_data,
-        "analysis_variables": analysis_variables,
-        "welfare_costs": welfare_costs,
-        "stochastic_ss_states": stochastic_ss_states,
-        "stochastic_ss_policies": stochastic_ss_policies,
-        "stochastic_ss_data": stochastic_ss_data,
-        "stochastic_ss_loss": stochastic_ss_loss,
-        "gir_data": gir_results,
-        "nonlinear_method_labels": method_labels,
-    }
-
-
-def _normalize_dynare_simulation_orientation(simul_matrix, expected_n_vars, precision):
-    arr = jnp.array(simul_matrix, dtype=precision)
-    if arr.ndim == 1:
-        if arr.size == 0:
-            return jnp.zeros((expected_n_vars, 0), dtype=precision)
-        if arr.size == expected_n_vars:
-            return arr.reshape(expected_n_vars, 1)
-        raise ValueError(
-            "Unexpected 1D Dynare simulation vector with "
-            f"length={arr.size}; expected length {expected_n_vars} for a single-period slice."
-        )
-    if arr.ndim != 2:
-        raise ValueError(f"Unexpected Dynare simulation ndim={arr.ndim}; expected 1 or 2.")
-    if arr.shape[0] == expected_n_vars:
-        return arr
-    if arr.shape[1] == expected_n_vars:
-        return arr.T
-    raise ValueError(f"Unexpected Dynare simulation shape {arr.shape}; expected one axis = {expected_n_vars}.")
-
-
-def _extract_dynare_simulation_artifact(simul, method_names, expected_n_vars, precision):
-    """Load active/full simulation paths for one Dynare method."""
-    for method_name in method_names:
-        method_block = simul.get(method_name)
-        if not isinstance(method_block, dict):
-            continue
-
-        full_simul = None
-        active_simul = None
-
-        full_simul_raw = method_block.get("full_simul")
-        if full_simul_raw is not None:
-            full_simul = _normalize_dynare_simulation_orientation(full_simul_raw, expected_n_vars, precision)
-
-        burnin_simul = method_block.get("burnin_simul")
-        shocks_simul = method_block.get("shocks_simul")
-        burnout_simul = method_block.get("burnout_simul")
-
-        if shocks_simul is not None:
-            active_simul = _normalize_dynare_simulation_orientation(shocks_simul, expected_n_vars, precision)
-
-        if full_simul is None:
-            windows = []
-            for window in (burnin_simul, shocks_simul, burnout_simul):
-                if window is None:
-                    continue
-                window_arr = _normalize_dynare_simulation_orientation(window, expected_n_vars, precision)
-                if window_arr.shape[1] > 0:
-                    windows.append(window_arr)
-            if windows:
-                full_simul = jnp.concatenate(windows, axis=1)
-
-        if active_simul is None and full_simul is not None:
-            burn_in = int(method_block.get("burn_in", 0))
-            t_active = method_block.get("T_active")
-            if t_active is not None:
-                t_active = int(t_active)
-                active_simul = full_simul[:, burn_in : burn_in + t_active]
-            else:
-                active_simul = full_simul
-
-        if active_simul is not None or full_simul is not None:
-            return {
-                "active_simul": active_simul if active_simul is not None else full_simul,
-                "full_simul": full_simul if full_simul is not None else active_simul,
-            }
-
-    return {"active_simul": None, "full_simul": None}
-
-
-def _normalize_shock_matrix(shocks_matrix, shock_dimension, precision):
-    arr = jnp.array(shocks_matrix, dtype=precision)
-    if arr.ndim == 1:
-        if arr.size == 0:
-            return jnp.zeros((0, shock_dimension), dtype=precision)
-        if arr.size == shock_dimension:
-            return arr.reshape(1, shock_dimension)
-        raise ValueError(
-            "Unexpected 1D shock vector with "
-            f"length={arr.size}; expected length {shock_dimension} for a single-period shock path."
-        )
-    if arr.ndim != 2:
-        raise ValueError(f"Expected 1D or 2D shock matrix, got shape {arr.shape}")
-    if arr.shape[1] == shock_dimension:
-        return arr
-    if arr.shape[0] == shock_dimension:
-        return arr.T
-    raise ValueError(f"Unexpected shock matrix shape {arr.shape} for shock_dimension={shock_dimension}")
-
-
-def _extract_matlab_common_shock_schedule(simul, shock_dimension, precision):
-    shocks_block = simul.get("Shocks")
-    if not isinstance(shocks_block, dict) or "data" not in shocks_block:
-        return None
-
-    active_shocks_full = _normalize_shock_matrix(shocks_block["data"], shock_dimension, precision)
-    usage = shocks_block.get("usage", {})
-
-    candidate_methods = [
-        ("FirstOrder", ["FirstOrder", "Loglin", "LogLinear"]),
-        ("SecondOrder", ["SecondOrder"]),
-        ("PerfectForesight", ["PerfectForesight", "Determ"]),
-        ("MITShocks", ["MITShocks", "MITShock"]),
-    ]
-
-    selected_method = None
-    method_block = None
-    usage_block = None
-    for canonical_name, aliases in candidate_methods:
-        for alias in aliases:
-            block = simul.get(alias)
-            if not isinstance(block, dict):
-                continue
-            usage_candidate = usage.get(alias) or usage.get(canonical_name)
-            if usage_candidate is not None or "T_active" in block or "burn_in" in block:
-                selected_method = canonical_name
-                method_block = block
-                usage_block = usage_candidate
-                break
-        if selected_method is not None:
-            break
-
-    if method_block is None:
-        return None
-
-    active_shocks = active_shocks_full
-    if isinstance(usage_block, dict) and "start" in usage_block and "end" in usage_block:
-        start_idx = max(int(usage_block["start"]) - 1, 0)
-        end_idx = min(int(usage_block["end"]), active_shocks_full.shape[0])
-        active_shocks = active_shocks_full[start_idx:end_idx]
-
-    burn_in = int(method_block.get("burn_in", 0))
-    burn_out = int(method_block.get("burn_out", 0))
-    zero_burnin = jnp.zeros((burn_in, shock_dimension), dtype=precision)
-    zero_burnout = jnp.zeros((burn_out, shock_dimension), dtype=precision)
-    full_shocks = jnp.concatenate([zero_burnin, active_shocks, zero_burnout], axis=0)
-
-    return {
-        "reference_method": selected_method,
-        "active_shocks": active_shocks,
-        "full_shocks": full_shocks,
-        "burn_in": burn_in,
-        "burn_out": burn_out,
-        "active_start": burn_in,
-        "active_end": burn_in + active_shocks.shape[0],
-    }
-
-
-def _normalize_dynare_full_simul(simul_data, state_ss_vec, policies_ss_vec):
-    """Return simulation in log deviations with shape (n_vars, T)."""
-    expected_n_vars = state_ss_vec.shape[0] + policies_ss_vec.shape[0]
-    if simul_data.shape[0] == expected_n_vars:
-        simul_matrix = simul_data
-    elif simul_data.shape[1] == expected_n_vars:
-        simul_matrix = simul_data.T
-    else:
-        raise ValueError(
-            f"Unexpected Dynare simulation shape {simul_data.shape}; expected one axis = {expected_n_vars}."
-        )
-
-    ss_full = jnp.concatenate([state_ss_vec, policies_ss_vec])
-    dist_to_zero = jnp.mean(jnp.abs(simul_matrix[:, 0]))
-    dist_to_ss = jnp.mean(jnp.abs(simul_matrix[:, 0] - ss_full))
-    if dist_to_ss < dist_to_zero:
-        simul_matrix = simul_matrix - ss_full[:, None]
-    return simul_matrix
-
-
-def _welfare_cost_from_dynare_simul(
-    simul_data,
-    method_name,
-    state_ss,
-    policies_ss,
-    econ_model,
-    welfare_fn,
-    welfare_ss,
-    config_dict,
-):
-    """Compute consumption-equivalent welfare cost from the canonical active Dynare sample."""
-    if simul_data is None:
-        return None
-    simul_matrix = _normalize_dynare_full_simul(simul_data, state_ss, policies_ss)
-    n_state_vars = state_ss.shape[0]
-    policies_logdev = simul_matrix[n_state_vars:, :].T
-
-    if policies_logdev.shape[0] == 0:
-        print(f"  ⚠ Skipping welfare for {method_name}: active sample is empty.")
-        return None
-
-    method_seed = sum(ord(c) for c in method_name)
-    return _compute_welfare_cost_from_utilities(
-        econ_model=econ_model,
-        welfare_fn=welfare_fn,
-        welfare_ss=welfare_ss,
-        utilities=jax.vmap(econ_model.utility_from_policies)(policies_logdev),
-        rng_key=random.PRNGKey(config_dict["welfare_seed"] + method_seed),
-    )
-
-
-def _welfare_cost_from_loglinear_long_simulation(
-    *,
-    method_name,
-    state_transition_matrix,
-    state_shock_matrix,
-    policy_state_matrix,
-    policy_shock_matrix,
-    econ_model,
-    welfare_fn,
-    welfare_ss,
-    config_dict,
-):
-    episode_utility_fn = jax.jit(
-        create_loglinear_episode_utility_fn(
-            econ_model=econ_model,
-            config=config_dict,
-            state_transition_matrix=state_transition_matrix,
-            state_shock_matrix=state_shock_matrix,
-            policy_state_matrix=policy_state_matrix,
-            policy_shock_matrix=policy_shock_matrix,
-        )
-    )
-    simul_utilities = simulate_ergodic_utilities(
-        analysis_config=config_dict,
-        episode_utility_fn=episode_utility_fn,
-        label=f"Long ergodic {method_name} simulation",
-    )
-    if simul_utilities.shape[0] == 0:
-        print(f"  ⚠ Skipping welfare for {method_name}: retained long simulation sample is empty.")
-        return None
-
-    method_seed = sum(ord(c) for c in method_name)
-    return _compute_welfare_cost_from_utilities(
-        econ_model=econ_model,
-        welfare_fn=welfare_fn,
-        welfare_ss=welfare_ss,
-        utilities=simul_utilities,
-        rng_key=random.PRNGKey(config_dict["welfare_seed"] + method_seed),
-    )
+    return next(iter(experiments_to_analyze))
+
+
+def _resolve_experiment_config(config_dict):
+    single_experiment = config_dict.get("experiment_to_analyze")
+    legacy_experiments = config_dict.get("experiments_to_analyze")
+    if single_experiment is not None:
+        if not isinstance(single_experiment, dict) or len(single_experiment) != 1:
+            raise ValueError("config['experiment_to_analyze'] must be a single-entry dictionary.")
+        if legacy_experiments and legacy_experiments != single_experiment:
+            print("  Using config['experiment_to_analyze']; ignoring legacy config['experiments_to_analyze'].")
+        return single_experiment
+    return legacy_experiments
 
 
 # ============================================================================
@@ -1982,12 +418,14 @@ def main():
             )
 
     # Load experiment data
-    experiments_to_analyze = config["experiments_to_analyze"]
+    experiments_to_analyze = _resolve_experiment_config(config)
+    experiment_label = _resolve_single_experiment(experiments_to_analyze)
     experiments_data = load_experiment_data(
         experiments_to_analyze,
         save_dir,
         expected_model_dir=config["model_dir"],
     )
+    exp_data = experiments_data[experiment_label]
 
     nn_config_base = {
         "C": C_matrix,
@@ -2036,13 +474,14 @@ def main():
     print("═" * 72)
     print(f"  Analysis: {config['analysis_name']}")
     print(f"  Model: {config['model_dir']}")
-    print(f"  Experiments: {list(experiments_to_analyze.keys())}")
+    print(f"  Experiment: {experiment_label}")
     print(f"  Sectors: {n_sectors}")
     print("─" * 72, flush=True)
 
-    for experiment_label, exp_data in experiments_data.items():
-        print(f"\n  ▶ {experiment_label}", flush=True)
-        experiment_results = _run_experiment_analysis(
+    print(f"\n  ▶ {experiment_label}", flush=True)
+    experiment_results = SingleExperimentResult.from_mapping(
+        experiment_label,
+        _run_experiment_analysis(
             experiment_label=experiment_label,
             exp_data=exp_data,
             save_dir=save_dir,
@@ -2056,17 +495,18 @@ def main():
             gir_fn=gir_fn,
             config_dict=config,
             analysis_hooks=analysis_hooks,
-        )
+        ),
+    )
 
-        raw_simulation_data.update(experiment_results["raw_simulation_data"])
-        analysis_variables_data.update(experiment_results["analysis_variables"])
-        welfare_costs.update(experiment_results["welfare_costs"])
-        stochastic_ss_states.update(experiment_results["stochastic_ss_states"])
-        stochastic_ss_policies.update(experiment_results["stochastic_ss_policies"])
-        stochastic_ss_data.update(experiment_results["stochastic_ss_data"])
-        stochastic_ss_loss.update(experiment_results["stochastic_ss_loss"])
-        gir_data[experiment_label] = experiment_results["gir_data"]
-        nonlinear_method_labels.extend(experiment_results.get("nonlinear_method_labels", []))
+    raw_simulation_data.update(experiment_results.raw_simulation_data)
+    analysis_variables_data.update(experiment_results.analysis_variables)
+    welfare_costs.update(experiment_results.welfare_costs)
+    stochastic_ss_states.update(experiment_results.stochastic_ss_states)
+    stochastic_ss_policies.update(experiment_results.stochastic_ss_policies)
+    stochastic_ss_data.update(experiment_results.stochastic_ss_data)
+    stochastic_ss_loss.update(experiment_results.stochastic_ss_loss)
+    gir_data[experiment_label] = experiment_results.gir_data
+    nonlinear_method_labels.extend(experiment_results.nonlinear_method_labels)
 
     long_loglinear_welfare_cost = None
     if bool(config.get("long_simulation", False)):
@@ -2166,20 +606,32 @@ def main():
     matlab_ir_data = model_postprocess.get("matlab_ir_data", matlab_ir_data)
     upstreamness_data = model_postprocess.get("upstreamness_data", upstreamness_data)
     postprocess_context = model_postprocess.get("postprocess_context")
-    output_display_label_map = _build_output_display_label_map(config)
-    display_postprocess_context = _apply_display_labels_to_postprocess_context(
+    save_analysis_artifacts(
+        analysis_dir=analysis_dir,
+        simulation_dir=simulation_dir,
+        analysis_name=config["analysis_name"],
+        config=config,
+        raw_simulation_data=raw_simulation_data,
+        analysis_variables_data=analysis_variables_data,
+        welfare_costs=welfare_costs,
+        stochastic_ss_states=stochastic_ss_states,
+        stochastic_ss_policies=stochastic_ss_policies,
+        stochastic_ss_data=stochastic_ss_data,
+    )
+    output_display_label_map = build_output_display_label_map(config)
+    display_postprocess_context = apply_display_labels_to_postprocess_context(
         postprocess_context,
         output_display_label_map,
     )
-    display_gir_data = _apply_display_labels_to_mapping(gir_data, output_display_label_map)
-    display_stochastic_ss_states = _apply_display_labels_to_mapping(stochastic_ss_states, output_display_label_map)
-    display_stochastic_ss_policies = _apply_display_labels_to_mapping(stochastic_ss_policies, output_display_label_map)
-    display_stochastic_ss_data = _apply_display_labels_to_mapping(stochastic_ss_data, output_display_label_map)
-    display_welfare_costs = _build_display_welfare_costs(welfare_costs, output_display_label_map)
-    display_raw_simulation_data = _apply_display_labels_to_mapping(raw_simulation_data, output_display_label_map)
+    display_gir_data = apply_display_labels_to_mapping(gir_data, output_display_label_map)
+    display_stochastic_ss_states = apply_display_labels_to_mapping(stochastic_ss_states, output_display_label_map)
+    display_stochastic_ss_policies = apply_display_labels_to_mapping(stochastic_ss_policies, output_display_label_map)
+    display_stochastic_ss_data = apply_display_labels_to_mapping(stochastic_ss_data, output_display_label_map)
+    display_welfare_costs = build_display_welfare_costs(welfare_costs, output_display_label_map)
+    display_raw_simulation_data = apply_display_labels_to_mapping(raw_simulation_data, output_display_label_map)
     display_stochss_methods_to_include = cast(
         "list[str] | None",
-        _apply_display_labels_to_sequence(
+        apply_display_labels_to_sequence(
             config.get("stochss_methods_to_include"),
             output_display_label_map,
         ),
@@ -2358,11 +810,11 @@ def main():
             "MITShocks": "MIT shocks",
         }
     )
-    display_desc_analysis_data = _apply_display_labels_to_mapping(
+    display_desc_analysis_data = apply_display_labels_to_mapping(
         desc_analysis_data,
         desc_display_label_map,
     )
-    display_theoretical_stats = _apply_display_labels_to_mapping(
+    display_theoretical_stats = apply_display_labels_to_mapping(
         theoretical_stats,
         desc_display_label_map,
     )
@@ -2481,19 +933,6 @@ def main():
         "upstreamness_data": upstreamness_data,
         "theoretical_stats": theoretical_stats,  # Pre-computed stats for log-linear and perfect foresight
     }
-
-
-# Legacy long-ergodic simulation branch kept for later reuse:
-# simulation_fn = jax.jit(create_episode_simulation_fn_verbose(econ_model, config))
-# simul_obs, simul_policies, simul_analysis_variables, analysis_context = simulation_analysis(
-#     train_state,
-#     econ_model,
-#     config,
-#     simulation_fn,
-#     analysis_hooks=analysis_hooks,
-# )
-# simul_obs_full = simul_obs
-# simul_policies_full = simul_policies
 
 
 if __name__ == "__main__":

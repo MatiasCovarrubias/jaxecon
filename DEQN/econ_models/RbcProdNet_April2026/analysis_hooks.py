@@ -20,6 +20,11 @@ from DEQN.econ_models.RbcProdNet_April2026.plots import (
     plot_sectoral_variable_ergodic,
     plot_sectoral_variable_stochss,
 )
+from DEQN.analysis.welfare_outputs import (
+    WELFARE_BOTH_RECENTERED_LABEL,
+    WELFARE_L_FIXED_AT_DSS_LABEL,
+    _compute_counterfactual_welfare_cost_from_sample,
+)
 
 DEFAULT_ANALYSIS_CONFIG = {
     "ergodic_price_aggregation": False,
@@ -157,6 +162,426 @@ def compute_analysis_variables(econ_model, state_logdev, policy_logdev, analysis
             Pk_weights=analysis_context["Pk_weights"],
         )
     return econ_model.get_aggregates(policy_logdev)
+
+
+def compute_welfare_outputs(*, experiment_label, selected_results, econ_model, welfare_fn, welfare_ss, config) -> Dict[str, Any]:
+    welfare_outputs = {}
+    welfare_specs = [
+        (
+            WELFARE_BOTH_RECENTERED_LABEL,
+            {"recenter_consumption": True, "recenter_labor": True},
+        ),
+        (
+            WELFARE_L_FIXED_AT_DSS_LABEL,
+            {"fix_labor_at_dss": True},
+        ),
+    ]
+    for label, options in welfare_specs:
+        full_label = f"{experiment_label} ({label})"
+        try:
+            welfare_outputs[full_label] = _compute_counterfactual_welfare_cost_from_sample(
+                econ_model=econ_model,
+                welfare_fn=welfare_fn,
+                welfare_ss=welfare_ss,
+                policies_logdev=selected_results["simul_policies"],
+                config_dict=config,
+                **options,
+            )
+        except ValueError as exc:
+            print(f"    Warning: welfare counterfactual {full_label} skipped ({exc}).", flush=True)
+    return welfare_outputs
+
+
+def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_model, helpers=None):
+    helpers = helpers or {}
+    analysis_named_path = helpers["analysis_named_path"]
+    build_simple_figure_spec = helpers["build_simple_figure_spec"]
+    make_safe_plot_label = helpers["make_safe_plot_label"]
+    caption_label = helpers["caption_label"]
+    join_labels = helpers["join_labels"]
+    format_percent_list = helpers["format_percent_list"]
+    describe_ir_benchmark_methods = helpers["describe_ir_benchmark_methods"]
+    describe_deqn_ir_note = helpers["describe_deqn_ir_note"]
+    existing_subfigures = helpers["existing_subfigures"]
+    existing_subfigure_groups = helpers["existing_subfigure_groups"]
+
+    analysis_name = config.get("analysis_name") or "analysis"
+    sections = []
+
+    def add_table_section(title, tex_paths):
+        existing_paths = [path for path in tex_paths if os.path.exists(path)]
+        if existing_paths:
+            sections.append({"title": title, "tables": existing_paths, "figures": []})
+
+    def add_figure_section(title, figure_paths):
+        existing_figures = []
+        for figure in figure_paths:
+            figure_path = figure["path"] if isinstance(figure, dict) else figure
+            if os.path.exists(figure_path):
+                existing_figures.append(figure)
+        if existing_figures:
+            sections.append({"title": title, "tables": [], "figures": existing_figures})
+
+    def add_grouped_figure_section(title, figure_groups):
+        existing_groups = []
+        for figure_group in figure_groups:
+            subfigures = existing_subfigures(figure_group.get("subfigures", []))
+            if subfigures:
+                existing_group = dict(figure_group)
+                existing_group["subfigures"] = subfigures
+                caption_builder = existing_group.get("caption_builder")
+                if caption_builder is not None:
+                    existing_group["caption"] = caption_builder(subfigures)
+                note_builder = existing_group.get("note_builder")
+                if note_builder is not None:
+                    existing_group["note_text"] = note_builder(subfigures)
+                existing_groups.append(existing_group)
+        if existing_groups:
+            sections.append({"title": title, "tables": [], "figures": existing_groups})
+
+    def add_nested_grouped_figure_section(title, figure_specs):
+        existing_figures = []
+        for figure_spec in figure_specs:
+            subfigure_groups = existing_subfigure_groups(figure_spec.get("subfigure_groups", []))
+            if subfigure_groups:
+                existing_figure = dict(figure_spec)
+                existing_figure["subfigure_groups"] = subfigure_groups
+                existing_figures.append(existing_figure)
+        if existing_figures:
+            sections.append({"title": title, "tables": [], "figures": existing_figures})
+
+    add_table_section(
+        "1. Model vs. Data Moments",
+        [os.path.join(analysis_dir, f"calibration_table_{analysis_name}.tex")],
+    )
+
+    aggregate_ir_figures = []
+    aggregate_variable_captions = {
+        "Agg. Consumption": "Consumption",
+        "Agg. Investment": "Investment",
+        "Agg. GDP": "GDP",
+        "Agg. Labor": "Labor",
+        "Agg. Capital": "Capital",
+        "Intratemporal Utility": "Intratemporal Utility",
+    }
+    aggregate_variable_note_labels = {
+        "Agg. Consumption": "consumption",
+        "Agg. Investment": "investment",
+        "Agg. GDP": "GDP",
+        "Agg. Labor": "labor",
+        "Agg. Capital": "capital",
+        "Intratemporal Utility": "intratemporal utility",
+    }
+    ir_shock_sizes = list(config.get("ir_shock_sizes", []))
+    largest_ir_shock = max(ir_shock_sizes) if ir_shock_sizes else None
+    aggregate_benchmark_labels = describe_ir_benchmark_methods(config)
+    deqn_ir_note = describe_deqn_ir_note(config)
+    aggregate_ir_variables = list(DEFAULT_AGGREGATE_IR_LABELS)
+    aggregate_ir_main_text_figures = []
+    aggregate_ir_appendix_figures = []
+    paper_main_aggregate_variables = ["Agg. Consumption", "Agg. GDP"]
+    paper_appendix_aggregate_variables = ["Agg. Investment", "Agg. Capital", "Agg. Labor"]
+
+    def _aggregate_ir_largest_negative_path(variable_name, safe_sector):
+        safe_variable = make_safe_plot_label(variable_name)
+        return analysis_named_path(
+            irs_dir,
+            f"IR_{safe_variable}_{safe_sector}_largest_negative",
+            analysis_name,
+            ".png",
+        )
+
+    def _aggregate_note_label(variable_name):
+        return aggregate_variable_note_labels.get(variable_name, caption_label(variable_name))
+
+    def _aggregate_caption_label(variable_name):
+        return aggregate_variable_captions.get(variable_name, variable_name)
+
+    def _build_grouped_aggregate_ir_note(*, sector_label, variable_names):
+        displayed_labels = [_aggregate_note_label(variable_name) for variable_name in variable_names]
+        shock_text = (
+            f"The panels show responses to the largest discovered negative TFP shock in {sector_label} "
+            f"({largest_ir_shock} percent). "
+            if largest_ir_shock is not None
+            else f"The panels show responses to a negative TFP shock in {sector_label}. "
+        )
+        return (
+            f"{shock_text}"
+            f"The panels report aggregate {join_labels(displayed_labels)}. "
+            f"{deqn_ir_note}"
+            "The horizontal axis reports periods after impact. "
+            "The vertical axis reports impulse responses in percent. "
+            "Dashed lines report comparison IRs from the "
+            f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
+            "steady state."
+        )
+    for sector_idx in config.get("ir_sectors_to_plot", []):
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+        )
+        safe_sector = make_safe_plot_label(sector_label)
+        for variable_name in aggregate_ir_variables:
+            safe_variable = make_safe_plot_label(variable_name)
+            figure_caption = aggregate_variable_captions.get(variable_name, variable_name)
+            note_label = aggregate_variable_note_labels.get(variable_name, variable_name)
+            shock_layout_text = (
+                f"The rows correspond to {format_percent_list(ir_shock_sizes)} percent TFP shocks in {sector_label}; "
+                "the left column shows negative shocks and the right column positive shocks. "
+                if ir_shock_sizes
+                else ""
+            )
+            aggregate_ir_figures.append(
+                build_simple_figure_spec(
+                    analysis_named_path(irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
+                    f"Aggregate {caption_label(figure_caption)} response to a TFP shock in {sector_label}.",
+                    note_text=(
+                        f"{shock_layout_text}"
+                        f"The figure plots the response of aggregate {note_label}. "
+                        f"{deqn_ir_note}"
+                        "The horizontal axis reports periods after impact. "
+                        "The vertical axis reports impulse responses in percent. "
+                        "Dashed lines report comparison IRs from the "
+                        f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
+                        "steady state."
+                    ),
+                )
+            )
+        main_subfigures = [
+            {
+                "path": _aggregate_ir_largest_negative_path(variable_name, safe_sector),
+                "caption": _aggregate_caption_label(variable_name),
+            }
+            for variable_name in paper_main_aggregate_variables
+            if variable_name in aggregate_ir_variables
+        ]
+        main_exists = [os.path.exists(subfigure["path"]) for subfigure in main_subfigures]
+        if len(main_subfigures) == len(paper_main_aggregate_variables) and all(main_exists):
+            aggregate_ir_main_text_figures.append(
+                {
+                    "caption": f"Aggregate consumption and GDP responses to the largest negative TFP shock in {sector_label}.",
+                    "note_text": _build_grouped_aggregate_ir_note(
+                        sector_label=sector_label,
+                        variable_names=paper_main_aggregate_variables,
+                    ),
+                    "subfigure_groups": [{"subfigures": main_subfigures}],
+                }
+            )
+
+        appendix_subfigures = [
+            {
+                "path": _aggregate_ir_largest_negative_path(variable_name, safe_sector),
+                "caption": _aggregate_caption_label(variable_name),
+            }
+            for variable_name in paper_appendix_aggregate_variables
+            if variable_name in aggregate_ir_variables
+        ]
+        appendix_exists = [os.path.exists(subfigure["path"]) for subfigure in appendix_subfigures]
+        if len(appendix_subfigures) == len(paper_appendix_aggregate_variables) and all(appendix_exists):
+            aggregate_ir_appendix_figures.append(
+                {
+                    "caption": f"Aggregate investment, capital, and labor responses to the largest negative TFP shock in {sector_label}.",
+                    "note_text": _build_grouped_aggregate_ir_note(
+                        sector_label=sector_label,
+                        variable_names=paper_appendix_aggregate_variables,
+                    ),
+                    "subfigure_groups": [{"subfigures": appendix_subfigures}],
+                }
+            )
+    add_figure_section("2. Aggregate Impulse Responses", aggregate_ir_figures)
+    add_nested_grouped_figure_section(
+        "2A. Paper Aggregate Impulse Responses",
+        aggregate_ir_main_text_figures,
+    )
+    add_nested_grouped_figure_section(
+        "2B. Appendix Aggregate Impulse Responses",
+        aggregate_ir_appendix_figures,
+    )
+
+    add_figure_section(
+        "3. Sectoral Variables in Stochastic Steady State",
+        [
+            build_simple_figure_spec(
+                analysis_named_path(simulation_dir, f"sectoral_{variable_name}_stochss", analysis_name, ".png"),
+                f"Sectoral {variable_caption} at the stochastic steady state.",
+            )
+            for variable_name, variable_caption in [
+                ("k", "capital"),
+                ("l", "labor"),
+                ("y", "value added"),
+                ("m", "intermediates"),
+                ("q", "gross output"),
+            ]
+        ],
+    )
+
+    add_table_section(
+        "4. Aggregate Stochastic Steady State",
+        [
+            os.path.join(analysis_dir, f"stochastic_ss_aggregates_{analysis_name}.tex"),
+        ],
+    )
+
+    add_table_section(
+        "5. Descriptive Statistics",
+        [
+            os.path.join(simulation_dir, f"descriptive_stats_{analysis_name}.tex"),
+        ],
+    )
+
+    histogram_variable_groups = [
+        (
+            "Expenditure Aggregates",
+            [
+                ("Agg. Consumption", "Consumption"),
+                ("Agg. Investment", "Investment"),
+                ("Agg. GDP", "GDP"),
+            ],
+        ),
+        (
+            "Inputs and Utility",
+            [
+                ("Agg. Capital", "Capital"),
+                ("Agg. Labor", "Labor"),
+                ("Intratemporal Utility", "Utility"),
+            ],
+        ),
+    ]
+
+    def _histogram_filename(variable_name):
+        return variable_name.replace(" ", "_").replace(".", "").replace("/", "_")
+
+    histogram_group_note_path = os.path.join(simulation_dir, f"aggregate_histograms_{analysis_name}_note.tex")
+    aggregate_histogram_figures = []
+    for _, variable_specs in histogram_variable_groups:
+        for variable_name, variable_caption in variable_specs:
+            aggregate_histogram_figures.append(
+                build_simple_figure_spec(
+                    analysis_named_path(
+                        simulation_dir,
+                        f"Histogram_{_histogram_filename(variable_name)}",
+                        analysis_name,
+                        ".png",
+                    ),
+                    f"Aggregate {caption_label(variable_caption)} distribution: Global Solution, 1st Order Approximation, and MIT shocks.",
+                    note_text=(
+                        f"The figure compares the distribution of aggregate {caption_label(variable_caption)} across "
+                        "the global solution, the 1st-order approximation, and MIT shocks."
+                    ),
+                    note_path=histogram_group_note_path,
+                )
+            )
+    add_figure_section("6. Aggregate Distribution Histograms", aggregate_histogram_figures)
+
+    add_table_section(
+        "7. Welfare Cost of Business Cycles",
+        [os.path.join(analysis_dir, f"welfare_{analysis_name}.tex")],
+    )
+
+    sectoral_ir_groups = []
+    largest_sectoral_shock = max(config.get("ir_shock_sizes", [0])) if config.get("ir_shock_sizes") else None
+    sectoral_benchmark_labels = describe_ir_benchmark_methods(config)
+    sectoral_group_specs = [
+        (
+            "Shocked Sector Inputs",
+            [("Lj", "Labor"), ("Ij", "Investment"), ("Mj", "Intermediates"), ("Yj", "Value Added"), ("Kj", "Capital")],
+        ),
+        (
+            "Shocked Sector Outputs",
+            [
+                ("Cj", "Consumption"),
+                ("Pj", "Price"),
+                ("Moutj", "Intermediate Sales"),
+                ("Ioutj", "Investment Sales"),
+                ("Qj", "Gross Output"),
+            ],
+        ),
+        (
+            "Client Sector Inputs",
+            [
+                ("Lj_client", "Labor"),
+                ("Ij_client", "Investment"),
+                ("Mj_client", "Intermediates"),
+                ("Yj_client", "Value Added"),
+                ("Pmj_client", "Intermediate Price"),
+                ("gammaij_client", "Expenditure Share"),
+            ],
+        ),
+        (
+            "Client Sector Outputs",
+            [
+                ("Cj_client", "Consumption"),
+                ("Pj_client", "Price"),
+                ("Moutj_client", "Intermediate Sales"),
+                ("Ioutj_client", "Investment Sales"),
+                ("Qj_client", "Gross Output"),
+            ],
+        ),
+    ]
+    for sector_idx in config.get("ir_sectors_to_plot", []):
+        sector_label = (
+            econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
+        )
+        safe_sector = make_safe_plot_label(sector_label)
+        configured_sectoral_variables = set(config.get("sectoral_ir_variables_to_plot", []))
+        for group_title, variable_specs in sectoral_group_specs:
+            subfigures = []
+            for variable_name, variable_caption in variable_specs:
+                if variable_name not in configured_sectoral_variables:
+                    continue
+                safe_variable = make_safe_plot_label(variable_name)
+                subfigures.append(
+                    {
+                        "path": analysis_named_path(
+                            irs_dir,
+                            f"IR_{safe_variable}_{safe_sector}",
+                            analysis_name,
+                            ".png",
+                        ),
+                        "caption": variable_caption,
+                    }
+                )
+
+            if subfigures:
+                shock_text = (
+                    f"The panels plot responses to a negative {largest_sectoral_shock} percent TFP shock in {sector_label}."
+                    if largest_sectoral_shock
+                    else f"The panels plot responses to the sectoral TFP shock used in the analysis for {sector_label}."
+                )
+                sectoral_ir_groups.append(
+                    {
+                        "caption": f"{group_title} for {sector_label}.",
+                        "note_text": (
+                            f"{shock_text} "
+                            f"{deqn_ir_note}"
+                            "The horizontal axis reports periods after impact. "
+                            "The vertical axis reports impulse responses in percent. "
+                            "Dashed lines report comparison IRs from the "
+                            f"{sectoral_benchmark_labels}; these comparison IRs are anchored at the deterministic "
+                            "steady state."
+                        ),
+                        "subfigures": subfigures,
+                    }
+                )
+    add_grouped_figure_section("8. Sectoral Impulse Responses", sectoral_ir_groups)
+
+    add_figure_section(
+        "9. Ergodic Mean Sectoral Variables",
+        [
+            build_simple_figure_spec(
+                analysis_named_path(simulation_dir, f"sectoral_{variable_name}_ergodic", analysis_name, ".png"),
+                f"Ergodic mean sectoral {variable_caption}.",
+            )
+            for variable_name, variable_caption in [
+                ("k", "capital"),
+                ("l", "labor"),
+                ("y", "value added"),
+                ("m", "intermediates"),
+                ("q", "gross output"),
+            ]
+        ],
+    )
+
+    return sections
 
 
 def get_states_to_shock(config, econ_model) -> list[int]:

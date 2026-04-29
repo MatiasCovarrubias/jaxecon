@@ -70,9 +70,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
-- When `ergodic_price_aggregation = true` and the main nonlinear run is common-shock, Python now also runs an auxiliary long ergodic reference sample and reuses that context for fixed-price aggregation, GIR averaging, stochastic SS, and ergodic-only outputs.
-- The combined LaTeX wrapper now assembles the simplified largest-negative aggregate IR PNGs into paper-ready grouped figures: consumption and GDP for the main text, plus investment, capital, and labor for the appendix.
-- Aggregate IRs now also export a simplified single-panel PNG for the largest discovered negative shock, one figure per reported aggregate variable.
+- Python now reports CIR-based global-solution optimal attenuation against MATLAB perfect-foresight CIRs, using canonical underscore shock keys and the selected IR source (`GIR` or stochastic-SS IR).
+- The active analysis path is single-experiment only; comparison across experiments should be done from saved single-experiment analyses, while within-run tables and histograms compare methods.
+- Analysis artifacts now save compact state/policy means and standard deviations only, not full long-simulation arrays or full aggregate time-series CSVs.
 
 ## Current defaults and compatibility
 
@@ -81,15 +81,17 @@ The active April 2026 analysis contract is intentionally comprehensive by defaul
 - All six reported aggregates are always used in aggregate tables, aggregate IR figures, and aggregate histogram figures: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
 - Each aggregate IR PNG is itself a full panel: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
 - Python also exports a simpler aggregate IR PNG for each reported aggregate variable that keeps only the largest discovered negative shock in a single panel.
+- Python also exports a CIR optimal-attenuation table under the IR output folder. It reports global-solution CIR divided by MATLAB perfect-foresight CIR, global-solution negative/positive asymmetry, MATLAB nonlinear amplification when available, and correlations with upstreamness and sectoral shock volatility when those diagnostics are present.
 - In the combined LaTeX wrapper, the full aggregate IR PNGs and aggregate histogram PNGs are shown one at a time as standalone figures, while the simplified largest-negative aggregate IR PNGs are combined into paper-oriented grouped figures.
-- Shock sizes are no longer meant to be hardcoded in the main config. Python discovers them from `ModelData_IRs.mat` and stores the discovered list back into `config["ir_shock_sizes"]` for downstream rendering and LaTeX assembly.
-- IR selection is now controlled by `config["use_gir"]`: `False` renders the stochastic-steady-state IR and `True` renders the generalized impulse response averaged over ergodic draws.
+- Shock sizes are no longer meant to be hardcoded in the main config. Python discovers them from `ModelData_IRs.mat`, stores the discovered list back into `config["ir_shock_sizes"]`, and formats shock keys canonically with underscores for decimals, such as `pos_12_5`.
+- IR selection is now controlled by `config["use_gir"]`: `False` renders and summarizes the stochastic-steady-state IR, while `True` renders and summarizes the generalized impulse response averaged over ergodic draws.
 - `config["long_simulation"]` selects the main nonlinear reporting sample: `False` uses the common-shock run and `True` uses the long ergodic run. When `long_simulation = false` and `ergodic_price_aggregation = true`, Python also runs an auxiliary long ergodic reference sample for fixed-price weights, GIR averaging, stochastic SS, histograms, and ergodic-only sectoral outputs. When `long_simulation = true`, Python also computes a matched long first-order log-linear simulation from the Dynare state-space matrices for welfare only.
-- Welfare reporting now keeps the baseline nonlinear sample and, for each nonlinear DEQN experiment, also adds `C and L recentered at determ SS` and `L fixed at determ SS`. These are welfare-only counterfactuals that either recenter both utility-relevant inputs so their sample means match the deterministic steady state or fix labor at the deterministic steady state while preserving the simulated consumption path.
+- The active runner accepts exactly one nonlinear DEQN experiment. Welfare reporting keeps the baseline nonlinear sample and also adds `C and L recentered at determ SS` and `L fixed at determ SS` welfare-only counterfactuals.
 - The default IR benchmark overlays are `["PerfectForesight", "FirstOrder"]`. The config still accepts `ir_benchmark_methods` to override the set or ordering, and still accepts the legacy single-string `ir_benchmark_method` for backward compatibility.
 - Descriptive-statistics and stochastic-steady-state tables include all available simulation methods by default. For aggregate stochastic-SS tables, when `stochss_methods_to_include` is absent or empty, Python now falls back directly to the available keys in `stochastic_ss_data`. Older keys such as `ergodic_methods_to_include`, `stochss_methods_to_include`, `model_vs_data_methods_to_include`, and `descriptive_stats_variables` now act as compatibility filters rather than the intended default workflow.
 - Python recomputes Dynare simulation moments through the common aggregation path even when `ergodic_price_aggregation = false`, so MATLAB and Python moments can be compared on identical definitions.
 - Saved PNGs and generated table fragments print `Saved: <filename>` to the Python console so Colab output identifies the object that was just written.
+- Saved machine-readable artifacts are intentionally compact: state and policy means/standard deviations, welfare rows, descriptive-stat rows, and stochastic-SS rows. The analysis no longer saves raw simulation arrays or full aggregate time-series CSVs.
 
 ## Moment-comparison contract
 

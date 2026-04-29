@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import scipy.io as sio
 
+from DEQN.analysis.shock_keys import format_shock_size_token, parse_shock_size_token
+
 
 def _coerce_mat_struct(obj: Any) -> Any:
     """
@@ -76,11 +78,7 @@ def _to_python_sector_idx(raw_sector_idx: Any) -> int:
 
 def _format_shock_size_token(value: Any) -> str:
     """Format shock sizes consistently for dictionary keys."""
-    scalar = float(np.asarray(value).item())
-    rounded = round(scalar, 8)
-    if float(rounded).is_integer():
-        return str(int(round(rounded)))
-    return f"{rounded:.8f}".rstrip("0").rstrip(".")
+    return format_shock_size_token(value)
 
 
 def _build_shock_key(
@@ -154,12 +152,14 @@ def load_matlab_irs(
 
 
 def get_available_shock_sizes(ir_data: Dict[str, Any]) -> List[float]:
-    """Extract unique shock sizes from standardized IR keys like pos_12.5 / neg_50."""
+    """Extract unique shock sizes from standardized IR keys like pos_12_5 / neg_50."""
     sizes = set()
     for key in ir_data:
-        match = re.match(r"^(?:pos|neg)_(\d+(?:\.\d+)?)$", str(key))
+        match = re.match(r"^(?:pos|neg)_(.+)$", str(key))
         if match:
-            sizes.add(float(match.group(1)))
+            parsed_size = parse_shock_size_token(match.group(1))
+            if parsed_size is not None:
+                sizes.add(parsed_size)
     return sorted(sizes)
 
 
@@ -325,10 +325,50 @@ def _extract_aggregate_dict(aggregate_data: Any) -> Optional[Dict[str, np.ndarra
     return parsed or None
 
 
+def _extract_cir_dict(cir_data: Any) -> Optional[Dict[str, Any]]:
+    cir_dict = _coerce_mat_struct(cir_data)
+    if not isinstance(cir_dict, dict):
+        return None
+
+    parsed: Dict[str, Any] = {}
+    for group in ("cumulative_responses", "total_effect_signs", "nonlinear_amplification", "nonlinear_effect_class"):
+        group_value = _coerce_mat_struct(cir_dict.get(group, {}))
+        if isinstance(group_value, dict):
+            parsed[group] = {
+                key: np.asarray(value).item() if np.asarray(value).size == 1 else np.asarray(value)
+                for key, value in group_value.items()
+            }
+
+    response_variable = cir_dict.get("response_variable")
+    if response_variable is not None:
+        parsed["response_variable"] = str(response_variable)
+
+    return parsed or None
+
+
+def _extract_summary_stats(summary_stats: Any) -> Dict[str, Any]:
+    stats_dict = _coerce_mat_struct(summary_stats)
+    if not isinstance(stats_dict, dict):
+        return {}
+
+    parsed: Dict[str, Any] = {}
+    for group in ("cumulative_responses", "total_effect_signs", "nonlinear_amplification", "nonlinear_effect_class"):
+        group_value = _coerce_mat_struct(stats_dict.get(group, {}))
+        if isinstance(group_value, dict):
+            parsed[group] = {key: _to_1d_array(value) for key, value in group_value.items()}
+
+    response_variable = stats_dict.get("response_variable")
+    if response_variable is not None:
+        parsed["response_variable"] = str(response_variable)
+
+    return parsed
+
+
 def _process_canonical_shock(shock_artifact: Dict[str, Any]) -> Dict[str, Any]:
     """Process one shock from the current ModelData_IRs.shocks schema."""
     processed = {
         "sectors": {},
+        "summary_stats": {},
         "peak_values_loglin": None,
         "peak_values_determ": None,
         "amplifications": None,
@@ -339,6 +379,7 @@ def _process_canonical_shock(shock_artifact: Dict[str, Any]) -> Dict[str, Any]:
     summary_stats = _coerce_mat_struct(shock_artifact.get("summary_stats", {}))
     if not isinstance(summary_stats, dict):
         summary_stats = {}
+    processed["summary_stats"] = _extract_summary_stats(summary_stats)
 
     peaks = _coerce_mat_struct(summary_stats.get("peaks", {}))
     if not isinstance(peaks, dict):
@@ -402,6 +443,10 @@ def _process_canonical_shock(shock_artifact: Dict[str, Any]) -> Dict[str, Any]:
         aggregate_pf = _extract_aggregate_dict(irf_data.get("aggregate_perfect_foresight"))
         if aggregate_pf is not None:
             sector_entry["aggregate_perfect_foresight"] = aggregate_pf
+
+        cir = _extract_cir_dict(irf_data.get("cir"))
+        if cir is not None:
+            sector_entry["cir"] = cir
 
         processed["sectors"][sector_idx] = sector_entry
 

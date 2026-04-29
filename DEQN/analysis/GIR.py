@@ -10,6 +10,7 @@ from DEQN.analysis.model_hooks import (
     get_states_to_shock,
     prepare_analysis_context,
 )
+from DEQN.analysis.shock_keys import build_shock_key
 
 
 def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
@@ -453,7 +454,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
                             label: gir_analysis_vars_array[:, i] for i, label in enumerate(var_labels)
                         }
 
-                        key = f"{shock_sign}_{shock_size_pct}"
+                        key = build_shock_key(shock_sign, shock_size_pct)
                         gir_results[state_name][key] = {"gir_analysis_variables": gir_analysis_vars_dict}
 
                     # Compute IR from stochastic steady state if requested.
@@ -478,7 +479,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
                         stochss_ir_dict = {label: stochss_ir_array[:, i] for i, label in enumerate(var_labels)}
 
                         # Store with key like "pos_5_stochss", "neg_10_stochss", etc.
-                        stochss_key = f"{shock_sign}_{shock_size_pct}_stochss"
+                        stochss_key = build_shock_key(shock_sign, shock_size_pct, suffix="_stochss")
                         gir_results[state_name][stochss_key] = {"gir_analysis_variables": stochss_ir_dict}
 
         return gir_results

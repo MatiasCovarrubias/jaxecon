@@ -1,9 +1,10 @@
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import jax.numpy as jnp
 import numpy as np
 
+from DEQN.analysis.shock_keys import build_shock_key
 from DEQN.econ_models.RbcProdNet_April2026.aggregation import (
     compute_model_moments_from_dynare_simulation,
     compute_ergodic_prices_from_simulation,
@@ -25,6 +26,71 @@ from DEQN.analysis.welfare_outputs import (
     WELFARE_L_FIXED_AT_DSS_LABEL,
     _compute_counterfactual_welfare_cost_from_sample,
 )
+
+
+def _as_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        arr = np.asarray(value, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    if arr.size == 0:
+        return None
+    scalar = float(arr.ravel()[0])
+    return scalar if np.isfinite(scalar) else None
+
+
+def _safe_corr(x_values: Any, y_values: Any) -> Optional[float]:
+    try:
+        x = np.asarray(x_values, dtype=float).ravel()
+        y = np.asarray(y_values, dtype=float).ravel()
+    except (TypeError, ValueError):
+        return None
+    mask = np.isfinite(x) & np.isfinite(y)
+    if int(mask.sum()) < 2:
+        return None
+    x = x[mask]
+    y = y[mask]
+    if np.nanstd(x) <= 1e-12 or np.nanstd(y) <= 1e-12:
+        return None
+    return float(np.corrcoef(x, y)[0, 1])
+
+
+def _format_table_value(value: Any) -> str:
+    scalar = _as_float(value)
+    if scalar is None:
+        return "--"
+    return f"{scalar:.3f}"
+
+
+def _nanmean_or_none(values: Any) -> Optional[float]:
+    try:
+        arr = np.asarray(values, dtype=float).ravel()
+    except (TypeError, ValueError):
+        return None
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return None
+    return float(np.mean(finite))
+
+
+def _latex_escape(text: str) -> str:
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+    }
+    return "".join(replacements.get(char, char) for char in str(text))
+
+
+def _latex_label_token(text: str) -> str:
+    return "".join(char if char.isalnum() else "_" for char in str(text))
 
 DEFAULT_ANALYSIS_CONFIG = {
     "ergodic_price_aggregation": False,
@@ -395,6 +461,14 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     add_nested_grouped_figure_section(
         "2B. Appendix Aggregate Impulse Responses",
         aggregate_ir_appendix_figures,
+    )
+    add_table_section(
+        "2C. Impulse Response Nonlinearity Summary",
+        [os.path.join(analysis_dir, f"ir_nonlinearity_summary_{analysis_name}.tex")],
+    )
+    add_table_section(
+        "2D. CIR Optimal Attenuation Summary",
+        [os.path.join(irs_dir, f"cir_analysis_{analysis_name}.tex")],
     )
 
     add_figure_section(
@@ -787,6 +861,288 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
     }
 
 
+def _extract_matlab_upstreamness(model_data, fallback_upstreamness):
+    diagnostics = model_data.get("Diagnostics") if isinstance(model_data, dict) else None
+    upstreamness = diagnostics.get("upstreamness") if isinstance(diagnostics, dict) else None
+    if not isinstance(upstreamness, dict):
+        return fallback_upstreamness or {}
+
+    result = {}
+    for source_key, target_key in [
+        ("U_M", "U_M"),
+        ("U_I", "U_I"),
+        ("U_simple", "U_simple"),
+        ("sectoral_shock_std", "shock_volatility"),
+        ("shock_volatility", "shock_volatility"),
+    ]:
+        value = upstreamness.get(source_key)
+        if value is not None and target_key not in result:
+            result[target_key] = np.asarray(value, dtype=float).ravel()
+    for key, value in (fallback_upstreamness or {}).items():
+        result.setdefault(key, value)
+    return result
+
+
+def _get_gir_state_name_for_sector(gir_data, sector_idx, n_sectors):
+    if not gir_data:
+        return None
+    if len(gir_data) != 1:
+        raise ValueError(
+            "CIR analysis expects exactly one nonlinear experiment in gir_data; "
+            f"got {list(gir_data.keys())}."
+        )
+    first_exp_data = next(iter(gir_data.values()), {})
+    for state_name, state_data in first_exp_data.items():
+        state_idx = state_data.get("state_idx") if isinstance(state_data, dict) else None
+        if state_idx in (sector_idx, n_sectors + sector_idx):
+            return state_name
+    for state_idx in (n_sectors + sector_idx, sector_idx):
+        state_name = f"state_{state_idx}"
+        if state_name in first_exp_data:
+            return state_name
+    return None
+
+
+def _resolve_shock_data_by_key(state_data, shock_key):
+    shock_data = state_data.get(shock_key)
+    return shock_data if isinstance(shock_data, dict) else None
+
+
+def _get_global_cir_for_sector(
+    gir_data,
+    *,
+    experiment_name,
+    sector_idx,
+    shock_key,
+    variable_name,
+    n_sectors,
+    max_periods,
+    response_source,
+):
+    exp_data = gir_data.get(experiment_name, {})
+    state_name = _get_gir_state_name_for_sector({experiment_name: exp_data}, sector_idx, n_sectors)
+    if state_name is None:
+        return None
+    state_data = exp_data.get(state_name, {})
+    candidate_key = f"{shock_key}_stochss" if response_source == "IR_stoch_ss" else shock_key
+    shock_data = _resolve_shock_data_by_key(state_data, candidate_key)
+    if not isinstance(shock_data, dict):
+        return None
+    variables = shock_data.get("gir_analysis_variables", {})
+    series = variables.get(variable_name)
+    if series is None:
+        return None
+    arr = np.asarray(series, dtype=float).ravel()
+    if arr.size == 0:
+        return None
+    horizon = min(int(max_periods), arr.size)
+    return float(np.nansum(arr[:horizon]))
+
+
+def _get_matlab_cir_horizon_for_sector(matlab_ir_data, *, shock_key, sector_idx):
+    shock_data = matlab_ir_data.get(shock_key, {})
+    sector_entry = (shock_data.get("sectors", {}) or {}).get(sector_idx, {})
+    if not isinstance(sector_entry, dict):
+        return None
+    for aggregate_key in ("aggregate_perfect_foresight", "aggregate_first_order", "aggregate_second_order"):
+        aggregate = sector_entry.get(aggregate_key, {})
+        if isinstance(aggregate, dict) and aggregate.get("C_exp") is not None:
+            arr = np.asarray(aggregate["C_exp"]).ravel()
+            if arr.size > 0:
+                return int(arr.size)
+    return None
+
+
+def _get_matlab_cir_for_sector(matlab_ir_data, *, shock_key, sector_idx, method):
+    shock_data = matlab_ir_data.get(shock_key, {})
+    sector_entry = (shock_data.get("sectors", {}) or {}).get(sector_idx, {})
+    cir = sector_entry.get("cir", {}) if isinstance(sector_entry, dict) else {}
+    cumulative = cir.get("cumulative_responses", {}) if isinstance(cir, dict) else {}
+    if method in cumulative:
+        return _as_float(cumulative.get(method))
+
+    series_key = {
+        "first_order": "aggregate_first_order",
+        "second_order": "aggregate_second_order",
+        "perfect_foresight": "aggregate_perfect_foresight",
+    }.get(method)
+    aggregate = sector_entry.get(series_key, {}) if isinstance(sector_entry, dict) else {}
+    if isinstance(aggregate, dict) and aggregate.get("C_exp") is not None:
+        return float(np.nansum(np.asarray(aggregate["C_exp"], dtype=float).ravel()))
+    return None
+
+
+def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_data, n_sectors):
+    shock_sizes = get_available_shock_sizes(matlab_ir_data)
+    if not shock_sizes or not gir_data:
+        return None
+    if len(gir_data) != 1:
+        raise ValueError(
+            "CIR analysis expects exactly one nonlinear experiment in gir_data; "
+            f"got {list(gir_data.keys())}."
+        )
+    experiment_name = next(iter(gir_data))
+    max_periods = int(config.get("ir_max_periods", 80))
+    response_source = _resolve_ir_response_source(config)
+    variable_name = "Agg. Consumption"
+
+    rows = []
+    for shock_size in shock_sizes:
+        pos_key = build_shock_key("pos", shock_size)
+        neg_key = build_shock_key("neg", shock_size)
+        global_pos = []
+        global_neg = []
+        pf_pos = []
+        pf_neg = []
+        fo_neg = []
+        fo_pos = []
+        for sector_idx in range(n_sectors):
+            g_pos = _get_global_cir_for_sector(
+                gir_data,
+                experiment_name=experiment_name,
+                sector_idx=sector_idx,
+                shock_key=pos_key,
+                variable_name=variable_name,
+                n_sectors=n_sectors,
+                max_periods=_get_matlab_cir_horizon_for_sector(
+                    matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx
+                )
+                or max_periods,
+                response_source=response_source,
+            )
+            g_neg = _get_global_cir_for_sector(
+                gir_data,
+                experiment_name=experiment_name,
+                sector_idx=sector_idx,
+                shock_key=neg_key,
+                variable_name=variable_name,
+                n_sectors=n_sectors,
+                max_periods=_get_matlab_cir_horizon_for_sector(
+                    matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx
+                )
+                or max_periods,
+                response_source=response_source,
+            )
+            p_pos = _get_matlab_cir_for_sector(
+                matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx, method="perfect_foresight"
+            )
+            p_neg = _get_matlab_cir_for_sector(
+                matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx, method="perfect_foresight"
+            )
+            f_pos = _get_matlab_cir_for_sector(
+                matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx, method="first_order"
+            )
+            f_neg = _get_matlab_cir_for_sector(
+                matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx, method="first_order"
+            )
+            global_pos.append(g_pos)
+            global_neg.append(g_neg)
+            pf_pos.append(p_pos)
+            pf_neg.append(p_neg)
+            fo_pos.append(f_pos)
+            fo_neg.append(f_neg)
+
+        global_pos_arr = np.asarray([np.nan if v is None else v for v in global_pos], dtype=float)
+        global_neg_arr = np.asarray([np.nan if v is None else v for v in global_neg], dtype=float)
+        pf_pos_arr = np.asarray([np.nan if v is None else v for v in pf_pos], dtype=float)
+        pf_neg_arr = np.asarray([np.nan if v is None else v for v in pf_neg], dtype=float)
+        fo_pos_arr = np.asarray([np.nan if v is None else v for v in fo_pos], dtype=float)
+        fo_neg_arr = np.asarray([np.nan if v is None else v for v in fo_neg], dtype=float)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            attenuation_neg = global_neg_arr / pf_neg_arr
+            attenuation_pos = global_pos_arr / pf_pos_arr
+            global_asymmetry = global_neg_arr / global_pos_arr
+            matlab_amp_neg = pf_neg_arr / fo_neg_arr
+            matlab_amp_pos = pf_pos_arr / fo_pos_arr
+            matlab_pf_asymmetry = pf_neg_arr / pf_pos_arr
+
+        rows.append(
+            {
+                "shock_size": shock_size,
+                "values": {
+                    "Global optimal attenuation, negative shocks": _nanmean_or_none(attenuation_neg),
+                    "Global optimal attenuation, positive shocks": _nanmean_or_none(attenuation_pos),
+                    "Global-solution asymmetry": _nanmean_or_none(global_asymmetry),
+                    "MATLAB nonlinear amplification, negative shocks": _nanmean_or_none(matlab_amp_neg),
+                    "MATLAB nonlinear amplification, positive shocks": _nanmean_or_none(matlab_amp_pos),
+                    "MATLAB PF asymmetry": _nanmean_or_none(matlab_pf_asymmetry),
+                    "corr(global negative attenuation, IO upstreamness)": _safe_corr(
+                        attenuation_neg, upstreamness_data.get("U_M")
+                    ),
+                    "corr(global asymmetry, IO upstreamness)": _safe_corr(
+                        global_asymmetry, upstreamness_data.get("U_M")
+                    ),
+                    "corr(global negative attenuation, investment upstreamness)": _safe_corr(
+                        attenuation_neg, upstreamness_data.get("U_I")
+                    ),
+                    "corr(global asymmetry, investment upstreamness)": _safe_corr(
+                        global_asymmetry, upstreamness_data.get("U_I")
+                    ),
+                    "corr(global negative attenuation, sectoral shock volatility)": _safe_corr(
+                        attenuation_neg, upstreamness_data.get("shock_volatility")
+                    ),
+                    "corr(global asymmetry, sectoral shock volatility)": _safe_corr(
+                        global_asymmetry, upstreamness_data.get("shock_volatility")
+                    ),
+                },
+            }
+        )
+    return rows
+
+
+def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source):
+    if not rows:
+        return
+    measure_order = list(rows[0]["values"].keys())
+    with open(save_path, "w") as table_file:
+        table_file.write("\\begin{table}[htbp]\n\\centering\n")
+        table_file.write("\\caption{Cumulative impulse-response analysis}\n")
+        table_file.write(f"\\label{{tab:cir_analysis_{_latex_label_token(analysis_name)}}}\n")
+        table_file.write("\\begin{tabular}{l" + "r" * len(rows) + "}\n\\hline\n")
+        headers = ["Measure"] + [f"{row['shock_size']:g}\\%" for row in rows]
+        table_file.write(" & ".join(_latex_escape(header) for header in headers) + " \\\\\n\\hline\n")
+        for measure in measure_order:
+            values = [_format_table_value(row["values"].get(measure)) for row in rows]
+            table_file.write(_latex_escape(measure) + " & " + " & ".join(values) + " \\\\\n")
+        table_file.write("\\hline\n\\end{tabular}\n")
+        table_file.write(
+            "\\begin{minipage}{0.92\\textwidth}\n\\footnotesize\n"
+            "\\textit{Notes:} CIR is the sum over the displayed IR horizon of the aggregate consumption response. "
+            f"The Python global-solution CIR uses the selected IR source: {_latex_escape(response_source)}. "
+            "MATLAB nonlinear amplification is perfect-foresight CIR divided by first-order CIR. "
+            "Global optimal attenuation is global-solution CIR divided by perfect-foresight CIR. "
+            "Asymmetry ratios divide the negative-shock CIR by the positive-shock CIR. "
+            "Missing MATLAB CIR or diagnostic fields are left blank.\n"
+            "\\end{minipage}\n"
+        )
+        table_file.write("\\end{table}\n")
+
+
+def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postprocess_context):
+    ir_render_context = postprocess_context.get("ir_render_context") if postprocess_context else None
+    if not ir_render_context:
+        return
+    rows = _build_cir_analysis_table(
+        config=config,
+        gir_data=gir_data,
+        matlab_ir_data=ir_render_context["matlab_ir_data"],
+        upstreamness_data=postprocess_context.get("upstreamness_data", {}),
+        n_sectors=econ_model.n_sectors,
+    )
+    if not rows:
+        print("  CIR analysis skipped: no compatible global or MATLAB IR objects found.", flush=True)
+        return
+    output_path = os.path.join(irs_dir, f"cir_analysis_{config['analysis_name']}.tex")
+    _write_cir_analysis_table(
+        rows=rows,
+        save_path=output_path,
+        analysis_name=config["analysis_name"],
+        response_source=_resolve_ir_response_source(config),
+    )
+    print(f"  Saved CIR analysis table: {os.path.basename(output_path)}", flush=True)
+
+
 def prepare_postprocess_analysis(
     *,
     config,
@@ -809,7 +1165,6 @@ def prepare_postprocess_analysis(
     irs_path,
     matlab_common_shock_schedule=None,
 ):
-    del model_data
     n_sectors = econ_model.n_sectors
     analysis_variables_data = dict(analysis_variables_data)
     theoretical_stats: Dict[str, Any] = {}
@@ -933,7 +1288,7 @@ def prepare_postprocess_analysis(
         ergodic_price_aggregation=use_ergodic_prices,
     )
 
-    upstreamness_data = econ_model.upstreamness()
+    upstreamness_data = _extract_matlab_upstreamness(model_data, econ_model.upstreamness())
     ergodic_experiment_labels = [
         label for label, sim_data in raw_simulation_data.items() if sim_data.get("simulation_kind", "ergodic") == "ergodic"
     ]

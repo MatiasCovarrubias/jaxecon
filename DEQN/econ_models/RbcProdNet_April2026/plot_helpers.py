@@ -13,6 +13,8 @@ import numpy as np
 import seaborn as sns
 from scipy.stats import norm
 
+from DEQN.analysis.shock_keys import build_shock_key, format_shock_size_token, parse_shock_size_token
+
 # Plot styling configuration
 sns.set_style("whitegrid")
 palette = "dark"
@@ -234,15 +236,11 @@ def _build_ir_note(
 def _build_sectoral_distribution_note(
     *,
     variable_title: str,
-    experiment_names: list[str],
+    display_labels: list[str],
     source_kind: str,
     include_upstreamness: bool,
 ) -> str:
-    comparison_text = (
-        "Bars compare the displayed experiments sector by sector."
-        if len(experiment_names) > 1
-        else "Bars report the displayed experiment sector by sector."
-    )
+    comparison_text = "Bars report the displayed experiment sector by sector."
     if source_kind == "stochss":
         source_text = (
             "The figure reports the stochastic steady state computed by taking draws from the ergodic distribution, "
@@ -262,11 +260,18 @@ def _build_sectoral_distribution_note(
         )
 
     return (
-        f"{source_text} {comparison_text} The horizontal axis lists sectors sorted by the first displayed "
+        f"{source_text} {comparison_text} The horizontal axis lists sectors sorted by the displayed "
         f"experiment from highest to lowest {variable_title.lower()}. The vertical axis reports log differences "
         "from the deterministic steady state; for small changes, a value of -0.1 means roughly 0.1 percent below "
         f"the deterministic steady state.{upstreamness_text}"
     )
+
+
+def _single_experiment_name(data: Dict[str, Any], context: str) -> str:
+    names = list(data.keys()) if data else []
+    if len(names) != 1:
+        raise ValueError(f"{context} expects exactly one experiment; got {names}.")
+    return names[0]
 
 
 def plot_ergodic_histograms(
@@ -284,8 +289,8 @@ def plot_ergodic_histograms(
     Parameters:
     -----------
     analysis_variables_data : dict
-        Dictionary where keys are experiment names and values are dictionaries mapping
-        variable labels to arrays of values: {exp_name: {var_label: array}}
+        Dictionary where keys are method names and values are dictionaries mapping
+        variable labels to arrays of values: {method_name: {var_label: array}}
     figsize : tuple, optional
         Figure size (width, height) in inches
     save_dir : str, optional
@@ -295,10 +300,10 @@ def plot_ergodic_histograms(
     display_dpi : int, optional
         DPI for display (default 100). Saved figures always use 300 DPI.
     theo_dist_params : dict, optional
-        Theoretical distribution parameters for experiments that should be plotted as
+        Theoretical distribution parameters for methods that should be plotted as
         smooth PDF curves instead of histograms. Format:
-        {experiment_name: {var_label: {"mean": float, "std": float}}}
-        Experiments in this dict will show a smooth normal PDF curve.
+        {method_name: {var_label: {"mean": float, "std": float}}}
+        Methods in this dict will show a smooth normal PDF curve.
     benchmark_order : list[str], optional
         Ordered benchmark labels that should use the same benchmark styling
         convention as the aggregate IR figures.
@@ -307,14 +312,14 @@ def plot_ergodic_histograms(
     --------
     list of (fig, ax) tuples for each analysis variable
     """
-    # Get experiment names from both simulated and theoretical sources
-    experiment_names = list(analysis_variables_data.keys())
+    # Get method names from both simulated and theoretical sources.
+    method_names = list(analysis_variables_data.keys())
     if theo_dist_params is not None:
-        for exp_name in theo_dist_params.keys():
-            if exp_name not in experiment_names:
-                experiment_names.append(exp_name)
+        for method_name in theo_dist_params.keys():
+            if method_name not in method_names:
+                method_names.append(method_name)
 
-    # Extract variable labels that exist in all experiments once theoretical overlays are accounted for
+    # Extract variable labels that exist in all methods once theoretical overlays are accounted for.
     excluded_vars = []
     candidate_vars = []
     for exp_name, exp_data in analysis_variables_data.items():
@@ -329,12 +334,12 @@ def plot_ergodic_histograms(
     for var in candidate_vars:
         exists_in_all = True
         missing_in = []
-        for exp in experiment_names:
-            in_simulation = exp in analysis_variables_data and var in analysis_variables_data[exp]
-            in_theory = theo_dist_params is not None and var in theo_dist_params.get(exp, {})
+        for method_name in method_names:
+            in_simulation = method_name in analysis_variables_data and var in analysis_variables_data[method_name]
+            in_theory = theo_dist_params is not None and var in theo_dist_params.get(method_name, {})
             if not (in_simulation or in_theory):
                 exists_in_all = False
-                missing_in.append(exp)
+                missing_in.append(method_name)
         if exists_in_all:
             var_labels.append(var)
         else:
@@ -348,10 +353,10 @@ def plot_ergodic_histograms(
 
     figures = []
 
-    # Track which experiments have theoretical params (for this function call)
-    theo_experiments = set()
+    # Track which methods have theoretical params for this function call.
+    theo_methods = set()
     if theo_dist_params is not None:
-        theo_experiments = set(theo_dist_params.keys())
+        theo_methods = set(theo_dist_params.keys())
     benchmark_order = benchmark_order or []
     benchmark_style_map = {
         label: _benchmark_style(rank) for rank, label in enumerate(benchmark_order)
@@ -372,18 +377,18 @@ def plot_ergodic_histograms(
         # Create figure
         fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
-        # Plot histogram for each experiment
-        for i, exp_name in enumerate(experiment_names):
-            # Check if this experiment should use theoretical PDF
+        # Plot one line for each method.
+        for i, method_name in enumerate(method_names):
+            # Check if this method should use theoretical PDF.
             use_theo = (
-                exp_name in theo_experiments
+                method_name in theo_methods
                 and theo_dist_params is not None
-                and var_label in theo_dist_params.get(exp_name, {})
+                and var_label in theo_dist_params.get(method_name, {})
             )
 
             if use_theo:
                 # Plot smooth theoretical normal PDF
-                params = theo_dist_params[exp_name][var_label]
+                params = theo_dist_params[method_name][var_label]
                 mean_pct = params["mean"] * 100  # Convert to percentage
                 std_pct = params["std"] * 100  # Convert to percentage
                 if std_pct <= 0:
@@ -393,12 +398,12 @@ def plot_ergodic_histograms(
                 # PDF integrated over bin_width gives probability per bin
                 pdf_values = norm.pdf(x_smooth, loc=mean_pct, scale=std_pct) * bin_width
 
-                style = benchmark_style_map.get(exp_name, _experiment_style(i, "IR_stoch_ss"))
-                ax.plot(x_smooth, pdf_values, label=exp_name, **style)
+                style = benchmark_style_map.get(method_name, _experiment_style(i, "IR_stoch_ss"))
+                ax.plot(x_smooth, pdf_values, label=method_name, **style)
             else:
-                if exp_name not in analysis_variables_data or var_label not in analysis_variables_data[exp_name]:
+                if method_name not in analysis_variables_data or var_label not in analysis_variables_data[method_name]:
                     continue
-                var_values = np.asarray(analysis_variables_data[exp_name][var_label], dtype=float) * 100
+                var_values = np.asarray(analysis_variables_data[method_name][var_label], dtype=float) * 100
                 if var_values.size == 0:
                     continue
                 # Calculate histogram from samples
@@ -406,8 +411,8 @@ def plot_ergodic_histograms(
                 freqs = counts / len(var_values)
 
                 # Plot the frequency line
-                style = benchmark_style_map.get(exp_name, _experiment_style(i, "IR_stoch_ss"))
-                ax.plot(bin_centers, freqs, label=exp_name, **style)
+                style = benchmark_style_map.get(method_name, _experiment_style(i, "IR_stoch_ss"))
+                ax.plot(bin_centers, freqs, label=method_name, **style)
 
         # Add vertical line at deterministic steady state (x=0)
         ax.axvline(x=0, color="black", linestyle="--", linewidth=2, label="Deterministic SS", alpha=0.7)
@@ -489,12 +494,8 @@ def plot_gir_responses(
     --------
     list of (fig, ax) tuples for each state-analysis variable combination
     """
-    # Get experiment names
-    experiment_names = list(gir_data.keys())
-    n_experiments = len(experiment_names)
-
-    # Get first experiment to determine states and variables
-    first_experiment = experiment_names[0]
+    # Get the single experiment to determine states and variables.
+    first_experiment = _single_experiment_name(gir_data, "plot_gir_responses")
     first_exp_data = gir_data[first_experiment]
 
     # Get state names
@@ -555,39 +556,32 @@ def plot_gir_responses(
             # Create figure for this state-analysis variable combination
             fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
-            # Plot for each experiment (if multiple)
-            for j, exp_name in enumerate(experiment_names):
-                state_data = gir_data[exp_name][state_name]
+            state_data = gir_data[first_experiment][state_name]
 
-                # Get GIR data based on structure
-                if shock_config and shock_config in state_data:
-                    gir_analysis_variables = state_data[shock_config]["gir_analysis_variables"]
-                elif "gir_analysis_variables" in state_data:
-                    gir_analysis_variables = state_data["gir_analysis_variables"]
-                else:
-                    continue
+            # Get GIR data based on structure
+            if shock_config and shock_config in state_data:
+                gir_analysis_variables = state_data[shock_config]["gir_analysis_variables"]
+            elif "gir_analysis_variables" in state_data:
+                gir_analysis_variables = state_data["gir_analysis_variables"]
+            else:
+                continue
 
-                if var_label not in gir_analysis_variables:
-                    continue
+            if var_label not in gir_analysis_variables:
+                continue
 
-                # Convert to percentages
-                response_pct = gir_analysis_variables[var_label] * 100
+            # Convert to percentages
+            response_pct = gir_analysis_variables[var_label] * 100
 
-                # Create label
-                if n_experiments > 1:
-                    label = exp_name
-                    style = _experiment_style(j, "IR_stoch_ss")
-                else:
-                    label = f"{state_name} Response"
-                    style = _experiment_style(0, "IR_stoch_ss")
+            label = f"{state_name} Response"
+            style = _experiment_style(0, "IR_stoch_ss")
 
-                # Plot the impulse response
-                ax.plot(
-                    time_periods[: len(response_pct)],
-                    response_pct,
-                    label=label,
-                    **style,
-                )
+            # Plot the impulse response
+            ax.plot(
+                time_periods[: len(response_pct)],
+                response_pct,
+                label=label,
+                **style,
+            )
 
             # Add horizontal line at zero
             ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
@@ -595,10 +589,6 @@ def plot_gir_responses(
             # Styling
             ax.set_xlabel("Time Periods", fontweight="bold", fontsize=MEDIUM_SIZE)
             ax.set_ylabel(f"{var_label} (% change)", fontweight="bold", fontsize=MEDIUM_SIZE)
-
-            # Legend
-            if n_experiments > 1:
-                ax.legend(frameon=True, framealpha=0.9, loc="best", fontsize=SMALL_SIZE)
 
             # Grid
             ax.grid(True, alpha=0.3)
@@ -682,10 +672,7 @@ def plot_combined_impulse_responses(
     """
     from DEQN.analysis.matlab_irs import get_matlab_ir_for_analysis_variable
 
-    experiment_names = list(gir_data.keys())
-    n_experiments = len(experiment_names)
-
-    first_experiment = experiment_names[0]
+    first_experiment = _single_experiment_name(gir_data, "plot_combined_impulse_responses")
     first_exp_data = gir_data[first_experiment]
 
     all_state_names = list(first_exp_data.keys())
@@ -735,8 +722,8 @@ def plot_combined_impulse_responses(
             for shock_size in shock_sizes_to_plot:
                 fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
-                pos_key = f"pos_{shock_size}"
-                neg_key = f"neg_{shock_size}"
+                pos_key = build_shock_key("pos", shock_size)
+                neg_key = build_shock_key("neg", shock_size)
 
                 matlab_irs_pos = get_matlab_ir_for_analysis_variable(matlab_ir_data, sector_idx, var_label, max_periods)
                 matlab_irs_neg = get_matlab_ir_for_analysis_variable(matlab_ir_data, sector_idx, var_label, max_periods)
@@ -782,21 +769,16 @@ def plot_combined_impulse_responses(
                             **_benchmark_style(1),
                         )
 
-                for j, exp_name in enumerate(experiment_names):
-                    if state_name in gir_data[exp_name]:
-                        gir_analysis_variables = gir_data[exp_name][state_name]["gir_analysis_variables"]
-                        if var_label in gir_analysis_variables:
-                            response_pct = gir_analysis_variables[var_label][:max_periods] * 100
-
-                            label = f"GIR ({exp_name})"
-                            color = colors[j % len(colors)]
-
-                            ax.plot(
-                                time_periods[: len(response_pct)],
-                                response_pct,
-                            label=label,
-                            **_experiment_style(j, "GIR"),
-                            )
+                if state_name in gir_data[first_experiment]:
+                    gir_analysis_variables = gir_data[first_experiment][state_name]["gir_analysis_variables"]
+                    if var_label in gir_analysis_variables:
+                        response_pct = gir_analysis_variables[var_label][:max_periods] * 100
+                        ax.plot(
+                            time_periods[: len(response_pct)],
+                            response_pct,
+                            label="GIR",
+                            **_experiment_style(0, "GIR"),
+                        )
 
                 ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
 
@@ -886,8 +868,7 @@ def plot_ir_comparison_panel(
 
     fig, axes = plt.subplots(n_vars, n_sizes, figsize=figsize, dpi=display_dpi, squeeze=False)
 
-    experiment_names = list(gir_data.keys())
-    first_experiment = experiment_names[0]
+    first_experiment = _single_experiment_name(gir_data, "plot_sector_ir_matrix")
     first_exp_data = gir_data[first_experiment]
     all_state_names = list(first_exp_data.keys())
 
@@ -918,8 +899,8 @@ def plot_ir_comparison_panel(
         for j, shock_size in enumerate(shock_sizes):
             ax = axes[i, j]
 
-            pos_key = f"pos_{shock_size}"
-            neg_key = f"neg_{shock_size}"
+            pos_key = build_shock_key("pos", shock_size)
+            neg_key = build_shock_key("neg", shock_size)
 
             matlab_irs = get_matlab_ir_for_analysis_variable(matlab_ir_data, sector_idx, var_label, max_periods)
 
@@ -964,18 +945,17 @@ def plot_ir_comparison_panel(
                         alpha=0.7,
                     )
 
-            for k, exp_name in enumerate(experiment_names):
-                if state_name in gir_data[exp_name]:
-                    gir_vars = gir_data[exp_name][state_name]["gir_analysis_variables"]
-                    if var_label in gir_vars:
-                        response = gir_vars[var_label][:max_periods] * 100
-                        ax.plot(
-                            time_periods[: len(response)],
-                            response,
-                            color=colors[k % len(colors)],
-                            linewidth=2,
-                            alpha=0.9,
-                        )
+            if state_name in gir_data[first_experiment]:
+                gir_vars = gir_data[first_experiment][state_name]["gir_analysis_variables"]
+                if var_label in gir_vars:
+                    response = gir_vars[var_label][:max_periods] * 100
+                    ax.plot(
+                        time_periods[: len(response)],
+                        response,
+                        color=colors[0],
+                        linewidth=2,
+                        alpha=0.9,
+                    )
 
             ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=0.5)
             ax.grid(True, alpha=0.2)
@@ -1001,8 +981,7 @@ def plot_ir_comparison_panel(
         Line2D([0], [0], color=colors[3], linewidth=1.5, linestyle="-.", label="Perfect Foresight (-)"),
     ]
 
-    for k, exp_name in enumerate(experiment_names):
-        legend_elements.append(Line2D([0], [0], color=colors[k % len(colors)], linewidth=2, label=f"GIR ({exp_name})"))
+    legend_elements.append(Line2D([0], [0], color=colors[0], linewidth=2, label="GIR"))
 
     fig.legend(
         handles=legend_elements,
@@ -1182,18 +1161,12 @@ def plot_sector_ir_by_shock_size(
         for method in resolved_benchmark_methods
     ]
 
-    def _format_shock_size_token(value) -> str:
-        rounded = round(float(value), 8)
-        if float(rounded).is_integer():
-            return str(int(round(rounded)))
-        return f"{rounded:.8f}".rstrip("0").rstrip(".")
-
     def _resolve_requested_shock_keys(ir_lookup, sign_prefix: str, requested_size) -> list[str]:
         if not ir_lookup:
             return []
 
-        requested_token = _format_shock_size_token(requested_size)
-        exact_key = f"{sign_prefix}_{requested_token}"
+        requested_token = format_shock_size_token(requested_size)
+        exact_key = build_shock_key(sign_prefix, requested_size)
         if exact_key in ir_lookup:
             return [exact_key]
 
@@ -1202,9 +1175,8 @@ def plot_sector_ir_by_shock_size(
             if not key.startswith(f"{sign_prefix}_"):
                 continue
             suffix = key[len(sign_prefix) + 1 :]
-            try:
-                key_value = float(suffix)
-            except ValueError:
+            key_value = parse_shock_size_token(suffix)
+            if key_value is None:
                 continue
             if abs(key_value - float(requested_size)) <= 1e-6:
                 numeric_matches.append(key)
@@ -1221,9 +1193,9 @@ def plot_sector_ir_by_shock_size(
 
     fig, axes = plt.subplots(n_sizes, n_cols, figsize=figsize, dpi=display_dpi, sharex=True, squeeze=False)
 
-    experiment_names = list(gir_data.keys()) if gir_data else []
+    experiment_name = _single_experiment_name(gir_data, "plot_sector_ir_by_shock_size") if gir_data else None
     distinguish_response_kinds = False
-    first_exp_data = gir_data[experiment_names[0]] if experiment_names else {}
+    first_exp_data = gir_data[experiment_name] if experiment_name else {}
     all_state_names = list(first_exp_data.keys()) if first_exp_data else []
 
     state_name = None
@@ -1247,10 +1219,10 @@ def plot_sector_ir_by_shock_size(
         ax_neg = axes[j, 0]
         ax_pos = axes[j, 1] if not negative_only else None
 
-        pos_key = f"pos_{shock_size}"
-        neg_key = f"neg_{shock_size}"
-        pos_stochss_key = f"pos_{shock_size}_stochss"
-        neg_stochss_key = f"neg_{shock_size}_stochss"
+        pos_key = build_shock_key("pos", shock_size)
+        neg_key = build_shock_key("neg", shock_size)
+        pos_stochss_key = build_shock_key("pos", shock_size, suffix="_stochss")
+        neg_stochss_key = build_shock_key("neg", shock_size, suffix="_stochss")
 
         skip_initial_matlab = variable_to_plot != "Kj"
         if ergodic_price_aggregation and policies_ss is not None and P_ergodic is not None:
@@ -1359,105 +1331,61 @@ def plot_sector_ir_by_shock_size(
                 f"Available sectors (python 0-based): {available_sector_indices}"
             )
 
-        for k, exp_name in enumerate(experiment_names):
-            if state_name and state_name in gir_data[exp_name]:
-                state_gir_data = gir_data[exp_name][state_name]
+        if state_name and experiment_name and state_name in gir_data[experiment_name]:
+            state_gir_data = gir_data[experiment_name][state_name]
+            if response_source == "GIR":
+                pos_response_key = pos_key
+                neg_response_key = neg_key
+            else:
+                pos_response_key = pos_stochss_key
+                neg_response_key = neg_stochss_key
 
-                if response_source == "GIR" and pos_key in state_gir_data:
-                    if not negative_only and ax_pos is not None:
-                        gir_vars_pos = state_gir_data[pos_key].get("gir_analysis_variables", {})
-                        if variable_to_plot in gir_vars_pos:
-                            response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
-                            _print_global_consumption_ir(
-                                experiment_name=exp_name,
-                                sign_label="positive",
-                                shock_size_value=shock_size,
-                                series=response_pos,
-                            )
-                            style = _experiment_style(k, "GIR")
-                            _plot_line(
-                                ax_pos,
-                                response_pos,
-                                color=style["color"],
-                                linewidth=style["linewidth"],
-                                linestyle=style["linestyle"],
-                                marker=style["marker"],
-                                alpha=style["alpha"],
-                            )
+            if not negative_only and ax_pos is not None and pos_response_key in state_gir_data:
+                gir_vars_pos = state_gir_data[pos_response_key].get("gir_analysis_variables", {})
+                if variable_to_plot in gir_vars_pos:
+                    response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
+                    _print_global_consumption_ir(
+                        experiment_name=experiment_name,
+                        sign_label="positive",
+                        shock_size_value=shock_size,
+                        series=response_pos,
+                    )
+                    style = _experiment_style(0, response_source)
+                    _plot_line(
+                        ax_pos,
+                        response_pos,
+                        color=style["color"],
+                        linewidth=style["linewidth"],
+                        linestyle=style["linestyle"],
+                        marker=style["marker"],
+                        alpha=style["alpha"],
+                    )
 
-                if response_source == "GIR" and neg_key in state_gir_data:
-                    gir_vars_neg = state_gir_data[neg_key].get("gir_analysis_variables", {})
-                    if variable_to_plot in gir_vars_neg:
-                        response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
-                        _print_global_consumption_ir(
-                            experiment_name=exp_name,
-                            sign_label="negative",
-                            shock_size_value=shock_size,
-                            series=response_neg,
-                        )
-                        style = _experiment_style(k, "GIR")
-                        _plot_line(
-                            ax_neg,
-                            response_neg,
-                            color=style["color"],
-                            linewidth=style["linewidth"],
-                            linestyle=style["linestyle"],
-                            marker=style["marker"],
-                            alpha=style["alpha"],
-                            label=(
-                                _format_solution_ir_label(exp_name, "GIR", distinguish_response_kinds)
-                                if j == 0
-                                else None
-                            ),
-                        )
-
-                if response_source == "IR_stoch_ss" and pos_stochss_key in state_gir_data:
-                    if not negative_only and ax_pos is not None:
-                        gir_vars_pos_stochss = state_gir_data[pos_stochss_key].get("gir_analysis_variables", {})
-                        if variable_to_plot in gir_vars_pos_stochss:
-                            response_pos_stochss = gir_vars_pos_stochss[variable_to_plot][:max_periods] * 100
-                            _print_global_consumption_ir(
-                                experiment_name=exp_name,
-                                sign_label="positive",
-                                shock_size_value=shock_size,
-                                series=response_pos_stochss,
-                            )
-                            style = _experiment_style(k, "IR_stoch_ss")
-                            _plot_line(
-                                ax_pos,
-                                response_pos_stochss,
-                                color=style["color"],
-                                linewidth=style["linewidth"],
-                                linestyle=style["linestyle"],
-                                marker=style["marker"],
-                                alpha=style["alpha"],
-                            )
-
-                if response_source == "IR_stoch_ss" and neg_stochss_key in state_gir_data:
-                    gir_vars_neg_stochss = state_gir_data[neg_stochss_key].get("gir_analysis_variables", {})
-                    if variable_to_plot in gir_vars_neg_stochss:
-                        response_neg_stochss = gir_vars_neg_stochss[variable_to_plot][:max_periods] * 100
-                        _print_global_consumption_ir(
-                            experiment_name=exp_name,
-                            sign_label="negative",
-                            shock_size_value=shock_size,
-                            series=response_neg_stochss,
-                        )
-                        style = _experiment_style(k, "IR_stoch_ss")
-                        _plot_line(
-                            ax_neg,
-                            response_neg_stochss,
-                            color=style["color"],
-                            linewidth=style["linewidth"],
-                            linestyle=style["linestyle"],
-                            marker=style["marker"],
-                            alpha=style["alpha"],
-                            label=(
-                                _format_solution_ir_label(exp_name, "IR_stoch_ss", distinguish_response_kinds)
-                                if j == 0
-                                else None
-                            ),
-                        )
+            if neg_response_key in state_gir_data:
+                gir_vars_neg = state_gir_data[neg_response_key].get("gir_analysis_variables", {})
+                if variable_to_plot in gir_vars_neg:
+                    response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
+                    _print_global_consumption_ir(
+                        experiment_name=experiment_name,
+                        sign_label="negative",
+                        shock_size_value=shock_size,
+                        series=response_neg,
+                    )
+                    style = _experiment_style(0, response_source)
+                    _plot_line(
+                        ax_neg,
+                        response_neg,
+                        color=style["color"],
+                        linewidth=style["linewidth"],
+                        linestyle=style["linestyle"],
+                        marker=style["marker"],
+                        alpha=style["alpha"],
+                        label=(
+                            _format_solution_ir_label(experiment_name, response_source, distinguish_response_kinds)
+                            if j == 0
+                            else None
+                        ),
+                    )
 
         if row_abs_max <= 0 or not np.isfinite(row_abs_max):
             row_abs_max = 0.1
@@ -1613,39 +1541,29 @@ def plot_sectoral_capital_stochss(
     """
     n_sectors = econ_model.n_sectors
     sector_labels = econ_model.labels
-    experiment_names = list(stochastic_ss_states.keys())
-    n_experiments = len(experiment_names)
+    experiment_name = _single_experiment_name(stochastic_ss_states, "plot_sectoral_capital_stochss")
 
-    # Get sectoral capital for each experiment
-    experiment_capital = {}
-    for exp_name in experiment_names:
-        stoch_ss_state = stochastic_ss_states[exp_name]
-        experiment_capital[exp_name] = stoch_ss_state[:n_sectors]
+    stoch_ss_state = stochastic_ss_states[experiment_name]
+    sectoral_capital = stoch_ss_state[:n_sectors]
 
-    # Sort by first experiment's capital values
-    first_exp = experiment_names[0]
-    sorted_indices = np.argsort(experiment_capital[first_exp])[::-1]
+    sorted_indices = np.argsort(sectoral_capital)[::-1]
     sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
 
     fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
     x = np.arange(n_sectors)
-    bar_width = 0.8 / n_experiments
+    bar_width = 0.8
 
-    for i, exp_name in enumerate(experiment_names):
-        sorted_capital = experiment_capital[exp_name][sorted_indices]
-        offset = (i - n_experiments / 2 + 0.5) * bar_width
-
-        ax.bar(
-            x + offset,
-            sorted_capital * 100,
-            bar_width,
-            label=exp_name,
-            color=colors[i % len(colors)],
-            alpha=0.9,
-            edgecolor="black",
-            linewidth=0.5,
-        )
+    sorted_capital = sectoral_capital[sorted_indices]
+    ax.bar(
+        x,
+        sorted_capital * 100,
+        bar_width,
+        color=colors[0],
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.5,
+    )
 
     ax.set_xticks(x)
     ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
@@ -1654,8 +1572,6 @@ def plot_sectoral_capital_stochss(
 
     ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
     ax.set_ylabel("Stochastic SS Capital (% Dev. from Deterministic SS)", fontweight="bold", fontsize=MEDIUM_SIZE)
-
-    ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
 
     ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
 
@@ -1836,8 +1752,7 @@ def plot_sectoral_variable_stochss(
 
     n_sectors = econ_model.n_sectors
     sector_labels = econ_model.labels
-    experiment_names = list(stochastic_ss_policies.keys())
-    n_experiments = len(experiment_names)
+    experiment_name = _single_experiment_name(stochastic_ss_policies, "plot_sectoral_variable_stochss")
 
     # Variable name mapping
     variable_info = {
@@ -1855,39 +1770,30 @@ def plot_sectoral_variable_stochss(
     idx_start = var_info["index_start"]
     idx_end = idx_start + n_sectors
 
-    # Get sectoral variable for each experiment
-    experiment_values = {}
-    for exp_name in experiment_names:
-        if var_info["source"] == "state":
-            data = stochastic_ss_states[exp_name]
-        else:
-            data = stochastic_ss_policies[exp_name]
-        experiment_values[exp_name] = data[idx_start:idx_end]
+    if var_info["source"] == "state":
+        data = stochastic_ss_states[experiment_name]
+    else:
+        data = stochastic_ss_policies[experiment_name]
+    sectoral_values = data[idx_start:idx_end]
 
-    # Sort by first experiment's values
-    first_exp = experiment_names[0]
-    sorted_indices = np.argsort(experiment_values[first_exp])[::-1]
+    sorted_indices = np.argsort(sectoral_values)[::-1]
     sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
 
     fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
     x = np.arange(n_sectors)
-    bar_width = 0.8 / n_experiments
+    bar_width = 0.8
 
-    for i, exp_name in enumerate(experiment_names):
-        sorted_values = experiment_values[exp_name][sorted_indices]
-        offset = (i - n_experiments / 2 + 0.5) * bar_width
-
-        ax.bar(
-            x + offset,
-            sorted_values * 100,
-            bar_width,
-            label=exp_name,
-            color=colors[i % len(colors)],
-            alpha=0.9,
-            edgecolor="black",
-            linewidth=0.5,
-        )
+    sorted_values = sectoral_values[sorted_indices]
+    ax.bar(
+        x,
+        sorted_values * 100,
+        bar_width,
+        color=colors[0],
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.5,
+    )
 
     ax.set_xticks(x)
     ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
@@ -1904,20 +1810,12 @@ def plot_sectoral_variable_stochss(
         U_M = np.array(upstreamness_data["U_M"])
         U_I = np.array(upstreamness_data["U_I"])
 
-        # Build correlation text for each experiment
-        corr_lines = []
-        for exp_name in experiment_names:
-            values = np.array(experiment_values[exp_name])
-            corr_M, p_M = stats.pearsonr(values, U_M)
-            corr_I, p_I = stats.pearsonr(values, U_I)
-            sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
-            sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-            if n_experiments > 1:
-                corr_lines.append(f"{exp_name}: ρ(IO)={corr_M:.2f}{sig_M}, ρ(Inv)={corr_I:.2f}{sig_I}")
-            else:
-                corr_lines.append(f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}")
-
-        corr_text = "\n".join(corr_lines)
+        values = np.array(sectoral_values)
+        corr_M, p_M = stats.pearsonr(values, U_M)
+        corr_I, p_I = stats.pearsonr(values, U_I)
+        sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
+        sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
+        corr_text = f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
@@ -1929,9 +1827,6 @@ def plot_sectoral_variable_stochss(
             linespacing=1.2,
             bbox=dict(boxstyle="round,pad=0.55", facecolor="white", alpha=0.88, edgecolor="gray"),
         )
-
-    if n_experiments > 1:
-        ax.legend(frameon=True, framealpha=0.9, loc="upper left", fontsize=SMALL_SIZE)
 
     ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
 
@@ -1951,7 +1846,7 @@ def plot_sectoral_variable_stochss(
         save_path,
         _build_sectoral_distribution_note(
             variable_title=var_info["title"],
-            experiment_names=experiment_names,
+            display_labels=[experiment_name],
             source_kind="stochss",
             include_upstreamness=upstreamness_data is not None,
         ),
@@ -1976,7 +1871,7 @@ def plot_sectoral_variable_ergodic(
     Create publication-quality bar graph of a sectoral variable from the ergodic distribution.
 
     This plot shows the sectoral distribution of the ergodic mean (time-average from simulation)
-    of a variable. Multiple experiments are shown with different bar colors on the same plot.
+    of a variable for the single analyzed experiment.
 
     Parameters:
     -----------
@@ -2008,8 +1903,7 @@ def plot_sectoral_variable_ergodic(
 
     n_sectors = econ_model.n_sectors
     sector_labels = econ_model.labels
-    experiment_names = list(raw_simulation_data.keys())
-    n_experiments = len(experiment_names)
+    experiment_name = _single_experiment_name(raw_simulation_data, "plot_sectoral_variable_ergodic")
 
     # Variable name mapping
     variable_info = {
@@ -2027,40 +1921,30 @@ def plot_sectoral_variable_ergodic(
     idx_start = var_info["index_start"]
     idx_end = idx_start + n_sectors
 
-    # Get ergodic mean of sectoral variable for each experiment
-    experiment_values = {}
-    for exp_name in experiment_names:
-        if var_info["source"] == "state":
-            data = raw_simulation_data[exp_name]["simul_obs"]
-        else:
-            data = raw_simulation_data[exp_name]["simul_policies"]
-        # Compute time-average (ergodic mean)
-        experiment_values[exp_name] = np.mean(data[:, idx_start:idx_end], axis=0)
+    if var_info["source"] == "state":
+        data = raw_simulation_data[experiment_name]["simul_obs"]
+    else:
+        data = raw_simulation_data[experiment_name]["simul_policies"]
+    sectoral_values = np.mean(data[:, idx_start:idx_end], axis=0)
 
-    # Sort by first experiment's values
-    first_exp = experiment_names[0]
-    sorted_indices = np.argsort(experiment_values[first_exp])[::-1]
+    sorted_indices = np.argsort(sectoral_values)[::-1]
     sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
 
     fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
 
     x = np.arange(n_sectors)
-    bar_width = 0.8 / n_experiments
+    bar_width = 0.8
 
-    for i, exp_name in enumerate(experiment_names):
-        sorted_values = experiment_values[exp_name][sorted_indices]
-        offset = (i - n_experiments / 2 + 0.5) * bar_width
-
-        ax.bar(
-            x + offset,
-            sorted_values * 100,
-            bar_width,
-            label=exp_name,
-            color=colors[i % len(colors)],
-            alpha=0.9,
-            edgecolor="black",
-            linewidth=0.5,
-        )
+    sorted_values = sectoral_values[sorted_indices]
+    ax.bar(
+        x,
+        sorted_values * 100,
+        bar_width,
+        color=colors[0],
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.5,
+    )
 
     ax.set_xticks(x)
     ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
@@ -2077,20 +1961,12 @@ def plot_sectoral_variable_ergodic(
         U_M = np.array(upstreamness_data["U_M"])
         U_I = np.array(upstreamness_data["U_I"])
 
-        # Build correlation text for each experiment
-        corr_lines = []
-        for exp_name in experiment_names:
-            values = np.array(experiment_values[exp_name])
-            corr_M, p_M = stats.pearsonr(values, U_M)
-            corr_I, p_I = stats.pearsonr(values, U_I)
-            sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
-            sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-            if n_experiments > 1:
-                corr_lines.append(f"{exp_name}: ρ(IO)={corr_M:.2f}{sig_M}, ρ(Inv)={corr_I:.2f}{sig_I}")
-            else:
-                corr_lines.append(f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}")
-
-        corr_text = "\n".join(corr_lines)
+        values = np.array(sectoral_values)
+        corr_M, p_M = stats.pearsonr(values, U_M)
+        corr_I, p_I = stats.pearsonr(values, U_I)
+        sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
+        sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
+        corr_text = f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
@@ -2102,9 +1978,6 @@ def plot_sectoral_variable_ergodic(
             linespacing=1.2,
             bbox=dict(boxstyle="round,pad=0.55", facecolor="white", alpha=0.88, edgecolor="gray"),
         )
-
-    if n_experiments > 1:
-        ax.legend(frameon=True, framealpha=0.9, loc="upper left", fontsize=SMALL_SIZE)
 
     ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
 
@@ -2124,7 +1997,7 @@ def plot_sectoral_variable_ergodic(
         save_path,
         _build_sectoral_distribution_note(
             variable_title=var_info["title"],
-            experiment_names=experiment_names,
+            display_labels=[experiment_name],
             source_kind="ergodic",
             include_upstreamness=upstreamness_data is not None,
         ),
@@ -2178,9 +2051,7 @@ def plot_gir_heatmap(
     --------
     fig, ax : matplotlib figure and axis objects
     """
-    # Get experiment names (assuming single experiment for heatmap)
-    experiment_names = list(gir_data.keys())
-    first_experiment = experiment_names[0]
+    first_experiment = _single_experiment_name(gir_data, "plot_gir_heatmap")
     exp_data = gir_data[first_experiment]
 
     # Get all sector names and their responses

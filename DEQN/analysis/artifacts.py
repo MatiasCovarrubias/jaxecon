@@ -43,22 +43,30 @@ def _write_csv(path: str, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
     print(f"Saved: {path}")
 
 
-def _write_aggregate_series(path: str, variables: dict[str, Any]) -> None:
-    arrays = {label: np.asarray(values).reshape(-1) for label, values in variables.items()}
-    if not arrays:
-        return
-    max_len = max(values.shape[0] for values in arrays.values())
-    fieldnames = ["period", *arrays.keys()]
+def _array_mean_sd(values: Any) -> tuple[np.ndarray, np.ndarray]:
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 0:
+        arr = arr.reshape(1)
+    if arr.ndim == 1:
+        return np.asarray([float(np.nanmean(arr))]), np.asarray([float(np.nanstd(arr, ddof=1))])
+    return np.nanmean(arr, axis=0), np.nanstd(arr, axis=0, ddof=1)
+
+
+def _write_array_moments(path: str, arrays: dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", newline="") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-        writer.writeheader()
-        for idx in range(max_len):
-            row = {"period": idx}
-            for label, values in arrays.items():
-                row[label] = float(values[idx]) if idx < values.shape[0] else ""
-            writer.writerow(row)
-    print(f"Saved: {path}")
+    rows = []
+    for group_name, values in arrays.items():
+        mean_values, sd_values = _array_mean_sd(values)
+        for idx, (mean_value, sd_value) in enumerate(zip(mean_values.ravel(), sd_values.ravel())):
+            rows.append(
+                {
+                    "group": group_name,
+                    "index": idx,
+                    "mean": float(mean_value),
+                    "sd": float(sd_value),
+                }
+            )
+    _write_csv(path, rows, ["group", "index", "mean", "sd"])
 
 
 def save_analysis_artifacts(
@@ -100,13 +108,8 @@ def save_analysis_artifacts(
         if sim_data.get("simul_policies") is not None:
             arrays["policies"] = np.asarray(sim_data["simul_policies"])
         if arrays:
-            npz_path = os.path.join(artifacts_dir, f"simulation_{safe_method}_{analysis_name}.npz")
-            np.savez_compressed(npz_path, **arrays)
-            print(f"Saved: {npz_path}")
-
-    for method, variables in analysis_variables_data.items():
-        aggregates_path = os.path.join(simulation_dir, f"aggregates_{_safe_name(method)}_{analysis_name}.csv")
-        _write_aggregate_series(aggregates_path, variables)
+            moments_path = os.path.join(artifacts_dir, f"simulation_moments_{safe_method}_{analysis_name}.csv")
+            _write_array_moments(moments_path, arrays)
 
     welfare_path = os.path.join(analysis_dir, f"welfare_{analysis_name}.csv")
     welfare_rows = [

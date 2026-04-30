@@ -13,7 +13,7 @@ import numpy as np
 import seaborn as sns
 from scipy.stats import norm
 
-from DEQN.analysis.shock_keys import build_shock_key, format_shock_size_token, parse_shock_size_token
+from DEQN.analysis.shock_keys import build_shock_key, parse_shock_size_token
 
 # Plot styling configuration
 sns.set_style("whitegrid")
@@ -1034,6 +1034,7 @@ def plot_sector_ir_by_shock_size(
     Pk_ergodic: Optional[np.ndarray] = None,
     state_ss: Optional[np.ndarray] = None,
     ergodic_price_aggregation: bool = False,
+    show_plot: bool = True,
 ):
     """
     Create a figure with one row per shock size and two columns (negative / positive shock).
@@ -1165,7 +1166,6 @@ def plot_sector_ir_by_shock_size(
         if not ir_lookup:
             return []
 
-        requested_token = format_shock_size_token(requested_size)
         exact_key = build_shock_key(sign_prefix, requested_size)
         if exact_key in ir_lookup:
             return [exact_key]
@@ -1500,6 +1500,11 @@ def plot_sector_ir_by_shock_size(
             ),
         )
         _print_saved_file(save_path, indent="      ")
+
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
 
     return fig, axes
 

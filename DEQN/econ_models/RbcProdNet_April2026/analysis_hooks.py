@@ -92,6 +92,37 @@ def _latex_escape(text: str) -> str:
 def _latex_label_token(text: str) -> str:
     return "".join(char if char.isalnum() else "_" for char in str(text))
 
+
+def _coerce_struct(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {key: _coerce_struct(value) for key, value in obj.items()}
+    if isinstance(obj, np.void) and obj.dtype.names:
+        return {name: _coerce_struct(obj[name]) for name in obj.dtype.names}
+    if isinstance(obj, np.ndarray):
+        if obj.dtype.names:
+            return [_coerce_struct(value) for value in obj.ravel()]
+        if obj.dtype == object:
+            return [_coerce_struct(value) for value in obj.ravel()]
+        return obj
+    field_names = getattr(obj, "_fieldnames", None)
+    if field_names:
+        return {name: _coerce_struct(getattr(obj, name)) for name in field_names}
+    return obj
+
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    coerced = _coerce_struct(value)
+    return coerced if isinstance(coerced, dict) else {}
+
+
+def _as_dict_list(value: Any) -> list[Dict[str, Any]]:
+    coerced = _coerce_struct(value)
+    if isinstance(coerced, dict):
+        return [coerced]
+    if isinstance(coerced, list):
+        return [item for item in coerced if isinstance(item, dict)]
+    return []
+
 DEFAULT_ANALYSIS_CONFIG = {
     "ergodic_price_aggregation": False,
 }
@@ -272,6 +303,9 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     existing_subfigure_groups = helpers["existing_subfigure_groups"]
 
     analysis_name = config.get("analysis_name") or "analysis"
+    aggregate_irs_dir = os.path.join(irs_dir, "IR_aggregate")
+    sectoral_irs_dir = os.path.join(irs_dir, "IR_sectoral")
+    ir_tables_dir = os.path.join(irs_dir, "IR_tables")
     sections = []
 
     def add_table_section(title, tex_paths):
@@ -351,7 +385,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     def _aggregate_ir_largest_negative_path(variable_name, safe_sector):
         safe_variable = make_safe_plot_label(variable_name)
         return analysis_named_path(
-            irs_dir,
+            aggregate_irs_dir,
             f"IR_{safe_variable}_{safe_sector}_largest_negative",
             analysis_name,
             ".png",
@@ -398,7 +432,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
             )
             aggregate_ir_figures.append(
                 build_simple_figure_spec(
-                    analysis_named_path(irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
+                    analysis_named_path(aggregate_irs_dir, f"IR_{safe_variable}_{safe_sector}", analysis_name, ".png"),
                     f"Aggregate {caption_label(figure_caption)} response to a TFP shock in {sector_label}.",
                     note_text=(
                         f"{shock_layout_text}"
@@ -468,7 +502,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     )
     add_table_section(
         "2D. CIR Optimal Attenuation Summary",
-        [os.path.join(irs_dir, f"cir_analysis_{analysis_name}.tex")],
+        [os.path.join(ir_tables_dir, f"cir_analysis_{analysis_name}.tex")],
     )
 
     add_figure_section(
@@ -606,7 +640,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                 subfigures.append(
                     {
                         "path": analysis_named_path(
-                            irs_dir,
+                            sectoral_irs_dir,
                             f"IR_{safe_variable}_{safe_sector}",
                             analysis_name,
                             ".png",
@@ -862,8 +896,9 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
 
 
 def _extract_matlab_upstreamness(model_data, fallback_upstreamness):
-    diagnostics = model_data.get("Diagnostics") if isinstance(model_data, dict) else None
-    upstreamness = diagnostics.get("upstreamness") if isinstance(diagnostics, dict) else None
+    model_data = _as_dict(model_data)
+    diagnostics = _as_dict(model_data.get("Diagnostics") or model_data.get("diagnostics"))
+    upstreamness = _as_dict(diagnostics.get("upstreamness"))
     if not isinstance(upstreamness, dict):
         return fallback_upstreamness or {}
 
@@ -874,6 +909,7 @@ def _extract_matlab_upstreamness(model_data, fallback_upstreamness):
         ("U_simple", "U_simple"),
         ("sectoral_shock_std", "shock_volatility"),
         ("shock_volatility", "shock_volatility"),
+        ("sigma_A", "shock_volatility"),
     ]:
         value = upstreamness.get(source_key)
         if value is not None and target_key not in result:
@@ -881,6 +917,21 @@ def _extract_matlab_upstreamness(model_data, fallback_upstreamness):
     for key, value in (fallback_upstreamness or {}).items():
         result.setdefault(key, value)
     return result
+
+
+def _extract_matlab_irf_breakdown_rows(model_data) -> list[Dict[str, Any]]:
+    model_data = _as_dict(model_data)
+    diagnostics = _as_dict(model_data.get("Diagnostics") or model_data.get("diagnostics"))
+    breakdown = _as_dict(diagnostics.get("irf_sector_breakdown"))
+    return _as_dict_list(breakdown.get("rows"))
+
+
+def _find_matlab_breakdown_row(rows: list[Dict[str, Any]], shock_size: float) -> Dict[str, Any]:
+    for row in rows:
+        size = _as_float(row.get("size_pct"))
+        if size is not None and abs(size - float(shock_size)) <= 1e-6:
+            return row
+    return {}
 
 
 def _get_gir_state_name_for_sector(gir_data, sector_idx, n_sectors):
@@ -972,7 +1023,7 @@ def _get_matlab_cir_for_sector(matlab_ir_data, *, shock_key, sector_idx, method)
     return None
 
 
-def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_data, n_sectors):
+def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_data, matlab_breakdown_rows, n_sectors):
     shock_sizes = get_available_shock_sizes(matlab_ir_data)
     if not shock_sizes or not gir_data:
         return None
@@ -988,6 +1039,10 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
 
     rows = []
     for shock_size in shock_sizes:
+        matlab_breakdown_row = _find_matlab_breakdown_row(matlab_breakdown_rows, shock_size)
+        shock_volatility = upstreamness_data.get("shock_volatility")
+        if shock_volatility is None and matlab_breakdown_row.get("shock_volatility") is not None:
+            shock_volatility = np.asarray(matlab_breakdown_row["shock_volatility"], dtype=float).ravel()
         pos_key = build_shock_key("pos", shock_size)
         neg_key = build_shock_key("neg", shock_size)
         global_pos = []
@@ -1080,10 +1135,16 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
                         global_asymmetry, upstreamness_data.get("U_I")
                     ),
                     "corr(global negative attenuation, sectoral shock volatility)": _safe_corr(
-                        attenuation_neg, upstreamness_data.get("shock_volatility")
+                        attenuation_neg, shock_volatility
                     ),
                     "corr(global asymmetry, sectoral shock volatility)": _safe_corr(
-                        global_asymmetry, upstreamness_data.get("shock_volatility")
+                        global_asymmetry, shock_volatility
+                    ),
+                    "MATLAB corr(negative-shock amplification, shock volatility)": _as_float(
+                        matlab_breakdown_row.get("corr_negative_amplification_shock_volatility")
+                    ),
+                    "MATLAB corr(PF asymmetry, shock volatility)": _as_float(
+                        matlab_breakdown_row.get("corr_pf_asymmetry_shock_volatility")
                     ),
                 },
             }
@@ -1119,6 +1180,24 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
         table_file.write("\\end{table}\n")
 
 
+def _print_cir_analysis_table(rows) -> None:
+    if not rows:
+        return
+    shock_headers = [f"{row['shock_size']:g}%" for row in rows]
+    measure_order = list(rows[0]["values"].keys())
+    measure_width = max(48, max(len(measure) for measure in measure_order))
+    value_width = 12
+    print("\n  CIR OPTIMAL ATTENUATION SUMMARY", flush=True)
+    print("  " + "-" * (measure_width + value_width * len(shock_headers) + 3), flush=True)
+    header = "  " + "Measure".ljust(measure_width) + "".join(header.rjust(value_width) for header in shock_headers)
+    print(header, flush=True)
+    print("  " + "-" * (measure_width + value_width * len(shock_headers) + 3), flush=True)
+    for measure in measure_order:
+        values = [_format_table_value(row["values"].get(measure)).rjust(value_width) for row in rows]
+        print("  " + measure.ljust(measure_width) + "".join(values), flush=True)
+    print("  " + "-" * (measure_width + value_width * len(shock_headers) + 3), flush=True)
+
+
 def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postprocess_context):
     ir_render_context = postprocess_context.get("ir_render_context") if postprocess_context else None
     if not ir_render_context:
@@ -1128,18 +1207,22 @@ def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postpr
         gir_data=gir_data,
         matlab_ir_data=ir_render_context["matlab_ir_data"],
         upstreamness_data=postprocess_context.get("upstreamness_data", {}),
+        matlab_breakdown_rows=postprocess_context.get("matlab_irf_sector_breakdown_rows", []),
         n_sectors=econ_model.n_sectors,
     )
     if not rows:
         print("  CIR analysis skipped: no compatible global or MATLAB IR objects found.", flush=True)
         return
-    output_path = os.path.join(irs_dir, f"cir_analysis_{config['analysis_name']}.tex")
+    ir_tables_dir = os.path.join(irs_dir, "IR_tables")
+    os.makedirs(ir_tables_dir, exist_ok=True)
+    output_path = os.path.join(ir_tables_dir, f"cir_analysis_{config['analysis_name']}.tex")
     _write_cir_analysis_table(
         rows=rows,
         save_path=output_path,
         analysis_name=config["analysis_name"],
         response_source=_resolve_ir_response_source(config),
     )
+    _print_cir_analysis_table(rows)
     print(f"  Saved CIR analysis table: {os.path.basename(output_path)}", flush=True)
 
 
@@ -1289,6 +1372,7 @@ def prepare_postprocess_analysis(
     )
 
     upstreamness_data = _extract_matlab_upstreamness(model_data, econ_model.upstreamness())
+    matlab_irf_sector_breakdown_rows = _extract_matlab_irf_breakdown_rows(model_data)
     ergodic_experiment_labels = [
         label for label, sim_data in raw_simulation_data.items() if sim_data.get("simulation_kind", "ergodic") == "ergodic"
     ]
@@ -1339,6 +1423,7 @@ def prepare_postprocess_analysis(
         "postprocess_context": {
             "ir_render_context": ir_render_context,
             "upstreamness_data": upstreamness_data,
+            "matlab_irf_sector_breakdown_rows": matlab_irf_sector_breakdown_rows,
             "ergodic_experiment_labels": ergodic_experiment_labels,
             "reference_experiment_label": reference_experiment_label,
             "reference_analysis_variables": reference_analysis_variables,
@@ -1510,6 +1595,9 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
     if not ir_render_context:
         return
 
+    aggregate_irs_dir = os.path.join(irs_dir, "IR_aggregate")
+    os.makedirs(aggregate_irs_dir, exist_ok=True)
+    show_ir_plots = bool(config.get("show_ir_plots", False))
     for sector_idx in ir_render_context["sectors_to_plot"]:
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
@@ -1524,7 +1612,7 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 sector_label=sector_label,
                 variable_to_plot=ir_variable,
                 shock_sizes=ir_render_context["shock_sizes"],
-                save_dir=irs_dir,
+                save_dir=aggregate_irs_dir,
                 analysis_name=config["analysis_name"],
                 max_periods=ir_render_context["max_periods"],
                 n_sectors=ir_render_context["n_sectors"],
@@ -1537,6 +1625,7 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 P_ergodic=ir_render_context["P_ergodic_np"],
                 Pk_ergodic=ir_render_context["Pk_ergodic_np"],
                 ergodic_price_aggregation=ir_render_context["ergodic_price_aggregation"],
+                show_plot=show_ir_plots,
             )
             print(f"    Plotting aggregate variable: {ir_variable} [largest negative shock]")
             plot_sector_ir_by_shock_size(
@@ -1546,7 +1635,7 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 sector_label=sector_label,
                 variable_to_plot=ir_variable,
                 shock_sizes=[ir_render_context["largest_shock"]],
-                save_dir=irs_dir,
+                save_dir=aggregate_irs_dir,
                 analysis_name=config["analysis_name"],
                 max_periods=ir_render_context["max_periods"],
                 n_sectors=ir_render_context["n_sectors"],
@@ -1559,6 +1648,7 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 P_ergodic=ir_render_context["P_ergodic_np"],
                 Pk_ergodic=ir_render_context["Pk_ergodic_np"],
                 ergodic_price_aggregation=ir_render_context["ergodic_price_aggregation"],
+                show_plot=show_ir_plots,
             )
 
 
@@ -1665,6 +1755,9 @@ def render_sectoral_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpro
     if not ir_render_context:
         return
 
+    sectoral_irs_dir = os.path.join(irs_dir, "IR_sectoral")
+    os.makedirs(sectoral_irs_dir, exist_ok=True)
+    show_ir_plots = bool(config.get("show_ir_plots", False))
     sectoral_ir_variables = ir_render_context["sectoral_ir_variables"]
     for sector_idx in ir_render_context["sectors_to_plot"]:
         sector_label = (
@@ -1687,7 +1780,7 @@ def render_sectoral_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpro
                 sector_label=sector_label,
                 variable_to_plot=ir_variable,
                 shock_sizes=[ir_render_context["largest_shock"]],
-                save_dir=irs_dir,
+                save_dir=sectoral_irs_dir,
                 analysis_name=config["analysis_name"],
                 max_periods=ir_render_context["max_periods"],
                 n_sectors=ir_render_context["n_sectors"],
@@ -1698,6 +1791,7 @@ def render_sectoral_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpro
                 state_ss=ir_render_context["state_ss_np"],
                 P_ergodic=ir_render_context["P_ergodic_np"],
                 Pk_ergodic=ir_render_context["Pk_ergodic_np"],
+                show_plot=show_ir_plots,
             )
 
 

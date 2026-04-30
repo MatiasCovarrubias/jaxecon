@@ -175,6 +175,8 @@ config = {
     # - False: stochastic-steady-state impulse response
     # - True: generalized impulse response averaged over ergodic draws
     "use_gir": True,
+    # Save IR figures but do not display every figure inline by default.
+    "show_ir_plots": False,
     # MATLAB benchmark overlays used in IR figures.
     # Override with any subset/order of ["PerfectForesight", "FirstOrder", "SecondOrder"].
     "ir_benchmark_methods": ["PerfectForesight", "FirstOrder"],

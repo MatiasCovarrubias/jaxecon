@@ -72,7 +72,7 @@ Keep only the latest three entries here. Add newest first. Keep each entry to on
 
 - Python now reports CIR-based global-solution optimal attenuation against MATLAB perfect-foresight CIRs, using canonical underscore shock keys and the selected IR source (`GIR` or stochastic-SS IR).
 - The active analysis path is single-experiment only; comparison across experiments should be done from saved single-experiment analyses, while within-run tables and histograms compare methods.
-- Analysis artifacts now save compact state/policy means and standard deviations only, not full long-simulation arrays or full aggregate time-series CSVs.
+- IR outputs now save aggregate PNGs, sectoral PNGs, and IR tables in separate subfolders, and inline IR display is controlled by `show_ir_plots`.
 
 ## Current defaults and compatibility
 
@@ -81,8 +81,9 @@ The active April 2026 analysis contract is intentionally comprehensive by defaul
 - All six reported aggregates are always used in aggregate tables, aggregate IR figures, and aggregate histogram figures: `Agg. Consumption`, `Agg. Investment`, `Agg. GDP`, `Agg. Capital`, `Agg. Labor`, and `Intratemporal Utility`.
 - Each aggregate IR PNG is itself a full panel: one row per discovered shock size, with negative shocks in the left column and positive shocks in the right column.
 - Python also exports a simpler aggregate IR PNG for each reported aggregate variable that keeps only the largest discovered negative shock in a single panel.
-- Python also exports a CIR optimal-attenuation table under the IR output folder. It reports global-solution CIR divided by MATLAB perfect-foresight CIR, global-solution negative/positive asymmetry, MATLAB nonlinear amplification when available, and correlations with upstreamness and sectoral shock volatility when those diagnostics are present.
+- Python also exports and prints a CIR optimal-attenuation table under `IRs/IR_tables`. It reports global-solution CIR divided by MATLAB perfect-foresight CIR, global-solution negative/positive asymmetry, MATLAB nonlinear amplification when available, Python-computed correlations with upstreamness and sectoral shock volatility, and MATLAB-computed volatility correlations when those diagnostics are present.
 - In the combined LaTeX wrapper, the full aggregate IR PNGs and aggregate histogram PNGs are shown one at a time as standalone figures, while the simplified largest-negative aggregate IR PNGs are combined into paper-oriented grouped figures.
+- IR PNGs are saved in `IRs/IR_aggregate` and `IRs/IR_sectoral`. By default, the figures are saved without being displayed inline in the Python/Colab output; set `show_ir_plots = true` only when interactive inspection is useful.
 - Shock sizes are no longer meant to be hardcoded in the main config. Python discovers them from `ModelData_IRs.mat`, stores the discovered list back into `config["ir_shock_sizes"]`, and formats shock keys canonically with underscores for decimals, such as `pos_12_5`.
 - IR selection is now controlled by `config["use_gir"]`: `False` renders and summarizes the stochastic-steady-state IR, while `True` renders and summarizes the generalized impulse response averaged over ergodic draws.
 - `config["long_simulation"]` selects the main nonlinear reporting sample: `False` uses the common-shock run and `True` uses the long ergodic run. When `long_simulation = false` and `ergodic_price_aggregation = true`, Python also runs an auxiliary long ergodic reference sample for fixed-price weights, GIR averaging, stochastic SS, histograms, and ergodic-only sectoral outputs. When `long_simulation = true`, Python also computes a matched long first-order log-linear simulation from the Dynare state-space matrices for welfare only.

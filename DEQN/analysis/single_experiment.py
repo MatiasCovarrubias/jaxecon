@@ -194,6 +194,7 @@ def _run_experiment_analysis(
     *,
     experiment_label,
     exp_data,
+    ir_exp_data=None,
     save_dir,
     nn_config_base,
     econ_model,
@@ -213,6 +214,14 @@ def _run_experiment_analysis(
     nn_config["features"] = experiment_config["layers"] + [econ_model.dim_policies]
 
     train_state = load_trained_model_orbax(experiment_name, save_dir, nn_config, econ_model.state_ss)
+    gir_train_state = train_state
+    if ir_exp_data is not None:
+        ir_experiment_config = ir_exp_data["config"]
+        ir_experiment_name = ir_exp_data["results"]["exper_name"]
+        ir_nn_config = nn_config_base.copy()
+        ir_nn_config["features"] = ir_experiment_config["layers"] + [econ_model.dim_policies]
+        gir_train_state = load_trained_model_orbax(ir_experiment_name, save_dir, ir_nn_config, econ_model.state_ss)
+        print(f"    GIR/IR policy checkpoint: {ir_experiment_name}", flush=True)
 
     selected_results = nonlinear_simulation_runners["primary"](train_state)
     selected_analysis_context = selected_results["analysis_context"]
@@ -358,7 +367,7 @@ def _run_experiment_analysis(
 
     gir_results = gir_fn(
         stochss_and_gir_source_results["simul_obs"],
-        train_state,
+        gir_train_state,
         stochss_and_gir_source_results["simul_policies"],
         stochastic_ss_states[experiment_label],
     )

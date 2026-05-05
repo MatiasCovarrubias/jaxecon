@@ -72,7 +72,7 @@ from jax import config as jax_config  # noqa: E402
 from DEQN.algorithm import create_epoch_train_fn  # noqa: E402
 from DEQN.analysis.model_hooks import get_states_to_shock, load_model_analysis_hooks  # noqa: E402
 from DEQN.neural_nets.with_loglinear_baseline import NeuralNet  # noqa: E402
-from DEQN.training.plots import (
+from DEQN.training.plots import (  # noqa: E402
     plot_learning_rate_schedule,
     plot_training_metrics,
     plot_training_summary,
@@ -397,12 +397,14 @@ def main():
         if "metrics" in result:
             m = result["metrics"]
             print(f"Loss: {m['min_loss']:.7f} | Acc: {m['max_mean_acc']:.4f} | Time: {m['time_fullexp_minutes']:.1f}m")
+        print(f"Baseline experiment stored in: {plots_dir}", flush=True)
 
     if result and _is_ir_finetune_enabled(config):
         from DEQN.algorithm import create_ir_finetune_epoch_train_fn  # noqa: E402
 
         ir_config = _build_ir_finetune_config(config, econ_model, analysis_hooks)
         ir_exp_name = ir_config["exper_name"]
+        ir_plots_dir = os.path.join(ir_config["save_dir"], ir_exp_name)
         print(
             f"Starting IR fine-tuning: {ir_exp_name} "
             f"({ir_config['ir_finetune_min_shock_size']}%-{ir_config['ir_finetune_max_shock_size']}% shocks)",
@@ -423,16 +425,29 @@ def main():
             import traceback
 
             traceback.print_exc()
+            os.makedirs(ir_plots_dir, exist_ok=True)
+            with open(os.path.join(ir_plots_dir, "ir_finetune_error.txt"), "w") as error_file:
+                error_file.write(traceback.format_exc())
+            print("Baseline experiment remains saved; returning baseline result.", flush=True)
             return result
 
-        ir_plots_dir = os.path.join(ir_config["save_dir"], ir_exp_name)
-        _plot_result(ir_result, ir_plots_dir, ir_exp_name)
-        if "metrics" in ir_result:
-            m = ir_result["metrics"]
-            print(
-                f"IR Loss: {m['min_loss']:.7f} | Acc: {m['max_mean_acc']:.4f} | Time: {m['time_fullexp_minutes']:.1f}m"
-            )
-        result["ir_finetune_result"] = ir_result
+        try:
+            _plot_result(ir_result, ir_plots_dir, ir_exp_name)
+            if "metrics" in ir_result:
+                m = ir_result["metrics"]
+                print(
+                    f"IR Loss: {m['min_loss']:.7f} | Acc: {m['max_mean_acc']:.4f} | Time: {m['time_fullexp_minutes']:.1f}m"
+                )
+            result["ir_finetune_result"] = ir_result
+        except Exception as e:
+            print(f"IR fine-tuning completed, but IR plotting failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+            os.makedirs(ir_plots_dir, exist_ok=True)
+            with open(os.path.join(ir_plots_dir, "ir_finetune_plot_error.txt"), "w") as error_file:
+                error_file.write(traceback.format_exc())
+            result["ir_finetune_result"] = ir_result
 
     return result
 

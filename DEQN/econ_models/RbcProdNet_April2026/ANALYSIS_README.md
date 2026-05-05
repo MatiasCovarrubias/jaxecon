@@ -70,7 +70,7 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
-- Python now reports CIR-based global-solution optimal attenuation against MATLAB perfect-foresight CIRs, using canonical underscore shock keys and the selected IR source (`GIR` or stochastic-SS IR).
+- Python can now use a separate experiment checkpoint for DEQN IR/GIR trajectories through `ir_experiment_to_analyze`, while keeping the main simulation and welfare analysis on the normal experiment.
 - The active analysis path is single-experiment only; comparison across experiments should be done from saved single-experiment analyses, while within-run tables and histograms compare methods.
 - IR outputs now save aggregate PNGs, sectoral PNGs, and IR tables in separate subfolders, and inline IR display is controlled by `show_ir_plots`.
 
@@ -88,6 +88,7 @@ The active April 2026 analysis contract is intentionally comprehensive by defaul
 - IR selection is now controlled by `config["use_gir"]`: `False` renders and summarizes the stochastic-steady-state IR, while `True` renders and summarizes the generalized impulse response averaged over ergodic draws.
 - `config["long_simulation"]` selects the main nonlinear reporting sample: `False` uses the common-shock run and `True` uses the long ergodic run. When `long_simulation = false` and `ergodic_price_aggregation = true`, Python also runs an auxiliary long ergodic reference sample for fixed-price weights, GIR averaging, stochastic SS, histograms, and ergodic-only sectoral outputs. When `long_simulation = true`, Python also computes a matched long first-order log-linear simulation from the Dynare state-space matrices for welfare only.
 - The active runner accepts exactly one nonlinear DEQN experiment. Welfare reporting keeps the baseline nonlinear sample and also adds `C and L recentered at determ SS` and `L fixed at determ SS` welfare-only counterfactuals.
+- `ir_experiment_to_analyze` can point to an auxiliary checkpoint such as `benchmark_IR`. Leave it empty to use the normal experiment checkpoint for IRs. When set, only the policy used for DEQN IR/GIR trajectories changes; the main nonlinear simulation, welfare, stochastic steady state, and GIR starting sample remain tied to the normal experiment.
 - The default IR benchmark overlays are `["PerfectForesight", "FirstOrder"]`. The config still accepts `ir_benchmark_methods` to override the set or ordering, and still accepts the legacy single-string `ir_benchmark_method` for backward compatibility.
 - Descriptive-statistics and stochastic-steady-state tables include all available simulation methods by default. For aggregate stochastic-SS tables, when `stochss_methods_to_include` is absent or empty, Python now falls back directly to the available keys in `stochastic_ss_data`. Older keys such as `ergodic_methods_to_include`, `stochss_methods_to_include`, `model_vs_data_methods_to_include`, and `descriptive_stats_variables` now act as compatibility filters rather than the intended default workflow.
 - Python recomputes Dynare simulation moments through the common aggregation path even when `ergodic_price_aggregation = false`, so MATLAB and Python moments can be compared on identical definitions.
@@ -115,6 +116,7 @@ It owns:
 - file resolution
 - MATLAB loading
 - experiment loop
+- optional IR checkpoint selection
 - nonlinear simulation dispatch
 - stochastic SS / GIR / welfare setup
 - final table and figure ordering

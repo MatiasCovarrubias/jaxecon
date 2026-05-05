@@ -144,6 +144,9 @@ config = {
     "ergodic_price_aggregation": False,
     # Single experiment to analyze. The legacy experiments_to_analyze key is still accepted below.
     "experiment_to_analyze": None,
+    # Optional experiment checkpoint used only for DEQN IR/GIR trajectories.
+    # Leave as "" or None to use the normal experiment checkpoint.
+    "ir_experiment_to_analyze": "",
     # Legacy single-entry format
     "experiments_to_analyze": {
         "benchmark": "GO_shocks_newWDS_v2",
@@ -428,6 +431,18 @@ def main():
         expected_model_dir=config["model_dir"],
     )
     exp_data = experiments_data[experiment_label]
+    ir_experiment_name = config.get("ir_experiment_to_analyze")
+    ir_exp_data = None
+    if ir_experiment_name:
+        ir_experiments_data = load_experiment_data(
+            {"ir": ir_experiment_name},
+            save_dir,
+            expected_model_dir=config["model_dir"],
+        )
+        ir_exp_data = ir_experiments_data["ir"]
+        print(f"  IR trajectories will use experiment checkpoint: {ir_experiment_name}")
+    else:
+        print("  IR trajectories will use the normal experiment checkpoint.")
 
     nn_config_base = {
         "C": C_matrix,
@@ -497,6 +512,7 @@ def main():
             gir_fn=gir_fn,
             config_dict=config,
             analysis_hooks=analysis_hooks,
+            ir_exp_data=ir_exp_data,
         ),
     )
 

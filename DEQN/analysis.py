@@ -130,11 +130,11 @@ jax_config.update("jax_debug_nans", True)
 config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_April2026",
-    "analysis_name": "GO_shocks_newWDS_v2",
+    "analysis_name": "benchmark_May2026_allsectors",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
     "model_data_file": "ModelData_newwds_v2.mat",
-    "model_data_irs_file": "ModelData_IRs_newwds_v2.mat",
+    "model_data_irs_file": "ModelData_IRs_benchmark_allsectors.mat",
     "model_data_simulation_file": "ModelData_simulation_newwds_v2.mat",  # Set to None to skip MATLAB simulation comparison
     # Aggregation convention
     # False (default): use aggregate endogenous policy variables directly from the model / Dynare objects.
@@ -184,7 +184,7 @@ config = {
     # Sectors to analyze: specify sector indices (0-based).
     # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
     # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
-    "ir_sectors_to_plot": [0],
+    "ir_sectors_to_plot": list(range(37)),
     "sectoral_ir_variables_to_plot": [
         "Cj",
         "Pj",

@@ -30,7 +30,7 @@ class TrainState(train_state.TrainState):
     pass
 
 
-def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_eval=None):
+def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_eval=None, initial_params=None):
     """
     Run a single training experiment with Orbax checkpointing and return metrics.
 
@@ -44,6 +44,8 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         epoch_train_fn: Epoch training function (get_epoch_train_fn or get_epoch_train_fn_fast)
         econ_model_eval: Optional economic model instance for evaluation. If None, uses econ_model.
                         Useful for evaluating with standard volatility when training with modified volatility.
+        initial_params: Optional neural network parameters to use instead of random initialization
+                        when config["restore"] is False. The optimizer is initialized fresh.
 
     Returns:
         dict: Dictionary containing:
@@ -72,7 +74,11 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
     checkpoint_dir = Path(config["save_dir"]) / config.get("exper_name", "default_experiment")
 
     if not config["restore"]:
-        params = neural_net.init(rng_pol, jnp.zeros_like(econ_model.state_ss))
+        params = (
+            initial_params
+            if initial_params is not None
+            else neural_net.init(rng_pol, jnp.zeros_like(econ_model.state_ss))
+        )
         train_state_obj = TrainState.create(apply_fn=neural_net.apply, params=params, tx=optax.adam(lr_schedule))
     else:
         restore_dir = Path(config["save_dir"]) / config["restore_exper_name"]

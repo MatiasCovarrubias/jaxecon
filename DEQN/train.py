@@ -50,7 +50,7 @@ if IN_COLAB:
 
     drive.mount("/content/drive")
 
-    base_dir = "/content/drive/MyDrive/Jaxecon/DEQN"
+    base_dir = "/content/drive/MyDrive/Jaxecontemp"
 
 else:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -63,12 +63,14 @@ else:
 # ============================================================================
 
 import importlib  # noqa: E402
+from copy import deepcopy  # noqa: E402
 
 import jax.numpy as jnp  # noqa: E402
 import scipy.io as sio  # noqa: E402
 from jax import config as jax_config  # noqa: E402
 
 from DEQN.algorithm import create_epoch_train_fn  # noqa: E402
+from DEQN.analysis.model_hooks import get_states_to_shock, load_model_analysis_hooks  # noqa: E402
 from DEQN.neural_nets.with_loglinear_baseline import NeuralNet  # noqa: E402
 from DEQN.training.plots import (
     plot_learning_rate_schedule,
@@ -80,6 +82,94 @@ from DEQN.training.run_experiment import run_experiment  # noqa: E402
 jax_config.update("jax_debug_nans", True)
 
 
+def _resolve_model_data_file(model_dir, configured_name, fallback_names):
+    candidate_names = []
+    for name in [configured_name, *fallback_names]:
+        if name is None or name in candidate_names:
+            continue
+        candidate_names.append(name)
+
+    for filename in candidate_names:
+        path = os.path.join(model_dir, filename)
+        if os.path.exists(path):
+            if configured_name is not None and filename != configured_name:
+                print(f"  Using fallback ModelData file: {filename} (configured '{configured_name}' not found)")
+            return filename, path
+
+    raise FileNotFoundError(f"ModelData file not found in {model_dir}. Tried: {candidate_names}")
+
+
+def _set_derived_training_config(config_dict, *, rollout_multiplier=1):
+    config_dict["batch_size"] = config_dict.get("batch_size", 16)
+    config_dict["periods_per_step"] = (
+        config_dict["periods_per_epis"] * config_dict["epis_per_step"] * rollout_multiplier
+    )
+    if config_dict["periods_per_step"] % config_dict["batch_size"] != 0:
+        raise ValueError(
+            "periods_per_step must be divisible by batch_size. "
+            f"Got periods_per_step={config_dict['periods_per_step']}, batch_size={config_dict['batch_size']}."
+        )
+    config_dict["n_batches"] = config_dict["periods_per_step"] // config_dict["batch_size"]
+    return config_dict
+
+
+def _is_ir_finetune_enabled(config_dict):
+    return bool((config_dict.get("config_ir_finetune") or {}).get("enabled", False))
+
+
+def _build_ir_finetune_config(base_config, econ_model, analysis_hooks):
+    finetune_options = base_config.get("config_ir_finetune") or {}
+    ir_config = deepcopy(base_config)
+
+    for key in [
+        "learning_rate",
+        "periods_per_epis",
+        "epis_per_step",
+        "steps_per_epoch",
+        "n_epochs",
+        "checkpoint_every_n_epochs",
+        "mc_draws",
+        "init_range",
+        "simul_vol_scale",
+        "config_eval",
+    ]:
+        if key in finetune_options and finetune_options[key] is not None:
+            ir_config[key] = deepcopy(finetune_options[key])
+
+    suffix = finetune_options.get("exper_suffix", "_IR")
+    ir_config["exper_name"] = f"{base_config['exper_name']}{suffix}"
+    ir_config["restore"] = False
+    ir_config["restore_exper_name"] = None
+    ir_config["restore_step"] = False
+    ir_config["comment"] = finetune_options.get(
+        "comment",
+        f"IR fine-tuning initialized from {base_config['exper_name']}",
+    )
+    ir_config["ir_finetune_min_shock_size"] = finetune_options.get("min_shock_size", 5.0)
+    ir_config["ir_finetune_max_shock_size"] = finetune_options.get("max_shock_size", 25.0)
+
+    if finetune_options.get("states_to_shock") is not None:
+        ir_config["states_to_shock"] = list(finetune_options["states_to_shock"])
+    if finetune_options.get("ir_sectors_to_plot") is not None:
+        ir_config["ir_sectors_to_plot"] = list(finetune_options["ir_sectors_to_plot"])
+
+    ir_config["states_to_shock"] = get_states_to_shock(
+        config=ir_config,
+        econ_model=econ_model,
+        analysis_hooks=analysis_hooks,
+    )
+
+    return _set_derived_training_config(ir_config, rollout_multiplier=2)
+
+
+def _plot_result(result, save_dir, experiment_name):
+    plot_training_metrics(training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100)
+    plot_learning_rate_schedule(
+        training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100
+    )
+    plot_training_summary(training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100)
+
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -87,46 +177,56 @@ jax_config.update("jax_debug_nans", True)
 # Configuration dictionary
 config = {
     # Key configuration - Edit these first
-    "exper_name": "low_volatility",
-    "model_dir": "RbcProdNet_Oct2025",
+    "exper_name": "benchmark",
+    "model_dir": "RbcProdNet_April2026",
+    # MATLAB data file and object name. Set model_data_file to None to use defaults.
+    "model_data_file": "ModelData_newwds_v2.mat",
+    "model_data_object": "ModelData",
     # Basic experiment settings
-    "date": "Oct4_2025",
+    "date": "April24_2026",
     "seed": 1,
     "restore": False,
-    "restore_exper_name": None,
+    "restore_exper_name": "",
     "restore_step": False,  # If True, continue from checkpoint's step count (low LR). If False, reset to step 0.
     "comment": "",
     # Econ Model parameters
     "model_param_overrides": {
         # "pareps_c": 0.1,
     },
-    "mc_draws": 32,  # number of monte-carlo draws for loss calculation
-    "init_range": {"endostate": 6, "exostate": 6},  # range around SS (% deviation). Can be scalar or dict.
-    "model_vol_scale": 0.1,  # scale for model volatility (used for simulation and expectation)
-    "simul_vol_scale": 10.0,  # scale for simulation volatility (only used in simulation)
+    "mc_draws": 128,  # number of monte-carlo draws for loss calculation
+    "init_range": 5,  # range around SS (% deviation). Can be scalar or dict.
+    "model_vol_scale": 1.0,  # scale for model volatility (used for simulation and expectation)
+    "simul_vol_scale": 1.0,  # scale for simulation volatility (only used in simulation)
     # Training parameters
     "double_precision": True,  # use double precision for the model
-    "layers": [32, 32],
+    "layers": [256, 256],
     "learning_rate": 0.0005,  # initial learning rate (cosine decay to 0)
-    "periods_per_epis": 32,
-    "epis_per_step": 32,
+    "periods_per_epis": 64,
+    "epis_per_step": 64,
     "steps_per_epoch": 100,
-    "n_epochs": 100,
+    "n_epochs": 2000,
     "checkpoint_every_n_epochs": 10,
+    # Optional IR fine-tuning stage. Shock sizes are percentages.
+    "config_ir_finetune": {
+        "enabled": False,
+        "exper_suffix": "_IR",
+        "min_shock_size": 5.0,
+        "max_shock_size": 25.0,
+        "learning_rate": 0.0001,
+        "n_epochs": 20,
+    },
     # Evaluation configuration
     "config_eval": {
-        "periods_per_epis": 64,
-        "mc_draws": 64,
-        "simul_vol_scale": 1,
-        "eval_n_epis": 64,
-        "init_range": {"endostate": 6, "exostate": 6},
+        "periods_per_epis": 128,
+        "mc_draws": 256,
+        "simul_vol_scale": 1.0,
+        "eval_n_epis": 128,
+        "init_range": 5,
     },
 }
 
 # Derived settings
-config["periods_per_step"] = config["periods_per_epis"] * config["epis_per_step"]
-config["batch_size"] = 16  # hard coded
-config["n_batches"] = config["periods_per_step"] // 16
+_set_derived_training_config(config)
 
 # ============================================================================
 # DYNAMIC IMPORTS (based on model_dir from config)
@@ -135,6 +235,7 @@ config["n_batches"] = config["periods_per_step"] // 16
 # Import Model class from the specified model directory
 model_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.model")
 Model = model_module.Model
+analysis_hooks = load_model_analysis_hooks(config["model_dir"])
 
 
 # ============================================================================
@@ -158,20 +259,21 @@ def main():
 
     # Load model data (supports both old and new structure)
     print("Loading model data...", flush=True)
-    model_path = os.path.join(model_dir, "ModelData.mat")
-    if not os.path.exists(model_path):
-        model_path = os.path.join(model_dir, "model_data.mat")
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found. Tried: ModelData.mat and model_data.mat in {model_dir}")
-
+    model_data_file, model_path = _resolve_model_data_file(
+        model_dir,
+        config.get("model_data_file"),
+        ["ModelData.mat", "model_data.mat"],
+    )
+    config["model_data_file"] = model_data_file
     model_data = sio.loadmat(model_path, simplify_cells=True)
-    print("Model data loaded successfully.", flush=True)
+    print(f"Model data loaded successfully from {model_data_file}.", flush=True)
 
     # Detect structure and extract data
-    if "ModelData" in model_data:
+    model_data_object = config.get("model_data_object", "ModelData")
+    if model_data_object in model_data:
         # New structure (Dec 2025+): ModelData.SteadyState, ModelData.Statistics, ModelData.Solution
-        print("Detected new ModelData structure.", flush=True)
-        md = model_data["ModelData"]
+        print(f"Detected new {model_data_object} structure.", flush=True)
+        md = model_data[model_data_object]
 
         # Extract from SteadyState
         ss = md["SteadyState"]
@@ -216,7 +318,11 @@ def main():
         C_matrix = soldata["C"]
 
     else:
-        raise ValueError("Unknown model_data structure. Expected 'ModelData' or 'SolData' key.")
+        available_keys = sorted(key for key in model_data.keys() if not key.startswith("__"))
+        raise ValueError(
+            "Unknown model_data structure. "
+            f"Expected '{model_data_object}' or 'SolData' key. Available keys: {available_keys}"
+        )
 
     print(f"  n_sectors: {n_sectors}", flush=True)
     print(f"  state_ss shape: {state_ss.shape}", flush=True)
@@ -286,15 +392,47 @@ def main():
         exp_name = config["exper_name"]
         plots_dir = os.path.join(config["save_dir"], exp_name)
 
-        plot_training_metrics(training_results=result, save_dir=plots_dir, experiment_name=exp_name, display_dpi=100)
-        plot_learning_rate_schedule(
-            training_results=result, save_dir=plots_dir, experiment_name=exp_name, display_dpi=100
-        )
-        plot_training_summary(training_results=result, save_dir=plots_dir, experiment_name=exp_name, display_dpi=100)
+        _plot_result(result, plots_dir, exp_name)
 
         if "metrics" in result:
             m = result["metrics"]
             print(f"Loss: {m['min_loss']:.7f} | Acc: {m['max_mean_acc']:.4f} | Time: {m['time_fullexp_minutes']:.1f}m")
+
+    if result and _is_ir_finetune_enabled(config):
+        from DEQN.algorithm import create_ir_finetune_epoch_train_fn  # noqa: E402
+
+        ir_config = _build_ir_finetune_config(config, econ_model, analysis_hooks)
+        ir_exp_name = ir_config["exper_name"]
+        print(
+            f"Starting IR fine-tuning: {ir_exp_name} "
+            f"({ir_config['ir_finetune_min_shock_size']}%-{ir_config['ir_finetune_max_shock_size']}% shocks)",
+            flush=True,
+        )
+
+        try:
+            ir_result = run_experiment(
+                config=ir_config,
+                econ_model=econ_model,
+                neural_net=neural_net,
+                epoch_train_fn=create_ir_finetune_epoch_train_fn,
+                econ_model_eval=econ_model_eval,
+                initial_params=result["train_state"].params,
+            )
+        except Exception as e:
+            print(f"IR fine-tuning failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return result
+
+        ir_plots_dir = os.path.join(ir_config["save_dir"], ir_exp_name)
+        _plot_result(ir_result, ir_plots_dir, ir_exp_name)
+        if "metrics" in ir_result:
+            m = ir_result["metrics"]
+            print(
+                f"IR Loss: {m['min_loss']:.7f} | Acc: {m['max_mean_acc']:.4f} | Time: {m['time_fullexp_minutes']:.1f}m"
+            )
+        result["ir_finetune_result"] = ir_result
 
     return result
 

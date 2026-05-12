@@ -133,6 +133,7 @@ config = {
         "learning_rate": 0.00005,
         "n_epochs": 1000,
         "eval_ir_rollouts": True,
+        "record_initial_eval": True,
     },
     # Evaluation configuration
     "config_eval": {

@@ -247,6 +247,7 @@ This file should stay aligned with `DEQN/analysis/GIR.py` on the shock conventio
 - `config_ir_finetune["learning_rate"]`: optional fine-tuning learning rate override.
 - `config_ir_finetune["n_epochs"]`: optional fine-tuning epoch-count override.
 - `config_ir_finetune["eval_ir_rollouts"]`: when omitted or `True`, report IR-specific evaluation metrics alongside normal ergodic metrics during IR fine-tuning.
+- `config_ir_finetune["record_initial_eval"]`: when omitted or `True`, record a step-0 evaluation point before IR fine-tuning updates begin.
 - `config_ir_finetune["states_to_shock"]`: optional explicit state indices to shock.
 - `config_ir_finetune["ir_sectors_to_plot"]`: optional sector indices, following the same convention used by GIR analysis hooks.
 
@@ -266,6 +267,7 @@ config["config_ir_finetune"] = {
     "learning_rate": 0.0001,
     "n_epochs": 20,
     "eval_ir_rollouts": True,
+    "record_initial_eval": True,
 }
 ```
 
@@ -303,7 +305,7 @@ or into the same pattern with the configured `exper_suffix`.
 
 The auxiliary experiment starts from the baseline trained parameters but initializes a fresh optimizer and learning-rate schedule. If `source_exper_name` is set, it loads the source checkpoint from disk and uses that checkpoint's parameters instead of the in-memory baseline result.
 
-IR fine-tuning writes normal evaluation metrics to the existing `losses`, `mean_accuracy`, and `min_accuracy` fields in `results.json`. When `eval_ir_rollouts` is enabled, it also writes `ir_eval_losses`, `ir_eval_mean_accuracy`, and `ir_eval_min_accuracy`. The training metric plots overlay the IR-specific evaluation series when those fields are present.
+IR fine-tuning writes normal evaluation metrics to the existing `losses`, `mean_accuracy`, and `min_accuracy` fields in `results.json`. When `eval_ir_rollouts` is enabled, it also writes `ir_eval_losses`, `ir_eval_mean_accuracy`, and `ir_eval_min_accuracy`. When `record_initial_eval` is enabled, these series start with a step-0 metric before any fine-tuning updates. The training metric plots overlay the IR-specific evaluation series when those fields are present.
 
 ## Restore workflow
 

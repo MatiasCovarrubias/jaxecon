@@ -1,7 +1,7 @@
 """
 RbcProdNet-specific plotting helpers copied from the shared analysis layer.
 
-These helpers remain local to the model so sector indexing, MATLAB benchmark handling,
+These helpers remain local to the model so sector indexing, benchmark handling,
 and upstreamness-based visualizations do not leak back into `DEQN/analysis/`.
 """
 
@@ -128,9 +128,9 @@ def _describe_response_source(response_source: str) -> str:
 
 def _describe_benchmark_method(benchmark_method: str) -> str:
     benchmark_labels = {
-        "FirstOrder": "1st-order approximation",
+        "FirstOrder": "1st-order approx.",
         "SecondOrder": "2nd-order approximation",
-        "PerfectForesight": "perfect foresight",
+        "PerfectForesight": "MIT shocks",
         "MITShocks": "MIT shocks",
     }
     return benchmark_labels.get(benchmark_method, benchmark_method)
@@ -265,6 +265,84 @@ def _build_sectoral_distribution_note(
         "from the deterministic steady state; for small changes, a value of -0.1 means roughly 0.1 percent below "
         f"the deterministic steady state.{upstreamness_text}"
     )
+
+
+def _build_sectoral_composition_note(
+    *,
+    variable_title: str,
+    source_kind: str,
+    weight_label: str,
+    include_upstreamness: bool,
+) -> str:
+    if source_kind == "stochss":
+        source_text = (
+            "The figure reports the stochastic steady state computed by taking draws from the ergodic distribution, "
+            "simulating forward with zero shocks, and taking the common limit to which those paths converge."
+        )
+    else:
+        source_text = (
+            "The figure reports the ergodic mean from the long nonlinear simulation, using the time average of "
+            "sectoral quantities in levels."
+        )
+
+    upstreamness_text = ""
+    if include_upstreamness:
+        upstreamness_text = (
+            " The textbox reports cross-sector correlations with IO upstreamness and investment upstreamness."
+        )
+
+    return (
+        f"{source_text} Bars report the percent change in each sector's share of aggregate "
+        f"{variable_title.lower()} relative to the deterministic steady state. Both the deterministic and comparison "
+        f"shares are computed with {weight_label}; positive values mean the sector accounts for a larger aggregate "
+        f"share after removing the aggregate level change.{upstreamness_text}"
+    )
+
+
+def _sectoral_variable_info(variable_name: str, n_sectors: int) -> dict[str, Any]:
+    variable_info = {
+        "K": {"title": "Capital", "index_start": 0, "source": "state", "weight": "Pk"},
+        "L": {"title": "Labor", "index_start": n_sectors, "source": "policy", "weight": "unit"},
+        "Y": {"title": "Value Added", "index_start": 10 * n_sectors, "source": "policy", "weight": "P"},
+        "M": {"title": "Intermediates", "index_start": 4 * n_sectors, "source": "policy", "weight": "Pm"},
+        "Q": {"title": "Gross Output", "index_start": 9 * n_sectors, "source": "policy", "weight": "P"},
+    }
+    if variable_name not in variable_info:
+        raise ValueError(f"Unknown variable: {variable_name}. Options: {list(variable_info.keys())}")
+    return variable_info[variable_name]
+
+
+def _sectoral_share_weights(policies_ss: Any, variable_info: dict[str, Any], n_sectors: int) -> tuple[np.ndarray, str]:
+    policies_ss_levels = np.exp(np.asarray(policies_ss, dtype=float))
+    weight_kind = variable_info["weight"]
+    if weight_kind == "Pk":
+        return policies_ss_levels[2 * n_sectors : 3 * n_sectors], "deterministic steady-state capital prices"
+    if weight_kind == "Pm":
+        return policies_ss_levels[3 * n_sectors : 4 * n_sectors], "deterministic steady-state intermediate prices"
+    if weight_kind == "P":
+        return policies_ss_levels[8 * n_sectors : 9 * n_sectors], "deterministic steady-state output prices"
+    return np.ones(n_sectors, dtype=float), "unit weights"
+
+
+def _sectoral_levels_from_logdev(logdev_values: Any, ss_log_values: Any) -> np.ndarray:
+    logdev = np.asarray(logdev_values, dtype=float)
+    ss_log = np.asarray(ss_log_values, dtype=float)
+    if logdev.ndim == 1:
+        return np.exp(ss_log + logdev)
+    return np.mean(np.exp(ss_log[None, :] + logdev), axis=0)
+
+
+def _sectoral_share_change(current_levels: np.ndarray, ss_levels: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    current_values = weights * current_levels
+    ss_values = weights * ss_levels
+    current_total = np.sum(current_values)
+    ss_total = np.sum(ss_values)
+    if current_total <= 0 or ss_total <= 0:
+        return np.full_like(current_values, np.nan, dtype=float)
+    current_shares = current_values / current_total
+    ss_shares = ss_values / ss_total
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(ss_shares > 0, current_shares / ss_shares - 1.0, np.nan)
 
 
 def _single_experiment_name(data: Dict[str, Any], context: str) -> str:
@@ -637,7 +715,7 @@ def plot_combined_impulse_responses(
     max_periods: int = 80,
 ):
     """
-    Create combined plots showing GIR responses alongside MATLAB perfect foresight and loglinear IRs.
+    Create combined plots showing GIR responses alongside MIT-shock and 1st-order approximation IRs.
     Shows both positive and negative shocks on the same graph for each shock size.
 
     Parameters:
@@ -646,7 +724,7 @@ def plot_combined_impulse_responses(
         Dictionary containing GIR results from JAX analysis
         Structure: {experiment_name: {state_name: {"gir_analysis_variables": {var_label: array}, "state_idx": int}}}
     matlab_ir_data : dict
-        Dictionary from load_matlab_irs containing MATLAB IRs
+        Dictionary from load_matlab_irs containing benchmark IRs
     sectors_to_plot : list
         List of sector indices (0-based) to plot
     sector_labels : list
@@ -743,14 +821,14 @@ def plot_combined_impulse_responses(
                     pos_loglin = matlab_irs_pos[pk]["loglin"][:max_periods] * 100
                     pct = pk.replace("pos_", "")
                     t_loglin = np.arange(len(pos_loglin))
-                    ax.plot(t_loglin, pos_loglin, label=f"Loglinear (+{pct}%)", **_benchmark_style(0))
+                    ax.plot(t_loglin, pos_loglin, label=f"1st-order approx. (+{pct}%)", **_benchmark_style(0))
                     pos_determ = matlab_irs_pos[pk].get("determ")
                     if pos_determ is not None:
                         pos_determ = pos_determ[:max_periods] * 100
                         ax.plot(
                             np.arange(len(pos_determ)),
                             pos_determ,
-                            label=f"Perfect Foresight (+{pct}%)",
+                            label=f"MIT shocks (+{pct}%)",
                             **_benchmark_style(1),
                         )
 
@@ -758,14 +836,14 @@ def plot_combined_impulse_responses(
                     neg_loglin = matlab_irs_neg[nk]["loglin"][:max_periods] * 100
                     pct = nk.replace("neg_", "")
                     t_loglin = np.arange(len(neg_loglin))
-                    ax.plot(t_loglin, neg_loglin, label=f"Loglinear (-{pct}%)", **_benchmark_style(0))
+                    ax.plot(t_loglin, neg_loglin, label=f"1st-order approx. (-{pct}%)", **_benchmark_style(0))
                     neg_determ = matlab_irs_neg[nk].get("determ")
                     if neg_determ is not None:
                         neg_determ = neg_determ[:max_periods] * 100
                         ax.plot(
                             np.arange(len(neg_determ)),
                             neg_determ,
-                            label=f"Perfect Foresight (-{pct}%)",
+                            label=f"MIT shocks (-{pct}%)",
                             **_benchmark_style(1),
                         )
 
@@ -837,7 +915,7 @@ def plot_ir_comparison_panel(
     gir_data : dict
         Dictionary containing GIR results from JAX analysis
     matlab_ir_data : dict
-        Dictionary from load_matlab_irs containing MATLAB IRs
+        Dictionary from load_matlab_irs containing benchmark IRs
     sector_idx : int
         Sector index (0-based) to plot
     sector_label : str
@@ -975,10 +1053,10 @@ def plot_ir_comparison_panel(
     from matplotlib.lines import Line2D
 
     legend_elements = [
-        Line2D([0], [0], color=colors[4], linewidth=1.5, linestyle="--", label="Loglinear (+)"),
-        Line2D([0], [0], color=colors[5], linewidth=1.5, linestyle="--", label="Loglinear (-)"),
-        Line2D([0], [0], color=colors[2], linewidth=1.5, linestyle="-.", label="Perfect Foresight (+)"),
-        Line2D([0], [0], color=colors[3], linewidth=1.5, linestyle="-.", label="Perfect Foresight (-)"),
+        Line2D([0], [0], color=colors[4], linewidth=1.5, linestyle="--", label="1st-order approx. (+)"),
+        Line2D([0], [0], color=colors[5], linewidth=1.5, linestyle="--", label="1st-order approx. (-)"),
+        Line2D([0], [0], color=colors[2], linewidth=1.5, linestyle="-.", label="MIT shocks (+)"),
+        Line2D([0], [0], color=colors[3], linewidth=1.5, linestyle="-.", label="MIT shocks (-)"),
     ]
 
     legend_elements.append(Line2D([0], [0], color=colors[0], linewidth=2, label="GIR"))
@@ -1061,7 +1139,7 @@ def plot_sector_ir_by_shock_size(
     gir_data : dict
         GIR results from JAX analysis (pos_5, neg_5, pos_5_stochss, neg_5_stochss …).
     matlab_ir_data : dict
-        Dictionary from load_matlab_irs containing MATLAB IRs.
+        Dictionary from load_matlab_irs containing benchmark IRs.
     sector_idx : int
         Sector index (0-based) to plot.
     sector_label : str
@@ -1084,9 +1162,9 @@ def plot_sector_ir_by_shock_size(
     n_sectors : int
         Number of sectors in the model.
     benchmark_method : str, optional
-        Backward-compatible single MATLAB benchmark overlay.
+        Backward-compatible single benchmark overlay.
     benchmark_methods : list[str], optional
-        MATLAB benchmarks to overlay ("PerfectForesight", "FirstOrder", "SecondOrder").
+        Benchmarks to overlay ("PerfectForesight", "FirstOrder", "SecondOrder").
     response_source : str
         Which DEQN response to plot ("GIR" or "IR_stoch_ss").
     agg_consumption_mode : bool
@@ -1146,9 +1224,9 @@ def plot_sector_ir_by_shock_size(
         "PerfectForesight": "perfect_foresight",
     }
     benchmark_label_map = {
-        "FirstOrder": "First Order",
+        "FirstOrder": "1st-order approx.",
         "SecondOrder": "Second Order",
-        "PerfectForesight": "Perfect Foresight",
+        "PerfectForesight": "MIT shocks",
     }
     resolved_benchmark_methods = _resolve_ir_benchmark_methods(
         benchmark_methods=benchmark_methods,
@@ -1280,7 +1358,7 @@ def plot_sector_ir_by_shock_size(
             neg_keys = _resolve_requested_shock_keys(matlab_irs, "neg", shock_size)
             if not pos_keys and not neg_keys:
                 print(
-                    f"      Warning: no MATLAB IR benchmark found for requested shock size {shock_size}. "
+                    f"      Warning: no benchmark IR found for requested shock size {shock_size}. "
                     f"Available keys: {sorted(matlab_irs.keys())}"
                 )
 
@@ -1327,7 +1405,7 @@ def plot_sector_ir_by_shock_size(
                 }
             )
             print(
-                f"      Warning: no MATLAB IRs found for sector {sector_idx + 1}, variable '{variable_to_plot}'. "
+                f"      Warning: no benchmark IRs found for sector {sector_idx + 1}, variable '{variable_to_plot}'. "
                 f"Available sectors (python 0-based): {available_sector_indices}"
             )
 
@@ -1862,6 +1940,124 @@ def plot_sectoral_variable_stochss(
     return fig, ax
 
 
+def plot_sectoral_variable_composition_stochss(
+    stochastic_ss_states: Dict[str, Any],
+    stochastic_ss_policies: Dict[str, Any],
+    variable_name: str,
+    save_dir: str,
+    analysis_name: str,
+    econ_model: Any,
+    upstreamness_data: Optional[Dict[str, Any]] = None,
+    figsize: Tuple[float, float] = (12, 8),
+    display_dpi: int = 100,
+):
+    from scipy import stats
+
+    n_sectors = econ_model.n_sectors
+    sector_labels = econ_model.labels
+    experiment_name = _single_experiment_name(
+        stochastic_ss_policies,
+        "plot_sectoral_variable_composition_stochss",
+    )
+
+    var_info = _sectoral_variable_info(variable_name, n_sectors)
+    idx_start = var_info["index_start"]
+    idx_end = idx_start + n_sectors
+
+    if var_info["source"] == "state":
+        logdev_values = stochastic_ss_states[experiment_name][idx_start:idx_end]
+        ss_log_values = econ_model.state_ss[idx_start:idx_end]
+    else:
+        logdev_values = stochastic_ss_policies[experiment_name][idx_start:idx_end]
+        ss_log_values = econ_model.policies_ss[idx_start:idx_end]
+
+    current_levels = _sectoral_levels_from_logdev(logdev_values, ss_log_values)
+    ss_levels = np.exp(np.asarray(ss_log_values, dtype=float))
+    weights, weight_label = _sectoral_share_weights(econ_model.policies_ss, var_info, n_sectors)
+    share_changes = _sectoral_share_change(current_levels, ss_levels, weights)
+
+    sorted_indices = np.argsort(np.nan_to_num(share_changes, nan=-np.inf))[::-1]
+    sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
+
+    x = np.arange(n_sectors)
+    bar_width = 0.8
+
+    sorted_values = share_changes[sorted_indices]
+    ax.bar(
+        x,
+        sorted_values * 100,
+        bar_width,
+        color=colors[1],
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.5,
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
+
+    ax.tick_params(axis="both", which="major")
+
+    ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel(
+        f"Stochastic SS {var_info['title']} Share Change (%)",
+        fontweight="bold",
+        fontsize=MEDIUM_SIZE,
+    )
+
+    if upstreamness_data is not None:
+        U_M = np.array(upstreamness_data["U_M"])
+        U_I = np.array(upstreamness_data["U_I"])
+
+        values = np.array(share_changes)
+        corr_M, p_M = stats.pearsonr(values, U_M)
+        corr_I, p_I = stats.pearsonr(values, U_I)
+        sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
+        sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
+        corr_text = f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}"
+        ax.text(
+            0.98,
+            0.98,
+            corr_text,
+            transform=ax.transAxes,
+            fontsize=SMALL_SIZE + 1,
+            verticalalignment="top",
+            horizontalalignment="right",
+            linespacing=1.2,
+            bbox=dict(boxstyle="round,pad=0.55", facecolor="white", alpha=0.88, edgecolor="gray"),
+        )
+
+    ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    safe_var_name = variable_name.lower()
+    filename = (
+        f"sectoral_{safe_var_name}_composition_stochss_{analysis_name}.png"
+        if analysis_name
+        else f"sectoral_{safe_var_name}_composition_stochss.png"
+    )
+    save_path = os.path.join(save_dir, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    _write_figure_note_tex(
+        save_path,
+        _build_sectoral_composition_note(
+            variable_title=var_info["title"],
+            source_kind="stochss",
+            weight_label=weight_label,
+            include_upstreamness=upstreamness_data is not None,
+        ),
+    )
+    _print_saved_file(save_path)
+    plt.show()
+
+    return fig, ax
+
+
 def plot_sectoral_variable_ergodic(
     raw_simulation_data: Dict[str, Any],
     variable_name: str,
@@ -2004,6 +2200,120 @@ def plot_sectoral_variable_ergodic(
             variable_title=var_info["title"],
             display_labels=[experiment_name],
             source_kind="ergodic",
+            include_upstreamness=upstreamness_data is not None,
+        ),
+    )
+    _print_saved_file(save_path)
+    plt.show()
+
+    return fig, ax
+
+
+def plot_sectoral_variable_composition_ergodic(
+    raw_simulation_data: Dict[str, Any],
+    variable_name: str,
+    save_dir: str,
+    analysis_name: str,
+    econ_model: Any,
+    upstreamness_data: Optional[Dict[str, Any]] = None,
+    figsize: Tuple[float, float] = (12, 8),
+    display_dpi: int = 100,
+):
+    from scipy import stats
+
+    n_sectors = econ_model.n_sectors
+    sector_labels = econ_model.labels
+    experiment_name = _single_experiment_name(raw_simulation_data, "plot_sectoral_variable_composition_ergodic")
+
+    var_info = _sectoral_variable_info(variable_name, n_sectors)
+    idx_start = var_info["index_start"]
+    idx_end = idx_start + n_sectors
+
+    if var_info["source"] == "state":
+        logdev_values = raw_simulation_data[experiment_name]["simul_obs"][:, idx_start:idx_end]
+        ss_log_values = econ_model.state_ss[idx_start:idx_end]
+    else:
+        logdev_values = raw_simulation_data[experiment_name]["simul_policies"][:, idx_start:idx_end]
+        ss_log_values = econ_model.policies_ss[idx_start:idx_end]
+
+    current_levels = _sectoral_levels_from_logdev(logdev_values, ss_log_values)
+    ss_levels = np.exp(np.asarray(ss_log_values, dtype=float))
+    weights, weight_label = _sectoral_share_weights(econ_model.policies_ss, var_info, n_sectors)
+    share_changes = _sectoral_share_change(current_levels, ss_levels, weights)
+
+    sorted_indices = np.argsort(np.nan_to_num(share_changes, nan=-np.inf))[::-1]
+    sorted_sector_labels = [sector_labels[i] for i in sorted_indices]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
+
+    x = np.arange(n_sectors)
+    bar_width = 0.8
+
+    sorted_values = share_changes[sorted_indices]
+    ax.bar(
+        x,
+        sorted_values * 100,
+        bar_width,
+        color=colors[1],
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.5,
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(sorted_sector_labels, rotation=45, ha="right")
+
+    ax.tick_params(axis="both", which="major")
+
+    ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel(
+        f"Ergodic Mean {var_info['title']} Share Change (%)",
+        fontweight="bold",
+        fontsize=MEDIUM_SIZE,
+    )
+
+    if upstreamness_data is not None:
+        U_M = np.array(upstreamness_data["U_M"])
+        U_I = np.array(upstreamness_data["U_I"])
+
+        values = np.array(share_changes)
+        corr_M, p_M = stats.pearsonr(values, U_M)
+        corr_I, p_I = stats.pearsonr(values, U_I)
+        sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
+        sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
+        corr_text = f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}"
+        ax.text(
+            0.98,
+            0.98,
+            corr_text,
+            transform=ax.transAxes,
+            fontsize=SMALL_SIZE + 1,
+            verticalalignment="top",
+            horizontalalignment="right",
+            linespacing=1.2,
+            bbox=dict(boxstyle="round,pad=0.55", facecolor="white", alpha=0.88, edgecolor="gray"),
+        )
+
+    ax.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    safe_var_name = variable_name.lower()
+    filename = (
+        f"sectoral_{safe_var_name}_composition_ergodic_{analysis_name}.png"
+        if analysis_name
+        else f"sectoral_{safe_var_name}_composition_ergodic.png"
+    )
+    save_path = os.path.join(save_dir, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    _write_figure_note_tex(
+        save_path,
+        _build_sectoral_composition_note(
+            variable_title=var_info["title"],
+            source_kind="ergodic",
+            weight_label=weight_label,
             include_upstreamness=upstreamness_data is not None,
         ),
     )

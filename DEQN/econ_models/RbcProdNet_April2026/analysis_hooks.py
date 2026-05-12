@@ -18,6 +18,8 @@ from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import get_available_shock
 from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import plot_ergodic_histograms, _write_figure_note_tex
 from DEQN.econ_models.RbcProdNet_April2026.plots import (
     plot_sector_ir_by_shock_size,
+    plot_sectoral_variable_composition_ergodic,
+    plot_sectoral_variable_composition_stochss,
     plot_sectoral_variable_ergodic,
     plot_sectoral_variable_stochss,
 )
@@ -47,6 +49,8 @@ def _safe_corr(x_values: Any, y_values: Any) -> Optional[float]:
         y = np.asarray(y_values, dtype=float).ravel()
     except (TypeError, ValueError):
         return None
+    if x.shape != y.shape:
+        return None
     mask = np.isfinite(x) & np.isfinite(y)
     if int(mask.sum()) < 2:
         return None
@@ -73,6 +77,53 @@ def _nanmean_or_none(values: Any) -> Optional[float]:
     if finite.size == 0:
         return None
     return float(np.mean(finite))
+
+
+CIR_MEASURE_DESCRIPTIONS = {
+    "Global optimal attenuation, negative shocks": "1 - |global| / |MIT|",
+    "Global optimal attenuation, positive shocks": "1 - |global| / |MIT|",
+    "Global-solution asymmetry": "1 - |negative| / |positive|",
+    "MIT-shock amplification, negative shocks": "|MIT| / |1st-order approx.| - 1",
+    "MIT-shock amplification, positive shocks": "|MIT| / |1st-order approx.| - 1",
+    "MIT-shock asymmetry": "1 - |MIT negative| / |MIT positive|",
+    "corr(global negative attenuation, IO upstreamness)": "Corr(negative attenuation, IO upstreamness)",
+    "corr(global asymmetry, IO upstreamness)": "Corr(global asymmetry, IO upstreamness)",
+    "corr(global negative attenuation, investment upstreamness)": "Corr(negative attenuation, investment upstreamness)",
+    "corr(global asymmetry, investment upstreamness)": "Corr(global asymmetry, investment upstreamness)",
+    "corr(global negative attenuation, sectoral shock volatility)": "Corr(negative attenuation, shock volatility)",
+    "corr(global asymmetry, sectoral shock volatility)": "Corr(global asymmetry, shock volatility)",
+    "corr(MIT-shock amplification, sectoral shock volatility)": "Corr(MIT amplification, shock volatility)",
+    "corr(MIT-shock asymmetry, sectoral shock volatility)": "Corr(MIT asymmetry, shock volatility)",
+}
+
+
+def _magnitude_ratio(numerator: Any, denominator: Any) -> np.ndarray:
+    return np.abs(np.asarray(numerator, dtype=float)) / np.abs(np.asarray(denominator, dtype=float))
+
+
+def _sectoral_shock_volatility(value: Any, n_sectors: Optional[int] = None) -> Optional[np.ndarray]:
+    if value is None:
+        return None
+    try:
+        arr = np.asarray(value, dtype=float).squeeze()
+    except (TypeError, ValueError):
+        return None
+    if arr.size == 0:
+        return None
+    if arr.ndim == 2:
+        if arr.shape[0] == arr.shape[1]:
+            arr = np.sqrt(np.maximum(np.diag(arr), 0.0))
+        elif 1 in arr.shape:
+            arr = arr.ravel()
+        else:
+            return None
+    else:
+        arr = arr.ravel()
+    if n_sectors is not None and arr.size == n_sectors * n_sectors:
+        arr = np.sqrt(np.maximum(np.diag(arr.reshape(n_sectors, n_sectors)), 0.0))
+    if n_sectors is not None and arr.size != n_sectors:
+        return None
+    return arr if np.isfinite(arr).any() else None
 
 
 def _latex_escape(text: str) -> str:
@@ -522,6 +573,28 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
         ],
     )
 
+    add_figure_section(
+        "3A. Sectoral Composition in Stochastic Steady State",
+        [
+            build_simple_figure_spec(
+                analysis_named_path(
+                    simulation_dir,
+                    f"sectoral_{variable_name}_composition_stochss",
+                    analysis_name,
+                    ".png",
+                ),
+                f"Sectoral {variable_caption} deterministic-price share change at the stochastic steady state.",
+            )
+            for variable_name, variable_caption in [
+                ("k", "capital"),
+                ("l", "labor"),
+                ("y", "value added"),
+                ("m", "intermediates"),
+                ("q", "gross output"),
+            ]
+        ],
+    )
+
     add_table_section(
         "4. Aggregate Stochastic Steady State",
         [
@@ -678,6 +751,28 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
             build_simple_figure_spec(
                 analysis_named_path(simulation_dir, f"sectoral_{variable_name}_ergodic", analysis_name, ".png"),
                 f"Ergodic mean sectoral {variable_caption}.",
+            )
+            for variable_name, variable_caption in [
+                ("k", "capital"),
+                ("l", "labor"),
+                ("y", "value added"),
+                ("m", "intermediates"),
+                ("q", "gross output"),
+            ]
+        ],
+    )
+
+    add_figure_section(
+        "9A. Ergodic Mean Sectoral Composition",
+        [
+            build_simple_figure_spec(
+                analysis_named_path(
+                    simulation_dir,
+                    f"sectoral_{variable_name}_composition_ergodic",
+                    analysis_name,
+                    ".png",
+                ),
+                f"Ergodic mean sectoral {variable_caption} deterministic-price share change.",
             )
             for variable_name, variable_caption in [
                 ("k", "capital"),
@@ -863,9 +958,9 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
             shock_sizes = list(configured_shocks)
             print(f"  Falling back to configured IR shock sizes: {shock_sizes}")
         else:
-            raise ValueError("Could not infer IR shock sizes from MATLAB IR objects.")
+            raise ValueError("Could not infer IR shock sizes from benchmark IR objects.")
     else:
-        print(f"  Using IR shock sizes discovered from MATLAB objects: {shock_sizes}")
+        print(f"  Using IR shock sizes discovered from benchmark IR objects: {shock_sizes}")
         config["ir_shock_sizes"] = shock_sizes
 
     sectors_to_plot = config.get("ir_sectors_to_plot", [0, 2, 23])
@@ -895,12 +990,10 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
     }
 
 
-def _extract_matlab_upstreamness(model_data, fallback_upstreamness):
+def _extract_matlab_upstreamness(model_data, fallback_upstreamness, *, n_sectors: Optional[int] = None):
     model_data = _as_dict(model_data)
     diagnostics = _as_dict(model_data.get("Diagnostics") or model_data.get("diagnostics"))
     upstreamness = _as_dict(diagnostics.get("upstreamness"))
-    if not isinstance(upstreamness, dict):
-        return fallback_upstreamness or {}
 
     result = {}
     for source_key, target_key in [
@@ -913,7 +1006,20 @@ def _extract_matlab_upstreamness(model_data, fallback_upstreamness):
     ]:
         value = upstreamness.get(source_key)
         if value is not None and target_key not in result:
-            result[target_key] = np.asarray(value, dtype=float).ravel()
+            if target_key == "shock_volatility":
+                shock_volatility = _sectoral_shock_volatility(value, n_sectors)
+                if shock_volatility is not None:
+                    result[target_key] = shock_volatility
+            else:
+                result[target_key] = np.asarray(value, dtype=float).ravel()
+
+    if "shock_volatility" not in result:
+        steady_state = _as_dict(model_data.get("SteadyState") or model_data.get("steadystate"))
+        parameters = _as_dict(steady_state.get("parameters") or model_data.get("parameters"))
+        shock_volatility = _sectoral_shock_volatility(parameters.get("parSigma_A"), n_sectors)
+        if shock_volatility is not None:
+            result["shock_volatility"] = shock_volatility
+
     for key, value in (fallback_upstreamness or {}).items():
         result.setdefault(key, value)
     return result
@@ -1040,9 +1146,9 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
     rows = []
     for shock_size in shock_sizes:
         matlab_breakdown_row = _find_matlab_breakdown_row(matlab_breakdown_rows, shock_size)
-        shock_volatility = upstreamness_data.get("shock_volatility")
+        shock_volatility = _sectoral_shock_volatility(upstreamness_data.get("shock_volatility"), n_sectors)
         if shock_volatility is None and matlab_breakdown_row.get("shock_volatility") is not None:
-            shock_volatility = np.asarray(matlab_breakdown_row["shock_volatility"], dtype=float).ravel()
+            shock_volatility = _sectoral_shock_volatility(matlab_breakdown_row["shock_volatility"], n_sectors)
         pos_key = build_shock_key("pos", shock_size)
         neg_key = build_shock_key("neg", shock_size)
         global_pos = []
@@ -1105,12 +1211,12 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
         fo_neg_arr = np.asarray([np.nan if v is None else v for v in fo_neg], dtype=float)
 
         with np.errstate(divide="ignore", invalid="ignore"):
-            attenuation_neg = global_neg_arr / pf_neg_arr
-            attenuation_pos = global_pos_arr / pf_pos_arr
-            global_asymmetry = global_neg_arr / global_pos_arr
-            matlab_amp_neg = pf_neg_arr / fo_neg_arr
-            matlab_amp_pos = pf_pos_arr / fo_pos_arr
-            matlab_pf_asymmetry = pf_neg_arr / pf_pos_arr
+            attenuation_neg = 1.0 - _magnitude_ratio(global_neg_arr, pf_neg_arr)
+            attenuation_pos = 1.0 - _magnitude_ratio(global_pos_arr, pf_pos_arr)
+            global_asymmetry = 1.0 - _magnitude_ratio(global_neg_arr, global_pos_arr)
+            matlab_amp_neg = _magnitude_ratio(pf_neg_arr, fo_neg_arr) - 1.0
+            matlab_amp_pos = _magnitude_ratio(pf_pos_arr, fo_pos_arr) - 1.0
+            matlab_pf_asymmetry = 1.0 - _magnitude_ratio(pf_neg_arr, pf_pos_arr)
 
         rows.append(
             {
@@ -1119,9 +1225,9 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
                     "Global optimal attenuation, negative shocks": _nanmean_or_none(attenuation_neg),
                     "Global optimal attenuation, positive shocks": _nanmean_or_none(attenuation_pos),
                     "Global-solution asymmetry": _nanmean_or_none(global_asymmetry),
-                    "MATLAB nonlinear amplification, negative shocks": _nanmean_or_none(matlab_amp_neg),
-                    "MATLAB nonlinear amplification, positive shocks": _nanmean_or_none(matlab_amp_pos),
-                    "MATLAB PF asymmetry": _nanmean_or_none(matlab_pf_asymmetry),
+                    "MIT-shock amplification, negative shocks": _nanmean_or_none(matlab_amp_neg),
+                    "MIT-shock amplification, positive shocks": _nanmean_or_none(matlab_amp_pos),
+                    "MIT-shock asymmetry": _nanmean_or_none(matlab_pf_asymmetry),
                     "corr(global negative attenuation, IO upstreamness)": _safe_corr(
                         attenuation_neg, upstreamness_data.get("U_M")
                     ),
@@ -1140,11 +1246,11 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
                     "corr(global asymmetry, sectoral shock volatility)": _safe_corr(
                         global_asymmetry, shock_volatility
                     ),
-                    "MATLAB corr(negative-shock amplification, shock volatility)": _as_float(
-                        matlab_breakdown_row.get("corr_negative_amplification_shock_volatility")
+                    "corr(MIT-shock amplification, sectoral shock volatility)": _safe_corr(
+                        matlab_amp_neg, shock_volatility
                     ),
-                    "MATLAB corr(PF asymmetry, shock volatility)": _as_float(
-                        matlab_breakdown_row.get("corr_pf_asymmetry_shock_volatility")
+                    "corr(MIT-shock asymmetry, sectoral shock volatility)": _safe_corr(
+                        matlab_pf_asymmetry, shock_volatility
                     ),
                 },
             }
@@ -1160,21 +1266,28 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
         table_file.write("\\begin{table}[htbp]\n\\centering\n")
         table_file.write("\\caption{Cumulative impulse-response analysis}\n")
         table_file.write(f"\\label{{tab:cir_analysis_{_latex_label_token(analysis_name)}}}\n")
-        table_file.write("\\begin{tabular}{l" + "r" * len(rows) + "}\n\\hline\n")
-        headers = ["Measure"] + [f"{row['shock_size']:g}\\%" for row in rows]
+        table_file.write("\\begin{tabular}{lp{0.28\\textwidth}" + "r" * len(rows) + "}\n\\hline\n")
+        headers = ["Measure", "Definition"] + [f"{row['shock_size']:g}%" for row in rows]
         table_file.write(" & ".join(_latex_escape(header) for header in headers) + " \\\\\n\\hline\n")
         for measure in measure_order:
+            description = CIR_MEASURE_DESCRIPTIONS.get(measure, "")
             values = [_format_table_value(row["values"].get(measure)) for row in rows]
-            table_file.write(_latex_escape(measure) + " & " + " & ".join(values) + " \\\\\n")
+            table_file.write(
+                _latex_escape(measure)
+                + " & "
+                + _latex_escape(description)
+                + " & "
+                + " & ".join(values)
+                + " \\\\\n"
+            )
         table_file.write("\\hline\n\\end{tabular}\n")
         table_file.write(
             "\\begin{minipage}{0.92\\textwidth}\n\\footnotesize\n"
             "\\textit{Notes:} CIR is the sum over the displayed IR horizon of the aggregate consumption response. "
             f"The Python global-solution CIR uses the selected IR source: {_latex_escape(response_source)}. "
-            "MATLAB nonlinear amplification is perfect-foresight CIR divided by first-order CIR. "
-            "Global optimal attenuation is global-solution CIR divided by perfect-foresight CIR. "
-            "Asymmetry ratios divide the negative-shock CIR by the positive-shock CIR. "
-            "Missing MATLAB CIR or diagnostic fields are left blank.\n"
+            "Reported amplification, attenuation, and asymmetry measures are fractional differences, computed from CIR magnitudes. "
+            "A value of 0.10 means 10 percent. "
+            "Missing benchmark CIR or diagnostic fields are left blank.\n"
             "\\end{minipage}\n"
         )
         table_file.write("\\end{table}\n")
@@ -1186,16 +1299,30 @@ def _print_cir_analysis_table(rows) -> None:
     shock_headers = [f"{row['shock_size']:g}%" for row in rows]
     measure_order = list(rows[0]["values"].keys())
     measure_width = max(48, max(len(measure) for measure in measure_order))
+    description_width = max(
+        28,
+        max(len(CIR_MEASURE_DESCRIPTIONS.get(measure, "")) for measure in measure_order),
+    )
     value_width = 12
     print("\n  CIR OPTIMAL ATTENUATION SUMMARY", flush=True)
-    print("  " + "-" * (measure_width + value_width * len(shock_headers) + 3), flush=True)
-    header = "  " + "Measure".ljust(measure_width) + "".join(header.rjust(value_width) for header in shock_headers)
+    total_width = measure_width + description_width + value_width * len(shock_headers) + 4
+    print("  " + "-" * total_width, flush=True)
+    header = (
+        "  "
+        + "Measure".ljust(measure_width)
+        + "Definition".ljust(description_width)
+        + "".join(header.rjust(value_width) for header in shock_headers)
+    )
     print(header, flush=True)
-    print("  " + "-" * (measure_width + value_width * len(shock_headers) + 3), flush=True)
+    print("  " + "-" * total_width, flush=True)
     for measure in measure_order:
+        description = CIR_MEASURE_DESCRIPTIONS.get(measure, "")
         values = [_format_table_value(row["values"].get(measure)).rjust(value_width) for row in rows]
-        print("  " + measure.ljust(measure_width) + "".join(values), flush=True)
-    print("  " + "-" * (measure_width + value_width * len(shock_headers) + 3), flush=True)
+        print(
+            "  " + measure.ljust(measure_width) + description.ljust(description_width) + "".join(values),
+            flush=True,
+        )
+    print("  " + "-" * total_width, flush=True)
 
 
 def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postprocess_context):
@@ -1211,7 +1338,7 @@ def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postpr
         n_sectors=econ_model.n_sectors,
     )
     if not rows:
-        print("  CIR analysis skipped: no compatible global or MATLAB IR objects found.", flush=True)
+        print("  CIR analysis skipped: no compatible global or benchmark IR objects found.", flush=True)
         return
     ir_tables_dir = os.path.join(irs_dir, "IR_tables")
     os.makedirs(ir_tables_dir, exist_ok=True)
@@ -1294,7 +1421,7 @@ def prepare_postprocess_analysis(
             n_sectors=n_sectors,
             ergodic_price_aggregation=use_ergodic_prices,
             burn_in=0,
-            source_label="First-Order (Dynare)",
+            source_label="Log-Linear",
         )
 
         for var_name, var_values in firstorder_analysis_vars.items():
@@ -1302,7 +1429,7 @@ def prepare_postprocess_analysis(
             if n_nan > 0:
                 print(f"    WARNING: {var_name} has {n_nan} NaN values!", flush=True)
         analysis_variables_data["Log-Linear"] = firstorder_analysis_vars
-        print("  Loaded First-Order (Dynare) simulation with consistent aggregation.")
+        print("  Loaded log-linear simulation with consistent aggregation.")
 
     if dynare_simul_so is not None:
         secondorder_analysis_vars = process_simulation_with_consistent_aggregation(
@@ -1320,7 +1447,7 @@ def prepare_postprocess_analysis(
         print("  Loaded Second-Order simulation series.")
 
     if dynare_simul_pf is not None:
-        print("  Perfect Foresight moments will use Perfect Foresight (Dynare) simulation series.")
+        print("  Perfect Foresight moments will use the perfect-foresight simulation series.")
     elif isinstance(stats.get("PerfectForesight") or stats.get("Determ"), dict):
         print(
             "  Perfect Foresight benchmark moments are unavailable because "
@@ -1371,7 +1498,11 @@ def prepare_postprocess_analysis(
         ergodic_price_aggregation=use_ergodic_prices,
     )
 
-    upstreamness_data = _extract_matlab_upstreamness(model_data, econ_model.upstreamness())
+    upstreamness_data = _extract_matlab_upstreamness(
+        model_data,
+        econ_model.upstreamness(),
+        n_sectors=n_sectors,
+    )
     matlab_irf_sector_breakdown_rows = _extract_matlab_irf_breakdown_rows(model_data)
     ergodic_experiment_labels = [
         label for label, sim_data in raw_simulation_data.items() if sim_data.get("simulation_kind", "ergodic") == "ergodic"
@@ -1495,7 +1626,7 @@ def _build_aggregate_histogram_context(
     context.update(
         {
             "mode": "common_shock",
-            "reference_method": schedule.get("reference_method", "MATLAB benchmark"),
+            "reference_method": schedule.get("reference_method", "benchmark"),
             "burn_in": int(schedule.get("burn_in", 0)),
             "active_periods": active_periods,
             "burn_out": int(schedule.get("burn_out", 0)),
@@ -1746,6 +1877,15 @@ def render_sectoral_stochss_outputs(
                 econ_model=econ_model,
                 upstreamness_data=upstreamness_data,
             )
+            plot_sectoral_variable_composition_stochss(
+                stochastic_ss_states=long_simulation_stochastic_ss_states,
+                stochastic_ss_policies=long_simulation_stochastic_ss_policies,
+                variable_name=var_name,
+                save_dir=simulation_dir,
+                analysis_name=config["analysis_name"],
+                econ_model=econ_model,
+                upstreamness_data=upstreamness_data,
+            )
         except Exception as exc:
             print(f"    Failed to create stochastic SS {var_name} plot: {exc}", flush=True)
 
@@ -1811,6 +1951,14 @@ def render_ergodic_sectoral_outputs(*, config, simulation_dir, econ_model, raw_s
     for var_name in ["K", "L", "Y", "M", "Q"]:
         try:
             plot_sectoral_variable_ergodic(
+                raw_simulation_data=ergodic_raw_simulation_data,
+                variable_name=var_name,
+                save_dir=simulation_dir,
+                analysis_name=config["analysis_name"],
+                econ_model=econ_model,
+                upstreamness_data=upstreamness_data,
+            )
+            plot_sectoral_variable_composition_ergodic(
                 raw_simulation_data=ergodic_raw_simulation_data,
                 variable_name=var_name,
                 save_dir=simulation_dir,
@@ -1926,10 +2074,10 @@ def _build_calibration_method_stats(
     method_stats = {}
 
     dynare_method_map = {
-        "1st": ("FirstOrder", "First-Order (Dynare)"),
-        "2nd": ("SecondOrder", "Second-Order (Dynare)"),
-        "PF": ("PerfectForesight", "Perfect Foresight (Dynare)"),
-        "MITShocks": ("MITShocks", "MIT Shocks (Dynare)"),
+        "1st": ("FirstOrder", "Log-Linear"),
+        "2nd": ("SecondOrder", "Second-Order"),
+        "PF": ("PerfectForesight", "Perfect Foresight"),
+        "MITShocks": ("MITShocks", "MIT Shocks"),
     }
     for column_label, (dynare_key, source_label) in dynare_method_map.items():
         dynare_simul = dynare_simulations.get(dynare_key)

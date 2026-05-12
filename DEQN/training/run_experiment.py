@@ -246,6 +246,57 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
 
     # RUN ALL THE EPOCHS
     time_start = time()
+    if config.get("record_initial_eval", False):
+        eval_metrics = eval_fn(train_state_obj, rng_eval)
+        print(
+            "INITIAL NORMAL EVALUATION:\n",
+            "Iteration:",
+            train_state_obj.step,
+            "Mean_loss:",
+            eval_metrics[0],
+            ", Mean Acc:",
+            eval_metrics[1],
+            ", Min Acc:",
+            eval_metrics[2],
+            "\n",
+            ", Mean Accs Foc",
+            eval_metrics[3],
+            "\n",
+            ", Min Accs Foc:",
+            eval_metrics[4],
+            "\n",
+        )
+        mean_losses.append(float(eval_metrics[0]))
+        mean_accuracy.append(float(eval_metrics[1]))
+        min_accuracy.append(float(eval_metrics[2]))
+
+        if ir_eval_fn is not None:
+            ir_eval_metrics = ir_eval_fn(train_state_obj, rng_eval)
+            print(
+                "INITIAL IR EVALUATION:\n",
+                "Iteration:",
+                train_state_obj.step,
+                "Mean_loss:",
+                ir_eval_metrics[0],
+                ", Mean Acc:",
+                ir_eval_metrics[1],
+                ", Min Acc:",
+                ir_eval_metrics[2],
+                "\n",
+                ", Mean Accs Foc",
+                ir_eval_metrics[3],
+                "\n",
+                ", Min Accs Foc:",
+                ir_eval_metrics[4],
+                "\n",
+            )
+            ir_eval_losses.append(float(ir_eval_metrics[0]))
+            ir_eval_mean_accuracy.append(float(ir_eval_metrics[1]))
+            ir_eval_min_accuracy.append(float(ir_eval_metrics[2]))
+
+        learning_rates.append(float(lr_schedule(train_state_obj.step)))
+        checkpointed_steps.append(int(train_state_obj.step))
+
     for i in range(1, config["n_epochs"] + 1):
         # Evaluation
         eval_metrics = eval_fn(train_state_obj, rng_eval)

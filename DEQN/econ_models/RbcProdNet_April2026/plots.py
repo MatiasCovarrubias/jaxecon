@@ -30,6 +30,8 @@ import seaborn as sns
 
 from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import (
     plot_sector_ir_by_shock_size as _model_plot_sector_ir_by_shock_size,
+    plot_sectoral_variable_composition_ergodic as _model_plot_sectoral_variable_composition_ergodic,
+    plot_sectoral_variable_composition_stochss as _model_plot_sectoral_variable_composition_stochss,
     plot_sectoral_variable_ergodic as _model_plot_sectoral_variable_ergodic,
     plot_sectoral_variable_stochss as _model_plot_sectoral_variable_stochss,
 )
@@ -82,6 +84,14 @@ def plot_sectoral_variable_ergodic(*args, **kwargs):
 
 def plot_sectoral_variable_stochss(*args, **kwargs):
     return _model_plot_sectoral_variable_stochss(*args, **kwargs)
+
+
+def plot_sectoral_variable_composition_ergodic(*args, **kwargs):
+    return _model_plot_sectoral_variable_composition_ergodic(*args, **kwargs)
+
+
+def plot_sectoral_variable_composition_stochss(*args, **kwargs):
+    return _model_plot_sectoral_variable_composition_stochss(*args, **kwargs)
 
 
 def configure_for_colab():

@@ -102,9 +102,9 @@ def resolve_ir_benchmark_methods(config_dict):
 
 def describe_ir_benchmark_methods(config_dict):
     benchmark_method_labels = {
-        "FirstOrder": "1st-order approximation",
+        "FirstOrder": "1st-order approx.",
         "SecondOrder": "2nd-order approximation",
-        "PerfectForesight": "perfect foresight",
+        "PerfectForesight": "MIT shocks",
         "MITShocks": "MIT shocks",
     }
     labels = [

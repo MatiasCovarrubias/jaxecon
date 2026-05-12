@@ -78,6 +78,7 @@ def _build_ir_finetune_config(base_config, econ_model, analysis_hooks):
     if finetune_options.get("source_step") is not None:
         ir_config["ir_finetune_source_step"] = finetune_options["source_step"]
     ir_config["eval_ir_rollouts"] = finetune_options.get("eval_ir_rollouts", True)
+    ir_config["record_initial_eval"] = finetune_options.get("record_initial_eval", True)
     ir_config["comment"] = finetune_options.get(
         "comment",
         f"IR fine-tuning initialized from {source_exper_name or base_config['exper_name']}",

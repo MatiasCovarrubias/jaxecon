@@ -74,9 +74,9 @@ The main execution flow in `DEQN/train.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- IR fine-tuning can now restore a source experiment directly for zero-epoch bridge runs.
 - The default training config now matches the Colab benchmark run: `ModelData_newwds_v2.mat`, model volatility scale `1.0`, and simulation volatility scale `1.0`.
 - Training can now run an optional IR fine-tuning stage that samples GIR-style shocked TFP states and saves the auxiliary network with an `IR` suffix.
-- Training can now load MATLAB model data from a configurable file and object key, so objects such as `ModelData_May2026` no longer need to be renamed to `ModelData`.
 
 ## Current defaults and compatibility
 
@@ -92,7 +92,7 @@ Important defaults:
 - `double_precision = true` enables JAX x64 and uses `jnp.float64` for loaded arrays.
 - `model_vol_scale` affects the volatility used during training.
 - `config_eval["simul_vol_scale"]` and the evaluation model keep evaluation separate from the training volatility scale.
-- `config_ir_finetune["enabled"] = false` keeps the training path to a single baseline experiment. When set to `true`, Python trains an auxiliary IR network after the baseline run.
+- `config_ir_finetune["enabled"] = false` keeps the training path to a single baseline experiment. When set to `true`, Python trains an auxiliary IR network after the baseline run, or from a saved source experiment when `source_exper_name` is set.
 
 To train from a renamed MATLAB object, set:
 
@@ -226,7 +226,10 @@ This file should stay aligned with `DEQN/analysis/GIR.py` on the shock conventio
 ### IR fine-tuning
 
 - `config_ir_finetune["enabled"]`: run the auxiliary IR fine-tuning stage after baseline training.
-- `config_ir_finetune["exper_suffix"]`: suffix appended to the baseline experiment name. The default is `_IR`.
+- `config_ir_finetune["source_exper_name"]`: optional experiment folder used as the source checkpoint for IR fine-tuning.
+- `config_ir_finetune["source_step"]`: optional checkpoint step within `source_exper_name`. Leave as `None` to use the latest checkpoint.
+- `config_ir_finetune["exper_name"]`: optional explicit output experiment name for the IR run.
+- `config_ir_finetune["exper_suffix"]`: suffix appended to the baseline experiment name when `exper_name` is not set. The default is `_IR`.
 - `config_ir_finetune["min_shock_size"]`: minimum TFP shock size in percent.
 - `config_ir_finetune["max_shock_size"]`: maximum TFP shock size in percent.
 - `config_ir_finetune["learning_rate"]`: optional fine-tuning learning rate override.
@@ -241,6 +244,9 @@ Example:
 ```python
 config["config_ir_finetune"] = {
     "enabled": True,
+    "source_exper_name": None,
+    "source_step": None,
+    "exper_name": None,
     "exper_suffix": "_IR",
     "min_shock_size": 5.0,
     "max_shock_size": 25.0,
@@ -281,7 +287,7 @@ When IR fine-tuning is enabled, the auxiliary network writes into:
 
 or into the same pattern with the configured `exper_suffix`.
 
-The auxiliary experiment starts from the baseline trained parameters but initializes a fresh optimizer and learning-rate schedule.
+The auxiliary experiment starts from the baseline trained parameters but initializes a fresh optimizer and learning-rate schedule. If `source_exper_name` is set, it loads the source checkpoint from disk and uses that checkpoint's parameters instead of the in-memory baseline result.
 
 ## Restore workflow
 
@@ -295,7 +301,25 @@ config["restore_step"] = False
 
 Use `restore_step = False` when the goal is to reuse parameters but restart the learning-rate schedule. Use `restore_step = True` when the goal is to continue the exact optimizer schedule from the checkpoint.
 
-IR fine-tuning does not restore from disk during the same run. It starts from the in-memory baseline parameters returned by the baseline training stage and saves its own checkpoints under the IR experiment name.
+IR fine-tuning starts from the in-memory baseline parameters returned by the baseline training stage unless `config_ir_finetune["source_exper_name"]` is set. With a source experiment, the IR stage restores that checkpoint from disk, copies its parameters, initializes a fresh optimizer, and saves its own checkpoints under the IR experiment name.
+
+To run only IR fine-tuning from a saved baseline checkpoint:
+
+```python
+config["n_epochs"] = 0
+config["config_ir_finetune"] = {
+    "enabled": True,
+    "source_exper_name": "benchmark",
+    "source_step": None,
+    "exper_name": "benchmark_IR",
+    "min_shock_size": 5.0,
+    "max_shock_size": 25.0,
+    "learning_rate": 0.0001,
+    "n_epochs": 20,
+}
+```
+
+When baseline `n_epochs = 0`, the baseline stage initializes or restores the train state and returns without compiling, training, saving checkpoints, or producing baseline plots. If IR fine-tuning is enabled with zero baseline epochs, either set `config_ir_finetune["source_exper_name"]` or use top-level `restore = True`.
 
 ## IR fine-tuning workflow
 
@@ -323,6 +347,7 @@ The sampled states are normalized before entering the neural network, but the sh
 - To make training easier or harder relative to benchmark volatility, edit `model_vol_scale`.
 - To evaluate under a different simulation scale, edit `config_eval`.
 - To train the auxiliary IR network, set `config_ir_finetune["enabled"] = True` and choose the shock support.
+- To train only the auxiliary IR network from a saved baseline, set baseline `n_epochs = 0` and set `config_ir_finetune["source_exper_name"]`.
 
 ## Failure modes
 

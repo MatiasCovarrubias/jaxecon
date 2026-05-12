@@ -30,6 +30,73 @@ class TrainState(train_state.TrainState):
     pass
 
 
+def _create_lr_schedule(config):
+    total_steps = max(1, config["n_epochs"] * config["steps_per_epoch"])
+    return optax.cosine_decay_schedule(
+        init_value=config["learning_rate"],
+        decay_steps=total_steps,
+        alpha=0.0000001,
+    )
+
+
+def _metric_min(values):
+    return min(values) if values else None
+
+
+def _metric_max(values):
+    return max(values) if values else None
+
+
+def load_experiment_train_state(
+    config,
+    econ_model,
+    neural_net,
+    experiment_name,
+    step=None,
+    restore_step=False,
+    rng_pol=None,
+    lr_schedule=None,
+):
+    if rng_pol is None:
+        rng_pol = random.PRNGKey(config["seed"])
+    if lr_schedule is None:
+        lr_schedule = _create_lr_schedule(config)
+
+    restore_dir = Path(config["save_dir"]) / experiment_name
+    restore_checkpoint_manager = ocp.CheckpointManager(restore_dir)
+
+    checkpoint_step = step if step is not None else restore_checkpoint_manager.latest_step()
+    if checkpoint_step is None:
+        raise ValueError(f"No checkpoints found in {restore_dir}")
+
+    dummy_params = neural_net.init(rng_pol, jnp.zeros_like(econ_model.state_ss))
+    dummy_opt_state = optax.adam(lr_schedule).init(dummy_params)
+
+    abstract_target = {
+        "params": jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_params),
+        "opt_state": jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_opt_state),
+        "step": ocp.utils.to_shape_dtype_struct(jnp.array(0)),
+    }
+
+    restored_state = restore_checkpoint_manager.restore(
+        step=checkpoint_step, args=ocp.args.StandardRestore(abstract_target)  # type: ignore
+    )
+    params = restored_state["params"]
+    opt_state = restored_state["opt_state"]
+    restored_step = int(restored_state["step"])
+
+    if restore_step:
+        starting_step = restored_step
+        print(f"Restored {experiment_name} from checkpoint at step {restored_step}, continuing from step {starting_step}")
+    else:
+        starting_step = 0
+        print(f"Restored {experiment_name} from checkpoint at step {restored_step}, resetting to step {starting_step}")
+
+    train_state_obj = TrainState.create(apply_fn=neural_net.apply, params=params, tx=optax.adam(lr_schedule))
+    train_state_obj = train_state_obj.replace(opt_state=opt_state, step=starting_step)
+    return train_state_obj
+
+
 def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_eval=None, initial_params=None):
     """
     Run a single training experiment with Orbax checkpointing and return metrics.
@@ -56,6 +123,8 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
     """
     if econ_model_eval is None:
         econ_model_eval = econ_model
+    if config["n_epochs"] < 0:
+        raise ValueError("n_epochs must be non-negative.")
     n_cores = len(jax.devices())
     print(f"Running on {n_cores} device(s)")
 
@@ -63,12 +132,7 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
     rng_pol, rng_epoch, rng_eval = random.split(random.PRNGKey(config["seed"]), num=3)
 
     # CREATE LR SCHEDULE
-    total_steps = config["n_epochs"] * config["steps_per_epoch"]
-    lr_schedule = optax.cosine_decay_schedule(
-        init_value=config["learning_rate"],
-        decay_steps=total_steps,
-        alpha=0.0000001,
-    )
+    lr_schedule = _create_lr_schedule(config)
 
     # INITIALIZE OR RESTORE TRAIN STATE WITH ORBAX
     checkpoint_dir = Path(config["save_dir"]) / config.get("exper_name", "default_experiment")
@@ -81,41 +145,42 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         )
         train_state_obj = TrainState.create(apply_fn=neural_net.apply, params=params, tx=optax.adam(lr_schedule))
     else:
-        restore_dir = Path(config["save_dir"]) / config["restore_exper_name"]
-        restore_checkpoint_manager = ocp.CheckpointManager(restore_dir)
-
-        latest_step = restore_checkpoint_manager.latest_step()
-        if latest_step is None:
-            raise ValueError(f"No checkpoints found in {restore_dir}")
-
-        # Create abstract target tree for environment-agnostic restoration
-        dummy_params = neural_net.init(rng_pol, jnp.zeros_like(econ_model.state_ss))
-        dummy_opt_state = optax.adam(lr_schedule).init(dummy_params)
-
-        abstract_target = {
-            "params": jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_params),
-            "opt_state": jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, dummy_opt_state),
-            "step": ocp.utils.to_shape_dtype_struct(jnp.array(0)),  # Step is saved as part of TrainState
-        }
-
-        restored_state = restore_checkpoint_manager.restore(
-            step=latest_step, args=ocp.args.StandardRestore(abstract_target)  # type: ignore
+        train_state_obj = load_experiment_train_state(
+            config=config,
+            econ_model=econ_model,
+            neural_net=neural_net,
+            experiment_name=config["restore_exper_name"],
+            restore_step=config.get("restore_step", False),
+            rng_pol=rng_pol,
+            lr_schedule=lr_schedule,
         )
-        params = restored_state["params"]
-        opt_state = restored_state["opt_state"]
-        restored_step = int(restored_state["step"])  # Convert to Python int (TrainState expects int, not JAX array)
 
-        # Determine starting step: reset to 0 by default so learning rate schedule starts fresh
-        # Set config["restore_step"] = True to continue from the checkpoint's step count
-        if config.get("restore_step", False):
-            starting_step = restored_step
-            print(f"Restored from checkpoint at step {restored_step}, continuing from step {starting_step}")
-        else:
-            starting_step = 0
-            print(f"Restored from checkpoint at step {restored_step}, resetting to step {starting_step}")
-
-        train_state_obj = TrainState.create(apply_fn=neural_net.apply, params=params, tx=optax.adam(lr_schedule))
-        train_state_obj = train_state_obj.replace(opt_state=opt_state, step=starting_step)
+    if config["n_epochs"] == 0:
+        print("n_epochs=0: skipping training loop, checkpoint writes, and plot metrics.")
+        results = {
+            "exper_name": config["exper_name"],
+            "comment_preexp": config["comment"],
+            "comment_result": "",
+            "min_loss": None,
+            "max_mean_acc": None,
+            "max_min_acc": None,
+            "time_fullexp_minutes": 0.0,
+            "time_epoch_seconds": 0.0,
+            "time_compilation_seconds": 0.0,
+            "steps_per_second": None,
+            "losses": [],
+            "mean_accuracy": [],
+            "min_accuracy": [],
+            "learning_rates": [],
+            "checkpointed_steps": [],
+            "training_skipped": True,
+        }
+        return {
+            "train_state": train_state_obj,
+            "metrics": results,
+            "lr_schedule": lr_schedule,
+            "config": config,
+        }
 
     # GET TRAIN AND EVAL FUNCTIONS
     from DEQN.algorithm.eval import create_eval_fn
@@ -212,9 +277,12 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
             checkpointed_steps.append(int(train_state_obj.step))
 
     # PRINT SUMMARY
-    print("Minimum loss attained in evaluation:", min(mean_losses))
-    print("Maximum mean accuracy attained in evaluation:", max(mean_accuracy))
-    print("Maximum min accuracy attained in evaluation:", max(min_accuracy))
+    if mean_losses:
+        print("Minimum loss attained in evaluation:", min(mean_losses))
+        print("Maximum mean accuracy attained in evaluation:", max(mean_accuracy))
+        print("Maximum min accuracy attained in evaluation:", max(min_accuracy))
+    else:
+        print("No checkpointed evaluation metrics were recorded.")
     time_fullexp = (time() - time_start) / 60
     print(f"Time Elapsed for Full Experiment: {time_fullexp:.2f} minutes")
 
@@ -229,9 +297,9 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         "exper_name": config["exper_name"],
         "comment_preexp": config["comment"],
         "comment_result": comment_result,
-        "min_loss": min(mean_losses),
-        "max_mean_acc": max(mean_accuracy),
-        "max_min_acc": max(min_accuracy),
+        "min_loss": _metric_min(mean_losses),
+        "max_mean_acc": _metric_max(mean_accuracy),
+        "max_min_acc": _metric_max(min_accuracy),
         "time_fullexp_minutes": time_fullexp,
         "time_epoch_seconds": time_epoch,
         "time_compilation_seconds": time_compilation,
@@ -241,6 +309,7 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         "min_accuracy": min_accuracy,
         "learning_rates": learning_rates,
         "checkpointed_steps": checkpointed_steps,
+        "training_skipped": False,
     }
 
     # SAVE RESULTS TO JSON

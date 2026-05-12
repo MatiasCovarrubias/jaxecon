@@ -77,7 +77,7 @@ from DEQN.training.plots import (  # noqa: E402
     plot_training_metrics,
     plot_training_summary,
 )
-from DEQN.training.run_experiment import run_experiment  # noqa: E402
+from DEQN.training.run_experiment import load_experiment_train_state, run_experiment  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
 
@@ -117,6 +117,10 @@ def _is_ir_finetune_enabled(config_dict):
     return bool((config_dict.get("config_ir_finetune") or {}).get("enabled", False))
 
 
+def _get_ir_finetune_source_exper_name(config_dict):
+    return (config_dict.get("config_ir_finetune") or {}).get("source_exper_name")
+
+
 def _build_ir_finetune_config(base_config, econ_model, analysis_hooks):
     finetune_options = base_config.get("config_ir_finetune") or {}
     ir_config = deepcopy(base_config)
@@ -137,13 +141,18 @@ def _build_ir_finetune_config(base_config, econ_model, analysis_hooks):
             ir_config[key] = deepcopy(finetune_options[key])
 
     suffix = finetune_options.get("exper_suffix", "_IR")
-    ir_config["exper_name"] = f"{base_config['exper_name']}{suffix}"
+    source_exper_name = finetune_options.get("source_exper_name")
+    ir_config["exper_name"] = finetune_options.get("exper_name") or f"{base_config['exper_name']}{suffix}"
     ir_config["restore"] = False
     ir_config["restore_exper_name"] = None
     ir_config["restore_step"] = False
+    if source_exper_name:
+        ir_config["ir_finetune_source_exper_name"] = source_exper_name
+    if finetune_options.get("source_step") is not None:
+        ir_config["ir_finetune_source_step"] = finetune_options["source_step"]
     ir_config["comment"] = finetune_options.get(
         "comment",
-        f"IR fine-tuning initialized from {base_config['exper_name']}",
+        f"IR fine-tuning initialized from {source_exper_name or base_config['exper_name']}",
     )
     ir_config["ir_finetune_min_shock_size"] = finetune_options.get("min_shock_size", 5.0)
     ir_config["ir_finetune_max_shock_size"] = finetune_options.get("max_shock_size", 25.0)
@@ -163,11 +172,26 @@ def _build_ir_finetune_config(base_config, econ_model, analysis_hooks):
 
 
 def _plot_result(result, save_dir, experiment_name):
+    metrics = result.get("metrics", {})
+    if not metrics.get("checkpointed_steps"):
+        print(f"No checkpointed metrics for {experiment_name}; skipping plots.", flush=True)
+        return
     plot_training_metrics(training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100)
     plot_learning_rate_schedule(
         training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100
     )
     plot_training_summary(training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100)
+
+
+def _print_metrics_summary(label, metrics):
+    if metrics.get("min_loss") is None:
+        print(f"{label} metrics unavailable | Time: {metrics['time_fullexp_minutes']:.1f}m")
+        return
+    print(
+        f"{label} Loss: {metrics['min_loss']:.7f} | "
+        f"Acc: {metrics['max_mean_acc']:.4f} | "
+        f"Time: {metrics['time_fullexp_minutes']:.1f}m"
+    )
 
 
 # ============================================================================
@@ -209,6 +233,9 @@ config = {
     # Optional IR fine-tuning stage. Shock sizes are percentages.
     "config_ir_finetune": {
         "enabled": False,
+        "source_exper_name": None,
+        "source_step": None,
+        "exper_name": None,
         "exper_suffix": "_IR",
         "min_shock_size": 5.0,
         "max_shock_size": 25.0,
@@ -368,8 +395,15 @@ def main():
     )
     print("Neural network created successfully.", flush=True)
 
+    if _is_ir_finetune_enabled(config) and config["n_epochs"] == 0:
+        if not _get_ir_finetune_source_exper_name(config) and not config.get("restore", False):
+            raise ValueError(
+                "IR fine-tuning with baseline n_epochs=0 requires either "
+                "config_ir_finetune['source_exper_name'] or top-level restore=True."
+            )
+
     # Run training
-    print("Starting training...", flush=True)
+    print("Starting baseline training stage...", flush=True)
     epoch_train_fn = create_epoch_train_fn
 
     try:
@@ -395,9 +429,11 @@ def main():
         _plot_result(result, plots_dir, exp_name)
 
         if "metrics" in result:
-            m = result["metrics"]
-            print(f"Loss: {m['min_loss']:.7f} | Acc: {m['max_mean_acc']:.4f} | Time: {m['time_fullexp_minutes']:.1f}m")
-        print(f"Baseline experiment stored in: {plots_dir}", flush=True)
+            _print_metrics_summary("Baseline", result["metrics"])
+            if result["metrics"].get("training_skipped"):
+                print("Baseline training skipped; no baseline checkpoint or plots written.", flush=True)
+            else:
+                print(f"Baseline experiment stored in: {plots_dir}", flush=True)
 
     if result and _is_ir_finetune_enabled(config):
         from DEQN.algorithm import create_ir_finetune_epoch_train_fn  # noqa: E402
@@ -412,13 +448,32 @@ def main():
         )
 
         try:
+            ir_initial_params = result["train_state"].params
+            source_exper_name = _get_ir_finetune_source_exper_name(config)
+            if source_exper_name:
+                source_step = (config.get("config_ir_finetune") or {}).get("source_step")
+                print(
+                    f"Loading IR fine-tuning source checkpoint: {source_exper_name}"
+                    + (f" at step {source_step}" if source_step is not None else ""),
+                    flush=True,
+                )
+                source_state = load_experiment_train_state(
+                    config=ir_config,
+                    econ_model=econ_model,
+                    neural_net=neural_net,
+                    experiment_name=source_exper_name,
+                    step=source_step,
+                    restore_step=False,
+                )
+                ir_initial_params = source_state.params
+
             ir_result = run_experiment(
                 config=ir_config,
                 econ_model=econ_model,
                 neural_net=neural_net,
                 epoch_train_fn=create_ir_finetune_epoch_train_fn,
                 econ_model_eval=econ_model_eval,
-                initial_params=result["train_state"].params,
+                initial_params=ir_initial_params,
             )
         except Exception as e:
             print(f"IR fine-tuning failed: {e}")
@@ -434,10 +489,7 @@ def main():
         try:
             _plot_result(ir_result, ir_plots_dir, ir_exp_name)
             if "metrics" in ir_result:
-                m = ir_result["metrics"]
-                print(
-                    f"IR Loss: {m['min_loss']:.7f} | Acc: {m['max_mean_acc']:.4f} | Time: {m['time_fullexp_minutes']:.1f}m"
-                )
+                _print_metrics_summary("IR", ir_result["metrics"])
             result["ir_finetune_result"] = ir_result
         except Exception as e:
             print(f"IR fine-tuning completed, but IR plotting failed: {e}")

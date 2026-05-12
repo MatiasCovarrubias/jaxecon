@@ -52,14 +52,12 @@ def _apply_gir_style_shock(
     return (shocked_state_notnorm - econ_model.state_ss) / econ_model.state_sd
 
 
-def create_ir_finetune_epoch_train_fn(econ_model, config):
-    from DEQN.algorithm.loss import create_batch_loss_fn
+def _create_ir_rollout_obs_fn(econ_model, config):
     from DEQN.algorithm.simulation import create_episode_simul_fn
 
     _validate_ir_finetune_config(config)
 
     base_episode_simul_fn = create_episode_simul_fn(econ_model, config)
-    batch_loss_fn = create_batch_loss_fn(econ_model, config)
 
     states_to_shock = jnp.array(config["states_to_shock"])
     min_shock = float(config["ir_finetune_min_shock_size"])
@@ -68,13 +66,6 @@ def create_ir_finetune_epoch_train_fn(econ_model, config):
     shock_dimension = jnp.atleast_1d(econ_model.sample_shock(random.PRNGKey(0))).shape[-1]
     zero_shock = jnp.zeros((shock_dimension,), dtype=econ_model.state_ss.dtype)
     rollout_length = int(config["periods_per_epis"])
-
-    def batch_train_fn(train_state, batch_obs, loss_rng):
-        grad_fn = jax.value_and_grad(batch_loss_fn, has_aux=True)
-        (_, batch_metrics), grads = grad_fn(train_state.params, train_state, batch_obs, loss_rng)
-        grads = jax.lax.pmean(grads, axis_name="batch")
-        train_state = train_state.apply_gradients(grads=grads)
-        return train_state, batch_metrics
 
     def zero_shock_rollout(train_state, initial_obs):
         def period_step(obs, _unused):
@@ -119,15 +110,34 @@ def create_ir_finetune_epoch_train_fn(econ_model, config):
         pos_rollout = zero_shock_rollout(train_state, pos_initial_obs)
         return jnp.concatenate([neg_rollout, pos_rollout], axis=0)
 
-    def step_train_fn(train_state, step_rng):
+    def ir_rollout_obs_fn(train_state, step_rng):
         epis_rng = random.split(step_rng, config["epis_per_step"])
-        loss_rng = random.split(step_rng, config["n_batches"])
         step_obs = jax.vmap(shocked_rollouts_from_base_episode, in_axes=(None, 0))(
             train_state,
             jnp.stack(epis_rng),
         )
         step_obs = step_obs.reshape(config["periods_per_step"], econ_model.state_ss.shape[0])
-        step_obs = random.permutation(step_rng, step_obs, axis=0)
+        return random.permutation(step_rng, step_obs, axis=0)
+
+    return ir_rollout_obs_fn
+
+
+def create_ir_finetune_epoch_train_fn(econ_model, config):
+    from DEQN.algorithm.loss import create_batch_loss_fn
+
+    batch_loss_fn = create_batch_loss_fn(econ_model, config)
+    ir_rollout_obs_fn = _create_ir_rollout_obs_fn(econ_model, config)
+
+    def batch_train_fn(train_state, batch_obs, loss_rng):
+        grad_fn = jax.value_and_grad(batch_loss_fn, has_aux=True)
+        (_, batch_metrics), grads = grad_fn(train_state.params, train_state, batch_obs, loss_rng)
+        grads = jax.lax.pmean(grads, axis_name="batch")
+        train_state = train_state.apply_gradients(grads=grads)
+        return train_state, batch_metrics
+
+    def step_train_fn(train_state, step_rng):
+        loss_rng = random.split(step_rng, config["n_batches"])
+        step_obs = ir_rollout_obs_fn(train_state, step_rng)
         step_obs = step_obs.reshape(config["n_batches"], config["batch_size"], econ_model.state_ss.shape[0])
         train_state, step_metrics = jax.vmap(
             batch_train_fn, in_axes=(None, 0, 0), out_axes=(None, 0), axis_name="batch"
@@ -145,3 +155,34 @@ def create_ir_finetune_epoch_train_fn(econ_model, config):
         return train_state, epoch_rng, epoch_metrics
 
     return epoch_train_fn
+
+
+def create_ir_finetune_eval_fn(econ_model, config):
+    from DEQN.algorithm.loss import create_batch_loss_fn
+
+    batch_loss_fn = create_batch_loss_fn(econ_model, config)
+    ir_rollout_obs_fn = _create_ir_rollout_obs_fn(econ_model, config)
+
+    def batch_eval_fn(train_state, batch_obs, loss_rng):
+        _, batch_metrics = batch_loss_fn(train_state.params, train_state, batch_obs, loss_rng)
+        return batch_metrics
+
+    def eval_fn(train_state, step_rng):
+        rollout_rng, loss_base_rng = random.split(step_rng, 2)
+        loss_rng = random.split(loss_base_rng, config["n_batches"])
+        step_obs = ir_rollout_obs_fn(train_state, rollout_rng)
+        step_obs = step_obs.reshape(config["n_batches"], config["batch_size"], econ_model.state_ss.shape[0])
+        batch_metrics = jax.vmap(batch_eval_fn, in_axes=(None, 0, 0))(
+            train_state,
+            step_obs,
+            jnp.stack(loss_rng),
+        )
+        mean_losses, mean_accuracies, min_accuracies, mean_accs_focs, min_accs_focs = batch_metrics
+        mean_loss = jnp.mean(mean_losses)
+        mean_accuracy = jnp.mean(mean_accuracies)
+        min_accuracy = jnp.min(min_accuracies)
+        mean_accs_focs = jnp.mean(mean_accs_focs, axis=0)
+        min_accs_focs = jnp.min(min_accs_focs, axis=0)
+        return mean_loss, mean_accuracy, min_accuracy, mean_accs_focs, min_accs_focs
+
+    return eval_fn

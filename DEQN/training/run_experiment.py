@@ -164,15 +164,22 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
             "min_loss": None,
             "max_mean_acc": None,
             "max_min_acc": None,
+            "ir_eval_min_loss": None,
+            "ir_eval_max_mean_acc": None,
+            "ir_eval_max_min_acc": None,
             "time_fullexp_minutes": 0.0,
             "time_epoch_seconds": 0.0,
             "time_compilation_seconds": 0.0,
+            "time_ir_eval_seconds": 0.0,
             "steps_per_second": None,
             "losses": [],
             "mean_accuracy": [],
             "min_accuracy": [],
             "learning_rates": [],
             "checkpointed_steps": [],
+            "ir_eval_losses": [],
+            "ir_eval_mean_accuracy": [],
+            "ir_eval_min_accuracy": [],
             "training_skipped": True,
         }
         return {
@@ -187,12 +194,19 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
 
     train_epoch_jitted = jax.jit(epoch_train_fn(econ_model, config))
     eval_fn = jax.jit(create_eval_fn(econ_model_eval, config))
+    ir_eval_fn = None
+    if config.get("eval_ir_rollouts", False):
+        from DEQN.algorithm.ir_finetune import create_ir_finetune_eval_fn
+
+        ir_eval_fn = jax.jit(create_ir_finetune_eval_fn(econ_model, config))
 
     # COMPILE CODE
     print("Compiling functions...")
     time_start = time()
     train_epoch_jitted(train_state_obj, rng_epoch)
     eval_fn(train_state_obj, rng_epoch)
+    if ir_eval_fn is not None:
+        ir_eval_fn(train_state_obj, rng_epoch)
     time_compilation = time() - time_start
     print(f"Time Elapsed for Compilation: {time_compilation:.2f} seconds")
 
@@ -207,7 +221,14 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
     time_eval = time() - time_start
     print(f"Time Elapsed for eval: {time_eval:.2f} seconds")
 
-    time_experiment = (time_epoch + time_eval) * config["n_epochs"] / 60
+    time_ir_eval = 0.0
+    if ir_eval_fn is not None:
+        time_start = time()
+        ir_eval_fn(train_state_obj, rng_epoch)
+        time_ir_eval = time() - time_start
+        print(f"Time Elapsed for IR eval: {time_ir_eval:.2f} seconds")
+
+    time_experiment = (time_epoch + time_eval + time_ir_eval) * config["n_epochs"] / 60
     print(f"Estimated time for full experiment: {time_experiment:.2f} minutes")
 
     steps_per_second = config["steps_per_epoch"] * config["periods_per_step"] / time_epoch
@@ -215,6 +236,7 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
 
     # CREATE LISTS TO STORE METRICS
     mean_losses, mean_accuracy, min_accuracy = [], [], []
+    ir_eval_losses, ir_eval_mean_accuracy, ir_eval_min_accuracy = [], [], []
     learning_rates = []
     checkpointed_steps = []
 
@@ -228,7 +250,7 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         # Evaluation
         eval_metrics = eval_fn(train_state_obj, rng_eval)
         print(
-            "EVALUATION:\n",
+            "NORMAL EVALUATION:\n",
             "Iteration:",
             train_state_obj.step,
             "Mean_loss:",
@@ -245,6 +267,27 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
             eval_metrics[4],
             "\n",
         )
+        ir_eval_metrics = None
+        if ir_eval_fn is not None:
+            ir_eval_metrics = ir_eval_fn(train_state_obj, rng_eval)
+            print(
+                "IR EVALUATION:\n",
+                "Iteration:",
+                train_state_obj.step,
+                "Mean_loss:",
+                ir_eval_metrics[0],
+                ", Mean Acc:",
+                ir_eval_metrics[1],
+                ", Min Acc:",
+                ir_eval_metrics[2],
+                "\n",
+                ", Mean Accs Foc",
+                ir_eval_metrics[3],
+                "\n",
+                ", Min Accs Foc:",
+                ir_eval_metrics[4],
+                "\n",
+            )
 
         # Training
         train_state_obj, rng_epoch, epoch_metrics = train_epoch_jitted(train_state_obj, rng_epoch)
@@ -273,15 +316,23 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
             mean_losses.append(float(eval_metrics[0]))
             mean_accuracy.append(float(eval_metrics[1]))
             min_accuracy.append(float(eval_metrics[2]))
+            if ir_eval_metrics is not None:
+                ir_eval_losses.append(float(ir_eval_metrics[0]))
+                ir_eval_mean_accuracy.append(float(ir_eval_metrics[1]))
+                ir_eval_min_accuracy.append(float(ir_eval_metrics[2]))
             learning_rates.append(float(current_lr))
             checkpointed_steps.append(int(train_state_obj.step))
 
     # PRINT SUMMARY
     if mean_losses:
-        print("Minimum loss attained in evaluation:", min(mean_losses))
-        print("Maximum mean accuracy attained in evaluation:", max(mean_accuracy))
-        print("Maximum min accuracy attained in evaluation:", max(min_accuracy))
-    else:
+        print("Minimum loss attained in normal evaluation:", min(mean_losses))
+        print("Maximum mean accuracy attained in normal evaluation:", max(mean_accuracy))
+        print("Maximum min accuracy attained in normal evaluation:", max(min_accuracy))
+    if ir_eval_losses:
+        print("Minimum loss attained in IR evaluation:", min(ir_eval_losses))
+        print("Maximum mean accuracy attained in IR evaluation:", max(ir_eval_mean_accuracy))
+        print("Maximum min accuracy attained in IR evaluation:", max(ir_eval_min_accuracy))
+    if not mean_losses and not ir_eval_losses:
         print("No checkpointed evaluation metrics were recorded.")
     time_fullexp = (time() - time_start) / 60
     print(f"Time Elapsed for Full Experiment: {time_fullexp:.2f} minutes")
@@ -300,13 +351,20 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
         "min_loss": _metric_min(mean_losses),
         "max_mean_acc": _metric_max(mean_accuracy),
         "max_min_acc": _metric_max(min_accuracy),
+        "ir_eval_min_loss": _metric_min(ir_eval_losses),
+        "ir_eval_max_mean_acc": _metric_max(ir_eval_mean_accuracy),
+        "ir_eval_max_min_acc": _metric_max(ir_eval_min_accuracy),
         "time_fullexp_minutes": time_fullexp,
         "time_epoch_seconds": time_epoch,
         "time_compilation_seconds": time_compilation,
+        "time_ir_eval_seconds": time_ir_eval,
         "steps_per_second": steps_per_second,
         "losses": mean_losses,
         "mean_accuracy": mean_accuracy,
         "min_accuracy": min_accuracy,
+        "ir_eval_losses": ir_eval_losses,
+        "ir_eval_mean_accuracy": ir_eval_mean_accuracy,
+        "ir_eval_min_accuracy": ir_eval_min_accuracy,
         "learning_rates": learning_rates,
         "checkpointed_steps": checkpointed_steps,
         "training_skipped": False,

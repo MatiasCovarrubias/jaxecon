@@ -84,26 +84,65 @@ def plot_training_metrics(
     losses = np.array(metrics["losses"])
     mean_acc = np.array(metrics["mean_accuracy"])
     min_acc = np.array(metrics["min_accuracy"])
+    ir_losses = np.array(metrics.get("ir_eval_losses", []))
+    ir_mean_acc = np.array(metrics.get("ir_eval_mean_accuracy", []))
+    ir_min_acc = np.array(metrics.get("ir_eval_min_accuracy", []))
 
     # Create figure with 3 subplots
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=display_dpi)
 
     # Plot 1: Mean Losses
-    axes[0].plot(steps, losses, color=colors[0], linewidth=2, marker="o", markersize=4, alpha=0.9)
+    axes[0].plot(steps, losses, color=colors[0], linewidth=2, marker="o", markersize=4, alpha=0.9, label="Normal")
+    if len(ir_losses) > 0:
+        axes[0].plot(
+            steps,
+            ir_losses,
+            color=colors[4],
+            linewidth=2,
+            marker="s",
+            markersize=4,
+            alpha=0.9,
+            label="IR",
+        )
+        axes[0].legend()
     axes[0].set_xlabel("Steps (NN updates)", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[0].set_ylabel("Mean Loss", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[0].grid(True, alpha=0.3)
     axes[0].tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
 
     # Plot 2: Mean Accuracy
-    axes[1].plot(steps, mean_acc, color=colors[1], linewidth=2, marker="o", markersize=4, alpha=0.9)
+    axes[1].plot(steps, mean_acc, color=colors[1], linewidth=2, marker="o", markersize=4, alpha=0.9, label="Normal")
+    if len(ir_mean_acc) > 0:
+        axes[1].plot(
+            steps,
+            ir_mean_acc,
+            color=colors[5],
+            linewidth=2,
+            marker="s",
+            markersize=4,
+            alpha=0.9,
+            label="IR",
+        )
+        axes[1].legend()
     axes[1].set_xlabel("Steps (NN updates)", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[1].set_ylabel("Mean Accuracy", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[1].grid(True, alpha=0.3)
     axes[1].tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
 
     # Plot 3: Min Accuracy
-    axes[2].plot(steps, min_acc, color=colors[2], linewidth=2, marker="o", markersize=4, alpha=0.9)
+    axes[2].plot(steps, min_acc, color=colors[2], linewidth=2, marker="o", markersize=4, alpha=0.9, label="Normal")
+    if len(ir_min_acc) > 0:
+        axes[2].plot(
+            steps,
+            ir_min_acc,
+            color=colors[6],
+            linewidth=2,
+            marker="s",
+            markersize=4,
+            alpha=0.9,
+            label="IR",
+        )
+        axes[2].legend()
     axes[2].set_xlabel("Steps (NN updates)", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[2].set_ylabel("Minimum Accuracy", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[2].grid(True, alpha=0.3)
@@ -224,26 +263,65 @@ def plot_training_summary(
     mean_acc = np.array(metrics["mean_accuracy"])
     min_acc = np.array(metrics["min_accuracy"])
     learning_rates = np.array(metrics["learning_rates"])
+    ir_losses = np.array(metrics.get("ir_eval_losses", []))
+    ir_mean_acc = np.array(metrics.get("ir_eval_mean_accuracy", []))
+    ir_min_acc = np.array(metrics.get("ir_eval_min_accuracy", []))
 
     # Create figure with 2x2 grid
     fig, axes = plt.subplots(2, 2, figsize=figsize, dpi=display_dpi)
 
     # Plot 1: Mean Losses
-    axes[0, 0].plot(steps, losses, color=colors[0], linewidth=2, marker="o", markersize=4, alpha=0.9)
+    axes[0, 0].plot(steps, losses, color=colors[0], linewidth=2, marker="o", markersize=4, alpha=0.9, label="Normal")
+    if len(ir_losses) > 0:
+        axes[0, 0].plot(
+            steps,
+            ir_losses,
+            color=colors[4],
+            linewidth=2,
+            marker="s",
+            markersize=4,
+            alpha=0.9,
+            label="IR",
+        )
+        axes[0, 0].legend()
     axes[0, 0].set_xlabel("Steps (NN updates)", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[0, 0].set_ylabel("Mean Loss", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[0, 0].grid(True, alpha=0.3)
     axes[0, 0].tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
 
     # Plot 2: Mean Accuracy
-    axes[0, 1].plot(steps, mean_acc, color=colors[1], linewidth=2, marker="o", markersize=4, alpha=0.9)
+    axes[0, 1].plot(steps, mean_acc, color=colors[1], linewidth=2, marker="o", markersize=4, alpha=0.9, label="Normal")
+    if len(ir_mean_acc) > 0:
+        axes[0, 1].plot(
+            steps,
+            ir_mean_acc,
+            color=colors[5],
+            linewidth=2,
+            marker="s",
+            markersize=4,
+            alpha=0.9,
+            label="IR",
+        )
+        axes[0, 1].legend()
     axes[0, 1].set_xlabel("Steps (NN updates)", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[0, 1].set_ylabel("Mean Accuracy", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[0, 1].grid(True, alpha=0.3)
     axes[0, 1].tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
 
     # Plot 3: Min Accuracy
-    axes[1, 0].plot(steps, min_acc, color=colors[2], linewidth=2, marker="o", markersize=4, alpha=0.9)
+    axes[1, 0].plot(steps, min_acc, color=colors[2], linewidth=2, marker="o", markersize=4, alpha=0.9, label="Normal")
+    if len(ir_min_acc) > 0:
+        axes[1, 0].plot(
+            steps,
+            ir_min_acc,
+            color=colors[6],
+            linewidth=2,
+            marker="s",
+            markersize=4,
+            alpha=0.9,
+            label="IR",
+        )
+        axes[1, 0].legend()
     axes[1, 0].set_xlabel("Steps (NN updates)", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[1, 0].set_ylabel("Minimum Accuracy", fontweight="bold", fontsize=MEDIUM_SIZE)
     axes[1, 0].grid(True, alpha=0.3)

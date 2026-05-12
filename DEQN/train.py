@@ -63,135 +63,26 @@ else:
 # ============================================================================
 
 import importlib  # noqa: E402
-from copy import deepcopy  # noqa: E402
 
 import jax.numpy as jnp  # noqa: E402
 import scipy.io as sio  # noqa: E402
 from jax import config as jax_config  # noqa: E402
 
 from DEQN.algorithm import create_epoch_train_fn  # noqa: E402
-from DEQN.analysis.model_hooks import get_states_to_shock, load_model_analysis_hooks  # noqa: E402
+from DEQN.analysis.model_hooks import load_model_analysis_hooks  # noqa: E402
 from DEQN.neural_nets.with_loglinear_baseline import NeuralNet  # noqa: E402
-from DEQN.training.plots import (  # noqa: E402
-    plot_learning_rate_schedule,
-    plot_training_metrics,
-    plot_training_summary,
-)
 from DEQN.training.run_experiment import load_experiment_train_state, run_experiment  # noqa: E402
+from DEQN.training.utils_train import (  # noqa: E402
+    _build_ir_finetune_config,
+    _get_ir_finetune_source_exper_name,
+    _is_ir_finetune_enabled,
+    _plot_result,
+    _print_metrics_summary,
+    _resolve_model_data_file,
+    _set_derived_training_config,
+)
 
 jax_config.update("jax_debug_nans", True)
-
-
-def _resolve_model_data_file(model_dir, configured_name, fallback_names):
-    candidate_names = []
-    for name in [configured_name, *fallback_names]:
-        if name is None or name in candidate_names:
-            continue
-        candidate_names.append(name)
-
-    for filename in candidate_names:
-        path = os.path.join(model_dir, filename)
-        if os.path.exists(path):
-            if configured_name is not None and filename != configured_name:
-                print(f"  Using fallback ModelData file: {filename} (configured '{configured_name}' not found)")
-            return filename, path
-
-    raise FileNotFoundError(f"ModelData file not found in {model_dir}. Tried: {candidate_names}")
-
-
-def _set_derived_training_config(config_dict, *, rollout_multiplier=1):
-    config_dict["batch_size"] = config_dict.get("batch_size", 16)
-    config_dict["periods_per_step"] = (
-        config_dict["periods_per_epis"] * config_dict["epis_per_step"] * rollout_multiplier
-    )
-    if config_dict["periods_per_step"] % config_dict["batch_size"] != 0:
-        raise ValueError(
-            "periods_per_step must be divisible by batch_size. "
-            f"Got periods_per_step={config_dict['periods_per_step']}, batch_size={config_dict['batch_size']}."
-        )
-    config_dict["n_batches"] = config_dict["periods_per_step"] // config_dict["batch_size"]
-    return config_dict
-
-
-def _is_ir_finetune_enabled(config_dict):
-    return bool((config_dict.get("config_ir_finetune") or {}).get("enabled", False))
-
-
-def _get_ir_finetune_source_exper_name(config_dict):
-    return (config_dict.get("config_ir_finetune") or {}).get("source_exper_name")
-
-
-def _build_ir_finetune_config(base_config, econ_model, analysis_hooks):
-    finetune_options = base_config.get("config_ir_finetune") or {}
-    ir_config = deepcopy(base_config)
-
-    for key in [
-        "learning_rate",
-        "periods_per_epis",
-        "epis_per_step",
-        "steps_per_epoch",
-        "n_epochs",
-        "checkpoint_every_n_epochs",
-        "mc_draws",
-        "init_range",
-        "simul_vol_scale",
-        "config_eval",
-    ]:
-        if key in finetune_options and finetune_options[key] is not None:
-            ir_config[key] = deepcopy(finetune_options[key])
-
-    suffix = finetune_options.get("exper_suffix", "_IR")
-    source_exper_name = finetune_options.get("source_exper_name")
-    ir_config["exper_name"] = finetune_options.get("exper_name") or f"{base_config['exper_name']}{suffix}"
-    ir_config["restore"] = False
-    ir_config["restore_exper_name"] = None
-    ir_config["restore_step"] = False
-    if source_exper_name:
-        ir_config["ir_finetune_source_exper_name"] = source_exper_name
-    if finetune_options.get("source_step") is not None:
-        ir_config["ir_finetune_source_step"] = finetune_options["source_step"]
-    ir_config["comment"] = finetune_options.get(
-        "comment",
-        f"IR fine-tuning initialized from {source_exper_name or base_config['exper_name']}",
-    )
-    ir_config["ir_finetune_min_shock_size"] = finetune_options.get("min_shock_size", 5.0)
-    ir_config["ir_finetune_max_shock_size"] = finetune_options.get("max_shock_size", 25.0)
-
-    if finetune_options.get("states_to_shock") is not None:
-        ir_config["states_to_shock"] = list(finetune_options["states_to_shock"])
-    if finetune_options.get("ir_sectors_to_plot") is not None:
-        ir_config["ir_sectors_to_plot"] = list(finetune_options["ir_sectors_to_plot"])
-
-    ir_config["states_to_shock"] = get_states_to_shock(
-        config=ir_config,
-        econ_model=econ_model,
-        analysis_hooks=analysis_hooks,
-    )
-
-    return _set_derived_training_config(ir_config, rollout_multiplier=2)
-
-
-def _plot_result(result, save_dir, experiment_name):
-    metrics = result.get("metrics", {})
-    if not metrics.get("checkpointed_steps"):
-        print(f"No checkpointed metrics for {experiment_name}; skipping plots.", flush=True)
-        return
-    plot_training_metrics(training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100)
-    plot_learning_rate_schedule(
-        training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100
-    )
-    plot_training_summary(training_results=result, save_dir=save_dir, experiment_name=experiment_name, display_dpi=100)
-
-
-def _print_metrics_summary(label, metrics):
-    if metrics.get("min_loss") is None:
-        print(f"{label} metrics unavailable | Time: {metrics['time_fullexp_minutes']:.1f}m")
-        return
-    print(
-        f"{label} Loss: {metrics['min_loss']:.7f} | "
-        f"Acc: {metrics['max_mean_acc']:.4f} | "
-        f"Time: {metrics['time_fullexp_minutes']:.1f}m"
-    )
 
 
 # ============================================================================
@@ -201,13 +92,13 @@ def _print_metrics_summary(label, metrics):
 # Configuration dictionary
 config = {
     # Key configuration - Edit these first
-    "exper_name": "benchmark",
+    "exper_name": "benchmark_final_long",
     "model_dir": "RbcProdNet_April2026",
     # MATLAB data file and object name. Set model_data_file to None to use defaults.
     "model_data_file": "ModelData_newwds_v2.mat",
     "model_data_object": "ModelData",
     # Basic experiment settings
-    "date": "April24_2026",
+    "date": "May7_2026",
     "seed": 1,
     "restore": False,
     "restore_exper_name": "",
@@ -228,19 +119,20 @@ config = {
     "periods_per_epis": 64,
     "epis_per_step": 64,
     "steps_per_epoch": 100,
-    "n_epochs": 2000,
+    "n_epochs": 0,
     "checkpoint_every_n_epochs": 10,
     # Optional IR fine-tuning stage. Shock sizes are percentages.
     "config_ir_finetune": {
-        "enabled": False,
-        "source_exper_name": None,
+        "enabled": True,
+        "source_exper_name": "benchmark_final_long",
         "source_step": None,
-        "exper_name": None,
+        "exper_name": "benchmark_final_long_IR",
         "exper_suffix": "_IR",
         "min_shock_size": 5.0,
-        "max_shock_size": 25.0,
-        "learning_rate": 0.0001,
-        "n_epochs": 20,
+        "max_shock_size": 30.0,
+        "learning_rate": 0.00005,
+        "n_epochs": 1000,
+        "eval_ir_rollouts": True,
     },
     # Evaluation configuration
     "config_eval": {

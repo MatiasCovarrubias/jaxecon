@@ -130,7 +130,7 @@ def _describe_benchmark_method(benchmark_method: str) -> str:
     benchmark_labels = {
         "FirstOrder": "1st-order approx.",
         "SecondOrder": "2nd-order approximation",
-        "PerfectForesight": "MIT shocks",
+        "PerfectForesight": "MIT shock",
         "MITShocks": "MIT shocks",
     }
     return benchmark_labels.get(benchmark_method, benchmark_method)
@@ -715,7 +715,7 @@ def plot_combined_impulse_responses(
     max_periods: int = 80,
 ):
     """
-    Create combined plots showing GIR responses alongside MIT-shock and 1st-order approximation IRs.
+    Create combined plots showing GIR responses alongside MIT shock and 1st-order approximation IRs.
     Shows both positive and negative shocks on the same graph for each shock size.
 
     Parameters:
@@ -828,7 +828,7 @@ def plot_combined_impulse_responses(
                         ax.plot(
                             np.arange(len(pos_determ)),
                             pos_determ,
-                            label=f"MIT shocks (+{pct}%)",
+                            label=f"MIT shock (+{pct}%)",
                             **_benchmark_style(1),
                         )
 
@@ -843,7 +843,7 @@ def plot_combined_impulse_responses(
                         ax.plot(
                             np.arange(len(neg_determ)),
                             neg_determ,
-                            label=f"MIT shocks (-{pct}%)",
+                            label=f"MIT shock (-{pct}%)",
                             **_benchmark_style(1),
                         )
 
@@ -1055,8 +1055,8 @@ def plot_ir_comparison_panel(
     legend_elements = [
         Line2D([0], [0], color=colors[4], linewidth=1.5, linestyle="--", label="1st-order approx. (+)"),
         Line2D([0], [0], color=colors[5], linewidth=1.5, linestyle="--", label="1st-order approx. (-)"),
-        Line2D([0], [0], color=colors[2], linewidth=1.5, linestyle="-.", label="MIT shocks (+)"),
-        Line2D([0], [0], color=colors[3], linewidth=1.5, linestyle="-.", label="MIT shocks (-)"),
+        Line2D([0], [0], color=colors[2], linewidth=1.5, linestyle="-.", label="MIT shock (+)"),
+        Line2D([0], [0], color=colors[3], linewidth=1.5, linestyle="-.", label="MIT shock (-)"),
     ]
 
     legend_elements.append(Line2D([0], [0], color=colors[0], linewidth=2, label="GIR"))
@@ -1226,7 +1226,7 @@ def plot_sector_ir_by_shock_size(
     benchmark_label_map = {
         "FirstOrder": "1st-order approx.",
         "SecondOrder": "Second Order",
-        "PerfectForesight": "MIT shocks",
+        "PerfectForesight": "MIT shock",
     }
     resolved_benchmark_methods = _resolve_ir_benchmark_methods(
         benchmark_methods=benchmark_methods,

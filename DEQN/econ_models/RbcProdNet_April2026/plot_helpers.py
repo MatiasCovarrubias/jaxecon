@@ -229,7 +229,8 @@ def plot_cir_shock_size_profiles(
         ax.grid(True, alpha=0.3)
         if figure_spec.get("ylabel") == "Correlation":
             ax.set_ylim(-1.05, 1.05)
-        ax.legend(frameon=True, framealpha=0.9, fontsize=SMALL_SIZE - 1)
+        if len(plotted_measures) > 1:
+            ax.legend(frameon=True, framealpha=0.9, fontsize=SMALL_SIZE - 1)
         plt.tight_layout()
 
         stem = figure_spec.get("filename_stem", "cir_shock_size_profile")
@@ -239,8 +240,8 @@ def plot_cir_shock_size_profiles(
         _write_figure_note_tex(
             save_path,
             "The figure plots cumulative impulse-response table measures against the discovered TFP shock size. "
-            "The horizontal axis reports shock size in percent. Percent-difference panels report amplification, "
-            "attenuation, and asymmetry in percent; the correlations panel is unitless and bounded between -1 and 1.",
+            "The horizontal axis reports shock size in percent. Percent-difference figures report amplification, "
+            "attenuation, and asymmetry in percent; correlation figures are unitless and bounded between -1 and 1.",
         )
         _print_saved_file(save_path, indent="  ")
         saved_paths.append(save_path)

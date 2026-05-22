@@ -141,34 +141,114 @@ CIR_TABLE_PANELS = [
 
 CIR_FIGURE_SPECS = [
     {
-        "title": "MIT shock vs 1st-order approx.",
-        "measures": ["Nonlin. ampl. (-)", "Nonlin. ampl. (+)", "MIT asym."],
-        "filename_stem": "cir_mit_vs_first_order",
+        "title": "Nonlinear amplification, negative shocks",
+        "measures": ["Nonlin. ampl. (-)"],
+        "filename_stem": "cir_nonlin_ampl_negative",
         "ylabel": "Percent difference",
         "scale": 100.0,
     },
     {
-        "title": "Global solution vs MIT shock",
-        "measures": ["Opt. atten. (-)", "Opt. atten. (+)", "Global asym."],
-        "filename_stem": "cir_global_vs_mit",
+        "title": "Nonlinear amplification, positive shocks",
+        "measures": ["Nonlin. ampl. (+)"],
+        "filename_stem": "cir_nonlin_ampl_positive",
         "ylabel": "Percent difference",
         "scale": 100.0,
     },
     {
-        "title": "Sectoral correlations",
-        "measures": [
-            "corr(opt. atten., U_M)",
-            "corr(global asym., U_M)",
-            "corr(nonlin. ampl., U_M)",
-            "corr(opt. atten., U_I)",
-            "corr(global asym., U_I)",
-            "corr(nonlin. ampl., U_I)",
-            "corr(opt. atten., sigA)",
-            "corr(global asym., sigA)",
-            "corr(nonlin. ampl., sigA)",
-            "corr(MIT asym., sigA)",
-        ],
-        "filename_stem": "cir_sectoral_correlations",
+        "title": "MIT shock asymmetry, negative vs positive shocks",
+        "measures": ["MIT asym."],
+        "filename_stem": "cir_mit_asymmetry",
+        "ylabel": "Percent difference",
+        "scale": 100.0,
+    },
+    {
+        "title": "Optimal attenuation, negative shocks",
+        "measures": ["Opt. atten. (-)"],
+        "filename_stem": "cir_opt_atten_negative",
+        "ylabel": "Percent difference",
+        "scale": 100.0,
+    },
+    {
+        "title": "Optimal attenuation, positive shocks",
+        "measures": ["Opt. atten. (+)"],
+        "filename_stem": "cir_opt_atten_positive",
+        "ylabel": "Percent difference",
+        "scale": 100.0,
+    },
+    {
+        "title": "Global asymmetry, negative vs positive shocks",
+        "measures": ["Global asym."],
+        "filename_stem": "cir_global_asymmetry",
+        "ylabel": "Percent difference",
+        "scale": 100.0,
+    },
+    {
+        "title": "Correlation: optimal attenuation for negative shocks and U_M",
+        "measures": ["corr(opt. atten., U_M)"],
+        "filename_stem": "cir_corr_opt_atten_U_M",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: global asymmetry and U_M",
+        "measures": ["corr(global asym., U_M)"],
+        "filename_stem": "cir_corr_global_asym_U_M",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: nonlinear amplification for negative shocks and U_M",
+        "measures": ["corr(nonlin. ampl., U_M)"],
+        "filename_stem": "cir_corr_nonlin_ampl_U_M",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: optimal attenuation for negative shocks and U_I",
+        "measures": ["corr(opt. atten., U_I)"],
+        "filename_stem": "cir_corr_opt_atten_U_I",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: global asymmetry and U_I",
+        "measures": ["corr(global asym., U_I)"],
+        "filename_stem": "cir_corr_global_asym_U_I",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: nonlinear amplification for negative shocks and U_I",
+        "measures": ["corr(nonlin. ampl., U_I)"],
+        "filename_stem": "cir_corr_nonlin_ampl_U_I",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: optimal attenuation for negative shocks and sigA",
+        "measures": ["corr(opt. atten., sigA)"],
+        "filename_stem": "cir_corr_opt_atten_sigA",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: global asymmetry and sigA",
+        "measures": ["corr(global asym., sigA)"],
+        "filename_stem": "cir_corr_global_asym_sigA",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: nonlinear amplification for negative shocks and sigA",
+        "measures": ["corr(nonlin. ampl., sigA)"],
+        "filename_stem": "cir_corr_nonlin_ampl_sigA",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
+    {
+        "title": "Correlation: MIT shock asymmetry and sigA",
+        "measures": ["corr(MIT asym., sigA)"],
+        "filename_stem": "cir_corr_mit_asym_sigA",
         "ylabel": "Correlation",
         "scale": 1.0,
     },
@@ -643,11 +723,11 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
         [
             build_simple_figure_spec(
                 analysis_named_path(cir_figures_dir, figure_spec["filename_stem"], analysis_name, ".png"),
-                f"{figure_spec['title']} CIR measures by shock size.",
+                f"{figure_spec['title']} by shock size.",
                 note_text=(
                     "The horizontal axis reports the discovered TFP shock size in percent. "
-                    "Percent-difference panels report amplification, attenuation, and asymmetry in percent; "
-                    "the correlations panel is unitless."
+                    "Percent-difference figures report amplification, attenuation, and asymmetry in percent; "
+                    "correlation figures are unitless."
                 ),
             )
             for figure_spec in CIR_FIGURE_SPECS

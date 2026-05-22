@@ -15,7 +15,11 @@ from DEQN.econ_models.RbcProdNet_April2026.aggregation import (
     reaggregate_aggregates,
 )
 from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import get_available_shock_sizes, load_matlab_irs
-from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import plot_ergodic_histograms, _write_figure_note_tex
+from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import (
+    plot_cir_shock_size_profiles,
+    plot_ergodic_histograms,
+    _write_figure_note_tex,
+)
 from DEQN.econ_models.RbcProdNet_April2026.plots import (
     plot_sector_ir_by_shock_size,
     plot_sectoral_variable_composition_ergodic,
@@ -61,10 +65,21 @@ def _safe_corr(x_values: Any, y_values: Any) -> Optional[float]:
     return float(np.corrcoef(x, y)[0, 1])
 
 
-def _format_table_value(value: Any) -> str:
+def _is_cir_correlation_measure(measure: str) -> bool:
+    return measure.startswith("corr(")
+
+
+def _cir_display_value(value: Any, measure: str) -> Optional[float]:
     scalar = _as_float(value)
     if scalar is None:
-        return "--"
+        return None
+    return scalar if _is_cir_correlation_measure(measure) else scalar * 100.0
+
+
+def _format_table_value(value: Any, measure: str) -> str:
+    scalar = _cir_display_value(value, measure)
+    if scalar is None:
+        return ""
     return f"{scalar:.3f}"
 
 
@@ -80,20 +95,22 @@ def _nanmean_or_none(values: Any) -> Optional[float]:
 
 
 CIR_MEASURE_DESCRIPTIONS = {
-    "Opt. atten. (-)": "1-|GIR_gs(-)|/|GIR_mit(-)|",
-    "Opt. atten. (+)": "1-|GIR_gs(+)|/|GIR_mit(+)|",
-    "Global asym.": "1-|GIR_gs(-)|/|GIR_gs(+)|",
-    "Nonlin. ampl. (-)": "|GIR_mit(-)|/|GIT_1or(-)|-1",
-    "Nonlin. ampl. (+)": "|GIR_mit(+)|/|GIT_1or(+)|-1",
-    "MIT asym.": "1-|GIR_mit(-)|/|GIR_mit(+)|",
-    "rho(opt. atten., U_M)": "rho(Opt. atten.(-), U_M)",
-    "rho(global asym., U_M)": "rho(Global asym., U_M)",
-    "rho(opt. atten., U_I)": "rho(Opt. atten.(-), U_I)",
-    "rho(global asym., U_I)": "rho(Global asym., U_I)",
-    "rho(opt. atten., sigA)": "rho(Opt. atten.(-), sigA)",
-    "rho(global asym., sigA)": "rho(Global asym., sigA)",
-    "rho(nonlin. ampl., sigA)": "rho(Nonlin. ampl.(-), sigA)",
-    "rho(MIT asym., sigA)": "rho(MIT asym., sigA)",
+    "Nonlin. ampl. (-)": r"$100\times(GIR_{MIT}(-)/GIR_{1or}(-)-1)$",
+    "Nonlin. ampl. (+)": r"$100\times(GIR_{MIT}(+)/GIR_{1or}(+)-1)$",
+    "MIT asym.": r"$100\times(1-|GIR_{MIT}(-)|/|GIR_{MIT}(+)|)$",
+    "Opt. atten. (-)": r"$100\times(1-GIR_{GS}(-)/GIR_{MIT}(-))$",
+    "Opt. atten. (+)": r"$100\times(1-GIR_{GS}(+)/GIR_{MIT}(+))$",
+    "Global asym.": r"$100\times(1-|GIR_{GS}(-)/GIR_{GS}(+)|)$",
+    "corr(opt. atten., U_M)": r"corr(Opt. atten.(-), U\_M)",
+    "corr(global asym., U_M)": r"corr(Global asym., U\_M)",
+    "corr(nonlin. ampl., U_M)": r"corr(Nonlin. ampl.(-), U\_M)",
+    "corr(opt. atten., U_I)": r"corr(Opt. atten.(-), U\_I)",
+    "corr(global asym., U_I)": r"corr(Global asym., U\_I)",
+    "corr(nonlin. ampl., U_I)": r"corr(Nonlin. ampl.(-), U\_I)",
+    "corr(opt. atten., sigA)": "corr(Opt. atten.(-), sigA)",
+    "corr(global asym., sigA)": "corr(Global asym., sigA)",
+    "corr(nonlin. ampl., sigA)": "corr(Nonlin. ampl.(-), sigA)",
+    "corr(MIT asym., sigA)": "corr(MIT asym., sigA)",
 }
 
 CIR_TABLE_PANELS = [
@@ -108,21 +125,62 @@ CIR_TABLE_PANELS = [
     (
         "Sectoral correlations",
         [
-            "rho(opt. atten., U_M)",
-            "rho(global asym., U_M)",
-            "rho(opt. atten., U_I)",
-            "rho(global asym., U_I)",
-            "rho(opt. atten., sigA)",
-            "rho(global asym., sigA)",
-            "rho(nonlin. ampl., sigA)",
-            "rho(MIT asym., sigA)",
+            "corr(opt. atten., U_M)",
+            "corr(global asym., U_M)",
+            "corr(nonlin. ampl., U_M)",
+            "corr(opt. atten., U_I)",
+            "corr(global asym., U_I)",
+            "corr(nonlin. ampl., U_I)",
+            "corr(opt. atten., sigA)",
+            "corr(global asym., sigA)",
+            "corr(nonlin. ampl., sigA)",
+            "corr(MIT asym., sigA)",
         ],
     ),
+]
+
+CIR_FIGURE_SPECS = [
+    {
+        "title": "MIT shock vs 1st-order approx.",
+        "measures": ["Nonlin. ampl. (-)", "Nonlin. ampl. (+)", "MIT asym."],
+        "filename_stem": "cir_mit_vs_first_order",
+        "ylabel": "Percent difference",
+        "scale": 100.0,
+    },
+    {
+        "title": "Global solution vs MIT shock",
+        "measures": ["Opt. atten. (-)", "Opt. atten. (+)", "Global asym."],
+        "filename_stem": "cir_global_vs_mit",
+        "ylabel": "Percent difference",
+        "scale": 100.0,
+    },
+    {
+        "title": "Sectoral correlations",
+        "measures": [
+            "corr(opt. atten., U_M)",
+            "corr(global asym., U_M)",
+            "corr(nonlin. ampl., U_M)",
+            "corr(opt. atten., U_I)",
+            "corr(global asym., U_I)",
+            "corr(nonlin. ampl., U_I)",
+            "corr(opt. atten., sigA)",
+            "corr(global asym., sigA)",
+            "corr(nonlin. ampl., sigA)",
+            "corr(MIT asym., sigA)",
+        ],
+        "filename_stem": "cir_sectoral_correlations",
+        "ylabel": "Correlation",
+        "scale": 1.0,
+    },
 ]
 
 
 def _magnitude_ratio(numerator: Any, denominator: Any) -> np.ndarray:
     return np.abs(np.asarray(numerator, dtype=float)) / np.abs(np.asarray(denominator, dtype=float))
+
+
+def _signed_ratio(numerator: Any, denominator: Any) -> np.ndarray:
+    return np.asarray(numerator, dtype=float) / np.asarray(denominator, dtype=float)
 
 
 def _sectoral_shock_volatility(value: Any, n_sectors: Optional[int] = None) -> Optional[np.ndarray]:
@@ -576,8 +634,24 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
         [os.path.join(analysis_dir, f"ir_nonlinearity_summary_{analysis_name}.tex")],
     )
     add_table_section(
-        "2D. CIR Optimal Attenuation Summary",
+        "2D. CIR Analysis",
         [os.path.join(ir_tables_dir, f"cir_analysis_{analysis_name}.tex")],
+    )
+    cir_figures_dir = os.path.join(irs_dir, "IR_CIR")
+    add_figure_section(
+        "2E. CIR Shock-Size Profiles",
+        [
+            build_simple_figure_spec(
+                analysis_named_path(cir_figures_dir, figure_spec["filename_stem"], analysis_name, ".png"),
+                f"{figure_spec['title']} CIR measures by shock size.",
+                note_text=(
+                    "The horizontal axis reports the discovered TFP shock size in percent. "
+                    "Percent-difference panels report amplification, attenuation, and asymmetry in percent; "
+                    "the correlations panel is unitless."
+                ),
+            )
+            for figure_spec in CIR_FIGURE_SPECS
+        ],
     )
 
     add_figure_section(
@@ -1235,11 +1309,11 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
         fo_neg_arr = np.asarray([np.nan if v is None else v for v in fo_neg], dtype=float)
 
         with np.errstate(divide="ignore", invalid="ignore"):
-            attenuation_neg = 1.0 - _magnitude_ratio(global_neg_arr, pf_neg_arr)
-            attenuation_pos = 1.0 - _magnitude_ratio(global_pos_arr, pf_pos_arr)
+            attenuation_neg = 1.0 - _signed_ratio(global_neg_arr, pf_neg_arr)
+            attenuation_pos = 1.0 - _signed_ratio(global_pos_arr, pf_pos_arr)
             global_asymmetry = 1.0 - _magnitude_ratio(global_neg_arr, global_pos_arr)
-            matlab_amp_neg = _magnitude_ratio(pf_neg_arr, fo_neg_arr) - 1.0
-            matlab_amp_pos = _magnitude_ratio(pf_pos_arr, fo_pos_arr) - 1.0
+            matlab_amp_neg = _signed_ratio(pf_neg_arr, fo_neg_arr) - 1.0
+            matlab_amp_pos = _signed_ratio(pf_pos_arr, fo_pos_arr) - 1.0
             matlab_pf_asymmetry = 1.0 - _magnitude_ratio(pf_neg_arr, pf_pos_arr)
 
         rows.append(
@@ -1252,14 +1326,16 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
                     "Nonlin. ampl. (-)": _nanmean_or_none(matlab_amp_neg),
                     "Nonlin. ampl. (+)": _nanmean_or_none(matlab_amp_pos),
                     "MIT asym.": _nanmean_or_none(matlab_pf_asymmetry),
-                    "rho(opt. atten., U_M)": _safe_corr(attenuation_neg, upstreamness_data.get("U_M")),
-                    "rho(global asym., U_M)": _safe_corr(global_asymmetry, upstreamness_data.get("U_M")),
-                    "rho(opt. atten., U_I)": _safe_corr(attenuation_neg, upstreamness_data.get("U_I")),
-                    "rho(global asym., U_I)": _safe_corr(global_asymmetry, upstreamness_data.get("U_I")),
-                    "rho(opt. atten., sigA)": _safe_corr(attenuation_neg, shock_volatility),
-                    "rho(global asym., sigA)": _safe_corr(global_asymmetry, shock_volatility),
-                    "rho(nonlin. ampl., sigA)": _safe_corr(matlab_amp_neg, shock_volatility),
-                    "rho(MIT asym., sigA)": _safe_corr(matlab_pf_asymmetry, shock_volatility),
+                    "corr(opt. atten., U_M)": _safe_corr(attenuation_neg, upstreamness_data.get("U_M")),
+                    "corr(global asym., U_M)": _safe_corr(global_asymmetry, upstreamness_data.get("U_M")),
+                    "corr(nonlin. ampl., U_M)": _safe_corr(matlab_amp_neg, upstreamness_data.get("U_M")),
+                    "corr(opt. atten., U_I)": _safe_corr(attenuation_neg, upstreamness_data.get("U_I")),
+                    "corr(global asym., U_I)": _safe_corr(global_asymmetry, upstreamness_data.get("U_I")),
+                    "corr(nonlin. ampl., U_I)": _safe_corr(matlab_amp_neg, upstreamness_data.get("U_I")),
+                    "corr(opt. atten., sigA)": _safe_corr(attenuation_neg, shock_volatility),
+                    "corr(global asym., sigA)": _safe_corr(global_asymmetry, shock_volatility),
+                    "corr(nonlin. ampl., sigA)": _safe_corr(matlab_amp_neg, shock_volatility),
+                    "corr(MIT asym., sigA)": _safe_corr(matlab_pf_asymmetry, shock_volatility),
                 },
             }
         )
@@ -1293,11 +1369,11 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
             )
             for measure in measures:
                 description = CIR_MEASURE_DESCRIPTIONS.get(measure, "")
-                values = [_format_table_value(row["values"].get(measure)) for row in rows]
+                values = [_format_table_value(row["values"].get(measure), measure) for row in rows]
                 table_file.write(
                     _latex_escape(measure)
                     + " & "
-                    + _latex_escape(description)
+                    + description
                     + " & "
                     + " & ".join(values)
                     + " \\\\\n"
@@ -1307,12 +1383,12 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
             "\\begin{minipage}{0.92\\textwidth}\n\\footnotesize\n"
             "\\textit{Notes:} CIR is the sum over the displayed IR horizon of the aggregate consumption response. "
             f"The Python global-solution CIR uses the selected IR source: {_latex_escape(response_source)}. "
-            "Notation: GIR_gs is the global-solution CIR, GIR_mit is the MIT shock CIR, "
-            "and GIT_1or is the 1st-order approximation CIR; + and - denote positive and negative shocks. "
-            "Opt. atten., nonlin. ampl., asym., and rho denote optimal attenuation, nonlinear amplification, "
+            r"Notation: $GIR_{GS}$ is the global-solution CIR, $GIR_{MIT}$ is the MIT shock CIR, "
+            r"and $GIR_{1or}$ is the 1st-order approximation CIR; + and - denote positive and negative shocks. "
+            "Opt. atten., nonlin. ampl., asym., and corr denote optimal attenuation, nonlinear amplification, "
             "asymmetry, and correlation. "
-            "U_M and U_I are IO and investment upstreamness, and sigA is sectoral shock volatility. "
-            "Values are fractional differences, so 0.10 means 10 percent. "
+            r"$U_M$ and $U_I$ are IO and investment upstreamness, and sigA is sectoral shock volatility. "
+            "Amplification, attenuation, and asymmetry rows are reported in percent, while correlation rows are unitless. "
             "Missing benchmark CIR or diagnostic fields are left blank.\n"
             "\\end{minipage}\n"
         )
@@ -1340,7 +1416,7 @@ def _print_cir_analysis_table(rows) -> None:
         max(len(CIR_MEASURE_DESCRIPTIONS.get(measure, "")) for measure in measure_order),
     )
     value_width = 12
-    print("\n  CIR OPTIMAL ATTENUATION SUMMARY", flush=True)
+    print("\n  CIR ANALYSIS SUMMARY", flush=True)
     total_width = measure_width + description_width + value_width * len(shock_headers) + 4
     print("  " + "-" * total_width, flush=True)
     header = (
@@ -1355,7 +1431,7 @@ def _print_cir_analysis_table(rows) -> None:
         print("  " + panel_title, flush=True)
         for measure in measures:
             description = CIR_MEASURE_DESCRIPTIONS.get(measure, "")
-            values = [_format_table_value(row["values"].get(measure)).rjust(value_width) for row in rows]
+            values = [_format_table_value(row["values"].get(measure), measure).rjust(value_width) for row in rows]
             print(
                 "  " + measure.ljust(measure_width) + description.ljust(description_width) + "".join(values),
                 flush=True,
@@ -1388,6 +1464,15 @@ def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postpr
         response_source=_resolve_ir_response_source(config),
     )
     _print_cir_analysis_table(rows)
+    cir_figures_dir = os.path.join(irs_dir, "IR_CIR")
+    print("  CIR shock-size profile figures", flush=True)
+    plot_cir_shock_size_profiles(
+        rows=rows,
+        figure_specs=CIR_FIGURE_SPECS,
+        save_dir=cir_figures_dir,
+        analysis_name=config["analysis_name"],
+        show_plot=bool(config.get("show_ir_plots", False)),
+    )
     print(f"  Saved CIR analysis table: {os.path.basename(output_path)}", flush=True)
 
 

@@ -170,6 +170,89 @@ def _print_saved_file(path: str, indent: str = "    ") -> None:
     print(f"{indent}Saved: {os.path.basename(path)}", flush=True)
 
 
+def plot_cir_shock_size_profiles(
+    *,
+    rows: list[Dict[str, Any]],
+    figure_specs: list[Dict[str, Any]],
+    save_dir: str,
+    analysis_name: str,
+    show_plot: bool = False,
+    figsize: Tuple[float, float] = (8.8, 5.0),
+    display_dpi: int = 100,
+) -> list[str]:
+    if not rows:
+        return []
+
+    os.makedirs(save_dir, exist_ok=True)
+    shock_sizes = np.asarray([float(row["shock_size"]) for row in rows], dtype=float)
+    saved_paths: list[str] = []
+
+    for figure_spec in figure_specs:
+        plotted_measures = []
+        fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
+        scale = float(figure_spec.get("scale", 1.0))
+        for measure_idx, measure in enumerate(figure_spec.get("measures", [])):
+            values = np.asarray(
+                [
+                    np.nan
+                    if row.get("values", {}).get(measure) is None
+                    else float(row.get("values", {}).get(measure))
+                    for row in rows
+                ],
+                dtype=float,
+            ) * scale
+            if not np.isfinite(values).any():
+                continue
+            style = _experiment_style(measure_idx, "CIR")
+            ax.plot(
+                shock_sizes,
+                values,
+                color=style["color"],
+                linewidth=style["linewidth"],
+                linestyle=_ranked_linestyle(measure_idx),
+                marker="o",
+                markersize=5,
+                alpha=style["alpha"],
+                label=measure,
+            )
+            plotted_measures.append(measure)
+
+        if not plotted_measures:
+            plt.close(fig)
+            continue
+
+        ax.axhline(y=0, color="black", linestyle="-", alpha=0.35, linewidth=1)
+        ax.set_xlabel("Shock size (%)", fontweight="bold", fontsize=MEDIUM_SIZE)
+        ax.set_ylabel(figure_spec.get("ylabel", "Value"), fontweight="bold", fontsize=MEDIUM_SIZE)
+        ax.set_title(figure_spec.get("title", "CIR analysis"), fontsize=LARGE_SIZE)
+        ax.set_xticks(shock_sizes)
+        ax.grid(True, alpha=0.3)
+        if figure_spec.get("ylabel") == "Correlation":
+            ax.set_ylim(-1.05, 1.05)
+        ax.legend(frameon=True, framealpha=0.9, fontsize=SMALL_SIZE - 1)
+        plt.tight_layout()
+
+        stem = figure_spec.get("filename_stem", "cir_shock_size_profile")
+        filename = f"{stem}_{analysis_name}.png" if analysis_name else f"{stem}.png"
+        save_path = os.path.join(save_dir, filename)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        _write_figure_note_tex(
+            save_path,
+            "The figure plots cumulative impulse-response table measures against the discovered TFP shock size. "
+            "The horizontal axis reports shock size in percent. Percent-difference panels report amplification, "
+            "attenuation, and asymmetry in percent; the correlations panel is unitless and bounded between -1 and 1.",
+        )
+        _print_saved_file(save_path, indent="  ")
+        saved_paths.append(save_path)
+
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)
+
+    return saved_paths
+
+
 def _build_ir_note(
     *,
     variable_to_plot: str,

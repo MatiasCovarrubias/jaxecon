@@ -177,7 +177,7 @@ def plot_cir_shock_size_profiles(
     save_dir: str,
     analysis_name: str,
     show_plot: bool = False,
-    figsize: Tuple[float, float] = (8.8, 5.0),
+    figsize: Tuple[float, float] = (5.2, 5.2),
     display_dpi: int = 100,
 ) -> list[str]:
     if not rows:
@@ -224,7 +224,6 @@ def plot_cir_shock_size_profiles(
         ax.axhline(y=0, color="black", linestyle="-", alpha=0.35, linewidth=1)
         ax.set_xlabel("Shock size (%)", fontweight="bold", fontsize=MEDIUM_SIZE)
         ax.set_ylabel(figure_spec.get("ylabel", "Value"), fontweight="bold", fontsize=MEDIUM_SIZE)
-        ax.set_title(figure_spec.get("title", "CIR analysis"), fontsize=LARGE_SIZE)
         ax.set_xticks(shock_sizes)
         ax.grid(True, alpha=0.3)
         if figure_spec.get("ylabel") == "Correlation":
@@ -236,7 +235,7 @@ def plot_cir_shock_size_profiles(
         stem = figure_spec.get("filename_stem", "cir_shock_size_profile")
         filename = f"{stem}_{analysis_name}.png" if analysis_name else f"{stem}.png"
         save_path = os.path.join(save_dir, filename)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        plt.savefig(save_path, dpi=300, format="png")
         _write_figure_note_tex(
             save_path,
             "The figure plots cumulative impulse-response table measures against the discovered TFP shock size. "

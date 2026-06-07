@@ -70,9 +70,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- CIR analysis now exports sector-level CSV sidecars for multi-experiment comparisons.
 - Sectoral stochastic-SS and ergodic-mean outputs now include deterministic-price composition-share bars that strip out aggregate level changes.
 - Python can now use a separate experiment checkpoint for DEQN IR/GIR trajectories through `ir_experiment_to_analyze`, while keeping the main simulation and welfare analysis on the normal experiment.
-- The active analysis path is single-experiment only; comparison across experiments should be done from saved single-experiment analyses, while within-run tables and histograms compare methods.
 
 ## Current defaults and compatibility
 
@@ -280,6 +280,7 @@ The Python layer writes outputs under:
 - `<model_dir>/analysis/<analysis_name>/`
 - `<model_dir>/analysis/<analysis_name>/simulation/`
 - `<model_dir>/analysis/<analysis_name>/IRs/`
+- `<model_dir>/analysis/comparisons/<comparative_name>/` for model-specific multi-experiment outputs.
 
 Main displayed exercises:
 
@@ -296,6 +297,8 @@ Main displayed exercises:
 11. sectoral IRs
 12. ergodic mean sectoral variables
 13. ergodic mean sectoral composition-share changes
+
+Multi-experiment custom analyses should read only saved single-experiment artifacts. For RbcProdNet-specific comparison scripts, keep the code in this model folder and write generated tables, CSVs, and wrappers under `analysis/comparisons/<comparative_name>/`. The Mining, Oil, and Gas CIR comparison reports the volatility-sensitive optimal attenuation and global asymmetry rows from `IRs/IR_tables/cir_sector_values_<analysis_name>.csv`, so each single experiment must be rerun once with a code version that exports that sidecar.
 
 For the exact current execution inventory, see:
 

@@ -1,0 +1,31 @@
+{
+  "run_analysis": true,
+  "train": {
+    "exper_name": "highsigmam",
+    "model_dir": "RbcProdNet_April2026",
+    "model_data_file": "ModelData_highsigmam.mat",
+    "model_data_object": "ModelData",
+    "date": "Jun7_2026",
+    "seed": 1,
+    "restore": false,
+    "n_epochs": 4000,
+    "config_ir_finetune": {
+      "enabled": true,
+      "source_exper_name": "highsigmam",
+      "exper_name": "highsigmam_IR",
+      "exper_suffix": "_IR",
+      "n_epochs": 1000
+    }
+  },
+  "analysis": {
+    "model_dir": "RbcProdNet_April2026",
+    "analysis_name": "highsigmam",
+    "model_data_file": "ModelData_highsigmam.mat",
+    "model_data_irs_file": "ModelData_IRs_highsigmam.mat",
+    "model_data_simulation_file": "ModelData_simulation_highsigmam.mat",
+    "experiment_to_analyze": {
+      "highsigmam": "highsigmam"
+    },
+    "ir_experiment_to_analyze": "highsigmam_IR"
+  }
+}

@@ -1,3 +1,4 @@
+import csv
 import os
 from typing import Any, Dict, Optional
 
@@ -137,6 +138,15 @@ CIR_TABLE_PANELS = [
             "corr(MIT asym., sigA)",
         ],
     ),
+]
+
+CIR_SECTOR_VALUE_MEASURES = [
+    "Nonlin. ampl. (-)",
+    "Nonlin. ampl. (+)",
+    "MIT asym.",
+    "Opt. atten. (-)",
+    "Opt. atten. (+)",
+    "Global asym.",
 ]
 
 CIR_FIGURE_SPECS = [
@@ -1422,6 +1432,147 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
     return rows
 
 
+def _cir_panel_title(measure: str) -> str:
+    for panel_title, measures in CIR_TABLE_PANELS:
+        if measure in measures:
+            return panel_title
+    return "Other"
+
+
+def _nan_if_none(value: Any) -> float:
+    scalar = _as_float(value)
+    return np.nan if scalar is None else scalar
+
+
+def _build_cir_sector_value_rows(*, config, gir_data, matlab_ir_data, n_sectors, sector_labels=None):
+    shock_sizes = get_available_shock_sizes(matlab_ir_data)
+    if not shock_sizes or not gir_data:
+        return []
+    if len(gir_data) != 1:
+        raise ValueError(
+            "CIR sector value export expects exactly one nonlinear experiment in gir_data; "
+            f"got {list(gir_data.keys())}."
+        )
+
+    experiment_name = next(iter(gir_data))
+    max_periods = int(config.get("ir_max_periods", 80))
+    response_source = _resolve_ir_response_source(config)
+    variable_name = "Agg. Consumption"
+    rows = []
+
+    for shock_size in shock_sizes:
+        pos_key = build_shock_key("pos", shock_size)
+        neg_key = build_shock_key("neg", shock_size)
+
+        for sector_idx in range(n_sectors):
+            g_pos = _get_global_cir_for_sector(
+                gir_data,
+                experiment_name=experiment_name,
+                sector_idx=sector_idx,
+                shock_key=pos_key,
+                variable_name=variable_name,
+                n_sectors=n_sectors,
+                max_periods=_get_matlab_cir_horizon_for_sector(
+                    matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx
+                )
+                or max_periods,
+                response_source=response_source,
+            )
+            g_neg = _get_global_cir_for_sector(
+                gir_data,
+                experiment_name=experiment_name,
+                sector_idx=sector_idx,
+                shock_key=neg_key,
+                variable_name=variable_name,
+                n_sectors=n_sectors,
+                max_periods=_get_matlab_cir_horizon_for_sector(
+                    matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx
+                )
+                or max_periods,
+                response_source=response_source,
+            )
+            p_pos = _get_matlab_cir_for_sector(
+                matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx, method="perfect_foresight"
+            )
+            p_neg = _get_matlab_cir_for_sector(
+                matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx, method="perfect_foresight"
+            )
+            f_pos = _get_matlab_cir_for_sector(
+                matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx, method="first_order"
+            )
+            f_neg = _get_matlab_cir_for_sector(
+                matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx, method="first_order"
+            )
+            if all(value is None for value in [g_pos, g_neg, p_pos, p_neg, f_pos, f_neg]):
+                continue
+
+            with np.errstate(divide="ignore", invalid="ignore"):
+                values = {
+                    "Opt. atten. (-)": 1.0 - _signed_ratio(_nan_if_none(g_neg), _nan_if_none(p_neg)),
+                    "Opt. atten. (+)": 1.0 - _signed_ratio(_nan_if_none(g_pos), _nan_if_none(p_pos)),
+                    "Global asym.": 1.0 - _magnitude_ratio(_nan_if_none(g_neg), _nan_if_none(g_pos)),
+                    "Nonlin. ampl. (-)": _signed_ratio(_nan_if_none(p_neg), _nan_if_none(f_neg)) - 1.0,
+                    "Nonlin. ampl. (+)": _signed_ratio(_nan_if_none(p_pos), _nan_if_none(f_pos)) - 1.0,
+                    "MIT asym.": 1.0 - _magnitude_ratio(_nan_if_none(p_neg), _nan_if_none(p_pos)),
+                }
+
+            sector_label = (
+                sector_labels[sector_idx]
+                if sector_labels is not None and sector_idx < len(sector_labels)
+                else f"Sector {sector_idx + 1}"
+            )
+            for measure in CIR_SECTOR_VALUE_MEASURES:
+                value = _as_float(values.get(measure))
+                rows.append(
+                    {
+                        "analysis_name": config["analysis_name"],
+                        "experiment_name": experiment_name,
+                        "response_source": response_source,
+                        "sector_idx": sector_idx,
+                        "sector_label": sector_label,
+                        "shock_size": shock_size,
+                        "measure_panel": _cir_panel_title(measure),
+                        "measure": measure,
+                        "formula": CIR_MEASURE_DESCRIPTIONS.get(measure, ""),
+                        "value": value,
+                        "value_percent": _cir_display_value(value, measure),
+                    }
+                )
+    return rows
+
+
+def _format_csv_float(value: Any) -> str:
+    scalar = _as_float(value)
+    return "" if scalar is None else f"{scalar:.12g}"
+
+
+def _write_cir_sector_values_csv(*, rows, save_path):
+    if not rows:
+        return
+    fieldnames = [
+        "analysis_name",
+        "experiment_name",
+        "response_source",
+        "sector_idx",
+        "sector_label",
+        "shock_size",
+        "measure_panel",
+        "measure",
+        "formula",
+        "value",
+        "value_percent",
+    ]
+    with open(save_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            csv_row = dict(row)
+            csv_row["value"] = _format_csv_float(row.get("value"))
+            csv_row["value_percent"] = _format_csv_float(row.get("value_percent"))
+            writer.writerow({field: csv_row.get(field, "") for field in fieldnames})
+    print(f"  Saved CIR sector value artifact: {os.path.basename(save_path)}", flush=True)
+
+
 def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source):
     if not rows:
         return
@@ -1544,6 +1695,17 @@ def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postpr
         response_source=_resolve_ir_response_source(config),
     )
     _print_cir_analysis_table(rows)
+    sector_rows = _build_cir_sector_value_rows(
+        config=config,
+        gir_data=gir_data,
+        matlab_ir_data=ir_render_context["matlab_ir_data"],
+        n_sectors=econ_model.n_sectors,
+        sector_labels=econ_model.labels,
+    )
+    _write_cir_sector_values_csv(
+        rows=sector_rows,
+        save_path=os.path.join(ir_tables_dir, f"cir_sector_values_{config['analysis_name']}.csv"),
+    )
     cir_figures_dir = os.path.join(irs_dir, "IR_CIR")
     print("  CIR shock-size profile figures", flush=True)
     plot_cir_shock_size_profiles(

@@ -1,0 +1,68 @@
+{
+  "run_analysis": true,
+  "train": {
+    "exper_name": "highsigmam_smoke",
+    "model_dir": "RbcProdNet_April2026",
+    "model_data_file": "ModelData_highsigmam.mat",
+    "model_data_object": "ModelData",
+    "date": "Jun8_2026",
+    "seed": 1,
+    "restore": false,
+    "n_epochs": 1,
+    "steps_per_epoch": 1,
+    "periods_per_epis": 8,
+    "epis_per_step": 2,
+    "mc_draws": 4,
+    "checkpoint_every_n_epochs": 1,
+    "config_eval": {
+      "periods_per_epis": 8,
+      "mc_draws": 4,
+      "simul_vol_scale": 1.0,
+      "eval_n_epis": 2,
+      "init_range": 5
+    },
+    "config_ir_finetune": {
+      "enabled": true,
+      "source_exper_name": "highsigmam_smoke",
+      "exper_name": "highsigmam_smoke_IR",
+      "exper_suffix": "_IR",
+      "n_epochs": 1,
+      "steps_per_epoch": 1,
+      "periods_per_epis": 8,
+      "epis_per_step": 2,
+      "mc_draws": 4,
+      "checkpoint_every_n_epochs": 1,
+      "config_eval": {
+        "periods_per_epis": 8,
+        "mc_draws": 4,
+        "simul_vol_scale": 1.0,
+        "eval_n_epis": 2,
+        "init_range": 5
+      }
+    }
+  },
+  "analysis": {
+    "model_dir": "RbcProdNet_April2026",
+    "analysis_name": "highsigmam_smoke",
+    "model_data_file": "ModelData_highsigmam.mat",
+    "model_data_irs_file": "ModelData_IRs_highsigmam.mat",
+    "model_data_simulation_file": "ModelData_simulation_highsigmam.mat",
+    "experiment_to_analyze": {
+      "highsigmam_smoke": "highsigmam_smoke"
+    },
+    "ir_experiment_to_analyze": "highsigmam_smoke_IR",
+    "long_simulation": false,
+    "periods_per_epis": 32,
+    "burn_in_periods": 4,
+    "n_simul_seeds": 1,
+    "welfare_n_trajects": 16,
+    "welfare_trajectory_length": 8,
+    "n_draws": 16,
+    "time_to_converge": 8,
+    "gir_n_draws": 8,
+    "gir_trajectory_length": 8,
+    "ir_sectors_to_plot": [0],
+    "sectoral_ir_variables_to_plot": ["Cj", "Yj"],
+    "show_ir_plots": false
+  }
+}

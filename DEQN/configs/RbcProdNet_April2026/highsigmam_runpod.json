@@ -26,6 +26,7 @@
     "experiment_to_analyze": {
       "highsigmam": "highsigmam"
     },
-    "ir_experiment_to_analyze": "highsigmam_IR"
+    "ir_experiment_to_analyze": "highsigmam_IR",
+    "ir_sectors_to_plot": [0]
   }
 }

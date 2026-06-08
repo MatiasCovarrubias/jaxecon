@@ -47,6 +47,48 @@ def _metric_max(values):
     return max(values) if values else None
 
 
+def _resolve_experiment_checkpoint_step(config, experiment_name, step=None):
+    restore_dir = Path(config["save_dir"]) / experiment_name
+    restore_checkpoint_manager = ocp.CheckpointManager(restore_dir)
+    checkpoint_step = step if step is not None else restore_checkpoint_manager.latest_step()
+    if checkpoint_step is None:
+        raise ValueError(f"No checkpoints found in {restore_dir}")
+    return int(checkpoint_step)
+
+
+def _apply_resume_epoch_target(config):
+    target_n_epochs = config.get("resume_target_n_epochs")
+    if target_n_epochs is None:
+        return
+    if not config.get("restore", False) or not config.get("restore_step", False):
+        raise ValueError("resume_target_n_epochs requires restore=True and restore_step=True.")
+
+    checkpoint_step = _resolve_experiment_checkpoint_step(
+        config,
+        config["restore_exper_name"],
+        config.get("restore_checkpoint_step"),
+    )
+    steps_per_epoch = config["steps_per_epoch"]
+    completed_epochs = checkpoint_step // steps_per_epoch
+    if checkpoint_step % steps_per_epoch != 0:
+        print(
+            f"Resume checkpoint step {checkpoint_step} is not an exact epoch boundary "
+            f"for steps_per_epoch={steps_per_epoch}; using completed_epochs={completed_epochs}."
+        )
+
+    original_n_epochs = config["n_epochs"]
+    remaining_epochs = max(0, int(target_n_epochs) - completed_epochs)
+    config["n_epochs"] = remaining_epochs
+    config["restore_checkpoint_step"] = checkpoint_step
+    config["resume_completed_epochs"] = completed_epochs
+    config["resume_original_n_epochs"] = original_n_epochs
+    print(
+        "Resume target enabled: "
+        f"checkpoint_step={checkpoint_step}, completed_epochs={completed_epochs}, "
+        f"target_epochs={target_n_epochs}, remaining_epochs={remaining_epochs}."
+    )
+
+
 def load_experiment_train_state(
     config,
     econ_model,
@@ -62,12 +104,7 @@ def load_experiment_train_state(
     if lr_schedule is None:
         lr_schedule = _create_lr_schedule(config)
 
-    restore_dir = Path(config["save_dir"]) / experiment_name
-    restore_checkpoint_manager = ocp.CheckpointManager(restore_dir)
-
-    checkpoint_step = step if step is not None else restore_checkpoint_manager.latest_step()
-    if checkpoint_step is None:
-        raise ValueError(f"No checkpoints found in {restore_dir}")
+    checkpoint_step = _resolve_experiment_checkpoint_step(config, experiment_name, step)
 
     dummy_params = neural_net.init(rng_pol, jnp.zeros_like(econ_model.state_ss))
     dummy_opt_state = optax.adam(lr_schedule).init(dummy_params)
@@ -128,6 +165,8 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
     n_cores = len(jax.devices())
     print(f"Running on {n_cores} device(s)")
 
+    _apply_resume_epoch_target(config)
+
     # CREATE RNGS, TRAIN_STATE
     rng_pol, rng_epoch, rng_eval = random.split(random.PRNGKey(config["seed"]), num=3)
 
@@ -150,6 +189,7 @@ def run_experiment(config, econ_model, neural_net, epoch_train_fn, econ_model_ev
             econ_model=econ_model,
             neural_net=neural_net,
             experiment_name=config["restore_exper_name"],
+            step=config.get("restore_checkpoint_step"),
             restore_step=config.get("restore_step", False),
             rng_pol=rng_pol,
             lr_schedule=lr_schedule,

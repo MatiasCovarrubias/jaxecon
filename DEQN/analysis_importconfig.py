@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -14,6 +15,18 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(repo_root))
 
 from DEQN.import_config import deep_merge, load_json_config  # noqa: E402
+
+
+def _load_analysis_script_module():
+    analysis_path = Path(__file__).resolve().with_name("analysis.py")
+    spec = importlib.util.spec_from_file_location("_deqn_analysis_script", analysis_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load analysis script from {analysis_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _configure_analysis_module(analysis_module, overrides: dict) -> None:
@@ -57,7 +70,7 @@ def main() -> None:
     if not isinstance(overrides, dict):
         raise ValueError("The 'analysis' section must be a JSON object.")
 
-    import DEQN.analysis as analysis_module
+    analysis_module = _load_analysis_script_module()
 
     _configure_analysis_module(analysis_module, overrides)
     analysis_module.main()

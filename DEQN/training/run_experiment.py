@@ -104,6 +104,8 @@ def load_experiment_train_state(
     if lr_schedule is None:
         lr_schedule = _create_lr_schedule(config)
 
+    restore_dir = Path(config["save_dir"]) / experiment_name
+    restore_checkpoint_manager = ocp.CheckpointManager(restore_dir)
     checkpoint_step = _resolve_experiment_checkpoint_step(config, experiment_name, step)
 
     dummy_params = neural_net.init(rng_pol, jnp.zeros_like(econ_model.state_ss))

@@ -73,6 +73,10 @@ def _build_ir_finetune_config(base_config, econ_model, analysis_hooks):
     ir_config["restore"] = False
     ir_config["restore_exper_name"] = None
     ir_config["restore_step"] = False
+    ir_config.pop("restore_checkpoint_step", None)
+    ir_config.pop("resume_target_n_epochs", None)
+    ir_config.pop("resume_completed_epochs", None)
+    ir_config.pop("resume_original_n_epochs", None)
     if source_exper_name:
         ir_config["ir_finetune_source_exper_name"] = source_exper_name
     if finetune_options.get("source_step") is not None:

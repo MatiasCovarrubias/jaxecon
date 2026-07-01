@@ -1,17 +1,13 @@
 {
   "run_analysis": true,
   "train": {
-    "exper_name": "scaled_mining_shock",
+    "exper_name": "noIO_ceteris",
     "model_dir": "RbcProdNet_April2026",
-    "model_data_file": "ModelData_scaled_mining_shock.mat",
+    "model_data_file": "ModelData_noIO_ceteris.mat",
     "model_data_object": "ModelData",
-    "date": "Jun8_2026",
+    "date": "Jun13_2026",
     "seed": 1,
-    "restore": true,
-    "restore_exper_name": "scaled_mining_shock",
-    "restore_step": true,
-    "restore_checkpoint_step": 54000,
-    "resume_target_n_epochs": 4000,
+    "restore": false,
     "mc_draws": 128,
     "init_range": 5,
     "model_vol_scale": 1.0,
@@ -22,13 +18,13 @@
     "periods_per_epis": 64,
     "epis_per_step": 64,
     "steps_per_epoch": 100,
-    "n_epochs": 4000,
+    "n_epochs": 2000,
     "checkpoint_every_n_epochs": 10,
     "config_ir_finetune": {
       "enabled": true,
       "source_exper_name": null,
       "source_step": null,
-      "exper_name": "scaled_mining_shock_IR",
+      "exper_name": "noIO_ceteris_IR",
       "exper_suffix": "_IR",
       "min_shock_size": 5.0,
       "max_shock_size": 30.0,
@@ -46,14 +42,14 @@
   },
   "analysis": {
     "model_dir": "RbcProdNet_April2026",
-    "analysis_name": "scaled_mining_shock",
-    "model_data_file": "ModelData_scaled_mining_shock.mat",
-    "model_data_irs_file": "ModelData_IRs_scaled_mining_shock.mat",
-    "model_data_simulation_file": "ModelData_simulation_scaled_mining_shock.mat",
+    "analysis_name": "noIO_ceteris",
+    "model_data_file": "ModelData_noIO_ceteris.mat",
+    "model_data_irs_file": "ModelData_IRs_noIO_ceteris.mat",
+    "model_data_simulation_file": "ModelData_simulation_noIO_ceteris.mat",
     "experiment_to_analyze": {
-      "scaled_mining_shock": "scaled_mining_shock"
+      "noIO_ceteris": "noIO_ceteris"
     },
-    "ir_experiment_to_analyze": "scaled_mining_shock_IR",
+    "ir_experiment_to_analyze": "noIO_ceteris_IR",
     "ir_sectors_to_plot": [0]
   }
 }

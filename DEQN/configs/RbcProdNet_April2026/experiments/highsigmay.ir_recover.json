@@ -1,0 +1,13 @@
+{
+  "extends": ["highsigmay.json"],
+  "train": {
+    "restore": true,
+    "restore_exper_name": "highsigmay",
+    "n_epochs": 0,
+    "config_ir_finetune": {
+      "enabled": true,
+      "source_exper_name": "highsigmay",
+      "exper_name": "highsigmay_IR"
+    }
+  }
+}

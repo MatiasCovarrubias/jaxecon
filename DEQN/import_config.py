@@ -29,7 +29,24 @@ def load_json_config(path: str | Path) -> dict[str, Any]:
         loaded = json.load(config_file)
     if not isinstance(loaded, dict):
         raise ValueError(f"Expected object at top level of config file: {config_path}")
-    return loaded
+    extends = loaded.pop("extends", None)
+    if extends is None:
+        return loaded
+
+    if isinstance(extends, (str, Path)):
+        extend_paths = [extends]
+    elif isinstance(extends, list) and all(isinstance(item, str) for item in extends):
+        extend_paths = extends
+    else:
+        raise ValueError(f"The 'extends' field must be a string or list of strings: {config_path}")
+
+    merged: dict[str, Any] = {}
+    for extend_path in extend_paths:
+        parent_path = Path(extend_path).expanduser()
+        if not parent_path.is_absolute():
+            parent_path = config_path.parent / parent_path
+        merged = deep_merge(merged, load_json_config(parent_path))
+    return deep_merge(merged, loaded)
 
 
 def split_run_config(raw_config: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None, bool]:

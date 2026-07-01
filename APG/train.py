@@ -64,7 +64,6 @@ else:
 # ============================================================================
 
 import optax  # noqa: E402
-from flax import linen as nn  # noqa: E402
 from jax import config as jax_config  # noqa: E402
 
 from APG.algorithm import create_epoch_train_fn, create_eval_fn  # noqa: E402
@@ -146,7 +145,6 @@ def main():
         actions_dim=env.action_dim,
         hidden_dims_actor=config["layers_actor"],
         hidden_dims_critic=config["layers_critic"],
-        activation_final_actor=nn.softmax,
     )
     print("Neural network created successfully.", flush=True)
 

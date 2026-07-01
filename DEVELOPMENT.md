@@ -1,160 +1,106 @@
 # Development Setup
 
-This document describes how to set up the development environment for local development.
+This document describes local development and smoke validation for JaxEcon.
 
-## Local Development Environment
+## Setup
 
-The repository uses JAX for numerical computations. While end users can run the code directly in Google Colab (which has JAX pre-installed), local development requires setting up a virtual environment.
-
-### Setup Instructions
-
-1. **Create and activate virtual environment:**
-
-    ```bash
-    # If using Python 3.13 from Homebrew:
-    /usr/local/opt/python@3.13/bin/python3.13 -m venv .venv
-    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-    
-    # Or if Python 3.13 is your default python3:
-    python3 -m venv .venv
-    source .venv/bin/activate
-    ```
-
-    **Note:** JAX requires Python 3.10-3.13. Python 3.14+ is not yet supported.
-
-2. **Install dependencies:**
-
-    ```bash
-    pip install -r requirements-dev.txt
-    ```
-
-    Or install manually:
-
-    ```bash
-    pip install "jax[cpu]" flax optax jaxopt matplotlib pandas scipy numpy
-    ```
-
-3. **Configure your editor:**
-    - The repository includes `.vscode/settings.json` for VS Code/Cursor workspace-specific settings
-    - `pyrightconfig.json` configures Pyright to use the local virtual environment
-    - These settings ensure proper import resolution and type checking
-
-### Running Code Locally
-
-Always activate the virtual environment before running any scripts:
+Create a virtual environment from the repository root:
 
 ```bash
+python3 -m venv .venv
 source .venv/bin/activate
-python -c "from DEQN.neural_nets.neural_nets import NeuralNet; print('Setup working!')"
+pip install -r requirements-dev.txt
 ```
 
-#### Running Analysis Scripts
+JAX currently supports Python 3.10-3.13. The default requirements install
+CPU-compatible JAX. For local GPU development, replace `jax[cpu]` with the
+appropriate JAX CUDA or TPU package for the machine.
 
-For the RBC Production Network analysis script:
+Check the environment:
 
 ```bash
-# Ensure you're in the repository root directory
-cd /path/to/jaxecon
+python -c "from DEQN.neural_nets.neural_nets import NeuralNet; from APG.environments import RbcMultiSector; print('ok')"
+```
 
-# Activate virtual environment
-source .venv/bin/activate
+## Public Smoke Runs
 
-# Run as a module (recommended)
+These commands should run without private data:
+
+```bash
+python -m DEQN.econ_models.RBC.train
+python VFI/vfi.py
+```
+
+The New Keynesian DEQN example is also self-contained, but can take longer:
+
+```bash
+python -m DEQN.econ_models.NK.train
+```
+
+For APG, use the lightweight component smoke check:
+
+```bash
+python -m APG.smoke
+```
+
+The full `APG/train.py` runner compiles and checkpoints a heavier experiment.
+Use it after the component smoke passes.
+
+## RbcProdNet Research Runs
+
+The canonical production-network entry points are:
+
+```bash
 python -m DEQN.train
-
-# Or run directly
-python DEQN/train.py
+python -m DEQN.analysis
 ```
 
-**Prerequisites for analysis scripts:**
+They require external artifacts under the selected model folder, usually
+`DEQN/econ_models/RbcProdNet_April2026/`:
 
--   Required model data files must be in model directory
--   See [Data Dependencies](#data-dependencies) section below
+- `ModelData*.mat` for training and model construction
+- trained Orbax checkpoints under `experiments/` for analysis
+- optional `ModelData_simulation*.mat` benchmark simulations
+- optional `ModelData_IRs*.mat` benchmark impulse responses
 
-#### Running Other Algorithms
-
-For DEQN examples:
+For unattended or Runpod runs, prefer JSON configs:
 
 ```bash
-# Run the main DEQN notebook (requires Jupyter)
-jupyter notebook DEQN/Rbc_CES.ipynb
-
-# Or run as Python script
-python DEQN/run_rbc_CES.py
+python -m DEQN.train_importconfig --config DEQN/configs/RbcProdNet_April2026/highsigmam_smoke_runpod.json
+python -m DEQN.analysis_importconfig --config DEQN/configs/RbcProdNet_April2026/highsigmam_smoke_runpod.json
 ```
 
-For VFI examples:
+The layered config equivalent is:
 
 ```bash
-jupyter notebook Value_Function_Iteration_with_TPUs.ipynb
+python -m DEQN.train_importconfig --config DEQN/configs/RbcProdNet_April2026/experiments/highsigmay.smoke.json
 ```
 
-For APG examples:
+## Repository Conventions
 
-```bash
-jupyter notebook APG/apg_run.ipynb
-# Or
-python APG/apg_run.py
-```
+- Run commands from the repository root.
+- Use `python -m ...` for package entry points when possible.
+- Keep reusable DEQN training code in `DEQN/training/`.
+- Keep generic analysis in `DEQN/analysis/`.
+- Put model-specific analysis integration in `DEQN/econ_models/<MODEL_DIR>/analysis_hooks.py`.
+- Treat `RbcProdNet_April2026` as the current production-network reference.
 
-### Data Dependencies
+## Troubleshooting
 
-Some analysis scripts require specific data files that are not included in the repository:
+### Import errors
 
-#### RBC Production Network Analysis
+- Activate the virtual environment.
+- Run from the repository root.
+- Reinstall `requirements-dev.txt` if JAX, Flax, Optax, or Orbax imports fail.
 
-The `RbcProdNet_Analysis_Sep23_2025.py` script requires:
+### Missing model data
 
-1. **Model Data Files** (in `DEQN/econ_models/RbcProdNetv2/Model_Data/`):
+`DEQN/train.py` and `DEQN/analysis.py` are not public no-data examples. If they
+fail looking for `.mat` files, either stage the RbcProdNet artifacts or run one
+of the simple examples instead.
 
-    - `RbcProdNet_SolData_Feb21_24_baselinev3.mat` - Economic model parameters and steady state
+### Slow local runs
 
-2. **Experiment Results** (in `DEQN/econ_models/RbcProdNetv2/Experiments/`):
-    - `baseline_nostateaug/` - Trained model checkpoints and results
-    - `baseline_nostateaug_seed2/` - Additional seed experiments
-    - `baseline_nostateaug_seed3/`
-    - `baseline_nostateaug_seed4/`
-
-Each experiment directory should contain:
-
--   `checkpoint_50000/` - Trained model parameters
--   `results.json` - Training configuration and results
-
-If these files are missing, the script will display helpful error messages indicating which files are required.
-
-### Troubleshooting
-
-**Import Errors:**
-
--   Ensure virtual environment is activated
--   Verify you're running from the repository root directory
--   Check that all `__init__.py` files are present
-
-**Missing Data Errors:**
-
--   Check that required data files exist in the correct directories
--   Verify file permissions allow reading
-
-**JAX/GPU Issues:**
-
--   The development setup uses CPU-only JAX for compatibility
--   For GPU support, replace `jax[cpu]` with `jax[cuda]` or `jax[tpu]` in requirements
-
-### Notes
-
--   The `.venv` directory is already included in `.gitignore`
--   These settings are workspace-specific and won't affect other projects
--   End users running code in Google Colab are unaffected by these development setup requirements
--   CPU-only JAX is installed for compatibility; GPU support can be added if needed for local development
-
-### Files Added for Development
-
--   `requirements-dev.txt` - Development dependencies (includes scipy, jupyter)
--   `pyrightconfig.json` - Pyright/Pylance configuration
--   `.vscode/settings.json` - VS Code workspace settings
--   `DEVELOPMENT.md` - This file (enhanced with running instructions)
--   `DEQN/__init__.py` - Package initialization files for proper imports
--   `DEQN/analysis/__init__.py`
--   `DEQN/econ_models/__init__.py`
--   `DEQN/econ_models/RbcProdNetv2/__init__.py`
--   `DEQN/neural_nets/__init__.py`
+The research defaults are sized for accelerators and long experiments. For local
+smoke tests, reduce epochs, steps per epoch, episodes per step, periods per
+episode, and Monte Carlo draws.

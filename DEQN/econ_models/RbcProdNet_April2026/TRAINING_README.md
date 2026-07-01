@@ -54,6 +54,35 @@ The Python boundary is:
 - MATLAB computes the deterministic steady state, ergodic statistics, and linear state-space solution.
 - Python loads those objects, constructs the JAX model, and trains a nonlinear global policy approximation.
 
+This dependency is specific to the `RbcProdNet_April2026` research workflow. The
+simple DEQN models under `DEQN/econ_models/RBC` and `DEQN/econ_models/NK` train
+without `.mat` files and without a loglinear baseline.
+
+## Baseline dependency
+
+The current `RbcProdNet_April2026` training path uses the MATLAB/Dynare output as
+an upstream model compiler:
+
+- `SteadyState.parameters` supplies structural parameters.
+- `SteadyState.endostates_ss` and `SteadyState.policies_ss` supply steady-state
+  normalization anchors.
+- `Statistics.states_sd` and `Statistics.policies_sd` supply normalization
+  scales.
+- `Solution.StateSpace.C` supplies the loglinear policy matrix used by
+  `DEQN/neural_nets/with_loglinear_baseline.py`.
+
+`DEQN/train.py` currently always loads a `.mat` object for this model and always
+constructs the loglinear-baseline network. There is not yet a first-class
+`use_loglinear_baseline = false` path for `RbcProdNet_April2026`, nor a Python
+replacement for the MATLAB steady-state, normalization, and linear-solution
+objects.
+
+For baseline-free DEQN development, start from the pure-Python `RBC` or `NK`
+models. Treat baseline-free `RbcProdNet_April2026` training as a separate
+implementation project: it would need Python-side steady-state construction,
+normalization statistics, a linearization replacement or zero-baseline network
+option, and checkpoint-loading support for the selected architecture.
+
 ## High-level flow
 
 The main execution flow in `DEQN/train.py` is:
@@ -94,6 +123,16 @@ Important defaults:
 - `model_vol_scale` affects the volatility used during training.
 - `config_eval["simul_vol_scale"]` and the evaluation model keep evaluation separate from the training volatility scale.
 - `config_ir_finetune["enabled"] = false` keeps the training path to a single baseline experiment. When set to `true`, Python trains an auxiliary IR network after the baseline run, or from a saved source experiment when `source_exper_name` is set.
+
+For unattended runs, the same dictionary can be overridden by JSON through:
+
+```bash
+python -m DEQN.train_importconfig --config DEQN/configs/RbcProdNet_April2026/highsigmam_smoke_runpod.json
+```
+
+The JSON object is recursively merged into the `DEQN/train.py` defaults. Prefer
+small JSON overlays for experiment-specific differences and keep shared defaults
+in the script or in shared base config files.
 
 To train from a renamed MATLAB object, set:
 

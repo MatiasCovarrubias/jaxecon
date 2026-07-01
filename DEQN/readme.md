@@ -1,161 +1,103 @@
 # DEQN (Deep Equilibrium Networks)
 
-A JAX implementation of the [Deep Equilibrium Network](https://onlinelibrary.wiley.com/doi/full/10.1111/iere.12575) algorithm for solving dynamic stochastic economic models with continuous shocks.
+DEQN is the mature core of JaxEcon. It solves dynamic stochastic economic models
+by training neural-network policy approximations against equilibrium residuals.
 
-## Quick Start
+## Two Workflows
 
-### Training
+### Public/simple models
 
-```bash
-# Local
-python DEQN/train.py
-
-# Colab: copy train.py contents into a cell and run
-```
-
-### Analysis
+These models are pure Python/JAX and do not require private `.mat` files:
 
 ```bash
-# Local
-python DEQN/analysis.py
-
-# Colab: copy analysis.py contents into a cell and run
+python -m DEQN.econ_models.RBC.train
+python -m DEQN.econ_models.NK.train
 ```
 
-### Testing
+They use `DEQN/neural_nets/neural_nets.py`, analytical or internally defined
+steady states, and the shared algorithm components in `DEQN/algorithm/`.
+
+### RbcProdNet research workflow
+
+The production-network workflow uses the shared DEQN machinery but depends on
+upstream MATLAB/Dynare artifacts:
 
 ```bash
-python DEQN/test.py
+python -m DEQN.train
+python -m DEQN.analysis
 ```
 
-## Main Scripts
+The active reference model is `DEQN/econ_models/RbcProdNet_April2026`. Training
+loads a `ModelData*.mat` object for parameters, steady states, normalization, and
+the loglinear policy matrix `Solution.StateSpace.C`. Analysis can run DEQN-only
+simulation objects, but benchmark overlays and common-shock comparisons depend on
+MATLAB simulation and IR files.
 
-| Script        | Purpose                                           |
-| ------------- | ------------------------------------------------- |
-| `train.py`    | Train neural network policies                     |
-| `analysis.py` | Analyze trained models: simulations, welfare, IRs |
-| `test.py`     | Run diagnostic tests on trained models            |
+## Entry Points
 
-All scripts auto-detect their environment (Colab vs local).
+| Entry point | Purpose | Data requirements |
+| --- | --- | --- |
+| `DEQN/econ_models/RBC/train.py` | Pure-Python DEQN RBC example | None |
+| `DEQN/econ_models/NK/train.py` | Pure-Python DEQN New Keynesian example | None |
+| `DEQN/train.py` | RbcProdNet training orchestrator | `ModelData*.mat` |
+| `DEQN/analysis.py` | RbcProdNet analysis and reporting | Checkpoints plus `ModelData*.mat`; optional benchmark files |
+| `DEQN/train_importconfig.py` | JSON-config training wrapper | Same as selected workflow |
+| `DEQN/analysis_importconfig.py` | JSON-config analysis wrapper | Same as selected workflow |
+| `DEQN/test.py` | RbcProdNet diagnostics | Trained checkpoint and model data |
 
 ## Structure
 
-```
+```text
 DEQN/
-├── train.py               # Training script
-├── analysis.py            # Analysis script
-├── test.py                # Testing script
-│
-├── algorithm/             # Core algorithm
-│   ├── simulation.py      # Episode simulation
-│   ├── loss.py            # Euler equation loss
-│   ├── epoch_train.py     # Training loop
-│   └── eval.py            # Evaluation
-│
-├── analysis/              # Analysis tools
-│   ├── GIR.py             # Generalized Impulse Responses
-│   ├── plots.py           # Visualization
-│   ├── tables.py          # Results tables
-│   ├── welfare.py         # Welfare calculations
-│   └── stochastic_ss.py   # Stochastic steady state
-│
-├── econ_models/           # Economic models
-│   ├── rbc_ces.py         # RBC with CES production
-│   ├── rbc.py             # Basic RBC
-│   └── RbcProdNet*/       # Production network models
-│
-├── neural_nets/           # Neural networks
-│   ├── neural_nets.py     # Standard feedforward
-│   └── with_loglinear_baseline.py
-│
-├── training/              # Training utilities
-│   ├── run_experiment.py  # Experiment orchestration
-│   └── checkpoints.py     # Checkpoint loading
-│
-└── tests/                 # Test suite
-    └── grid_simulation_analysis.py
+├── algorithm/             # Episode simulation, Euler loss, training, evaluation
+├── analysis/              # Generic analysis, GIR, stochastic SS, tables, plots
+├── configs/               # JSON overlays for reproducible RbcProdNet runs
+├── econ_models/           # Model implementations and model-specific hooks
+├── neural_nets/           # Plain MLP and loglinear-baseline architectures
+├── tests/                 # Diagnostics and model-specification checks
+├── training/              # Experiment runner, checkpoint loading, plots
+├── train.py               # RbcProdNet training entry point
+└── analysis.py            # RbcProdNet analysis entry point
 ```
 
 ## Configuration
 
-Edit the `config` dictionary at the top of each script:
+Local and Colab workflows use editable `config` dictionaries near the top of the
+script being run. For unattended or Runpod runs, use JSON overrides:
 
-```python
-config = {
-    # Model selection
-    "model_dir": "RbcProdNet_Oct2025",
-    "exper_name": "baseline",
-
-    # Training
-    "layers": [32, 32],
-    "learning_rate": 0.0005,
-    "n_epochs": 100,
-    # ...
-}
+```bash
+python -m DEQN.train_importconfig --config DEQN/configs/RbcProdNet_April2026/highsigmam_smoke_runpod.json
+python -m DEQN.analysis_importconfig --config DEQN/configs/RbcProdNet_April2026/highsigmam_smoke_runpod.json
 ```
+
+JSON files are merged into the script defaults with `DEQN/import_config.py`. The
+script dictionaries remain the canonical defaults; JSON files should contain only
+the experiment-specific overrides needed for a reproducible run.
 
 ## Algorithm Components
 
-| Function                    | Description                       |
-| --------------------------- | --------------------------------- |
-| `create_episode_simul_fn()` | Simulates episodes given a policy |
-| `create_batch_loss_fn()`    | Computes Euler equation residuals |
-| `create_epoch_train_fn()`   | One epoch of training             |
-| `create_eval_fn()`          | Evaluates policy accuracy         |
+| Function | Description |
+| --- | --- |
+| `create_episode_simul_fn()` | Simulates trajectories under a policy |
+| `create_batch_loss_fn()` | Computes equilibrium residual losses |
+| `create_epoch_train_fn()` | Runs one training epoch |
+| `create_eval_fn()` | Evaluates policy accuracy |
 
 ## Economic Models
 
-Models are Python classes implementing:
+Economic models live under `DEQN/econ_models/`. A model exposes a `Model` class
+with state and policy normalization, transition dynamics, shock sampling, and the
+equilibrium residual loss. See `DEQN/econ_models/readme.md` for the full model
+contract.
 
--   State/control dimensions
--   Transition dynamics
--   Euler equation residuals (FOCs)
--   Steady state values
+## Analysis Architecture
 
-See `econ_models/readme.md` for details on implementing new models.
-
-## Compatibility Note
-
-The supported analysis architecture is now:
+The supported analysis architecture is:
 
 - `DEQN/analysis/` for generic analysis logic
-- `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py` for model-specific analysis integration
-- `DEQN/econ_models/{MODEL_DIR}/plot_helpers.py`, `matlab_irs.py`, and `aggregation.py` for model-specific analysis contracts when needed
+- `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py` for model-specific context and post-processing
+- optional model-local `plot_helpers.py`, `matlab_irs.py`, and `aggregation.py` when generic analysis is not enough
 
-This is the path intended for active models going forward.
-
-Older model folders, especially legacy `RbcProdNet*` variants and older standalone
-analysis scripts, are in a transition period:
-
-- they are not considered fully supported by the new generic analysis stack
-- they are not fully removed/deprecated yet
-- they may still run partially, but compatibility is not guaranteed unless they are migrated to `analysis_hooks.py`
-
-At the moment, the reference implementation for the new structure is `RbcProdNet_April2026`.
-
-## Adding Model-Specific Analysis
-
-Model-specific plots are auto-discovered. If a model also needs custom preprocessing,
-benchmark adapters, or GIR state selection, place that logic in
-`DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py`.
-
-In your model's `plots.py`:
-
-```python
-def my_plot(simul_obs, simul_policies, simul_analysis_variables,
-            save_path, analysis_name, econ_model, experiment_label, **kwargs):
-    # Your plotting code
-    plt.savefig(save_path)
-
-MODEL_SPECIFIC_PLOTS = [
-    {"name": "my_plot", "function": my_plot, "description": "..."},
-]
-```
-
-The analysis script automatically discovers and runs registered plots.
-
-The shared analysis layer stays generic:
-
-- `DEQN/analysis/` handles label-based tables, histograms, welfare, stochastic steady state, and generic GIR plumbing
-- `DEQN/econ_models/{MODEL_DIR}/analysis_hooks.py` handles model-aware context preparation and post-processing
-- `DEQN/econ_models/{MODEL_DIR}/plot_helpers.py`, `matlab_irs.py`, and `aggregation.py` handle model-specific analysis behavior when the generic layer is not enough
+Older `RbcProdNet*` folders and standalone analysis scripts are transitional.
+They may still be useful for research history, but `RbcProdNet_April2026` is the
+current reference implementation.

@@ -1,0 +1,41 @@
+{
+  "run_analysis": true,
+  "train": {
+    "model_dir": "RbcProdNet_April2026",
+    "model_data_object": "ModelData",
+    "date": "Jun8_2026",
+    "seed": 1,
+    "restore": false,
+    "mc_draws": 128,
+    "init_range": 5,
+    "model_vol_scale": 1.0,
+    "simul_vol_scale": 1.0,
+    "double_precision": true,
+    "layers": [256, 256],
+    "learning_rate": 0.0005,
+    "periods_per_epis": 64,
+    "epis_per_step": 64,
+    "steps_per_epoch": 100,
+    "n_epochs": 2000,
+    "checkpoint_every_n_epochs": 10,
+    "config_ir_finetune": {
+      "enabled": true,
+      "source_exper_name": null,
+      "source_step": null,
+      "exper_name": null,
+      "exper_suffix": "_IR",
+      "min_shock_size": 5.0,
+      "max_shock_size": 30.0,
+      "learning_rate": 0.0000002,
+      "n_epochs": 50,
+      "eval_ir_rollouts": true
+    },
+    "config_eval": {
+      "periods_per_epis": 128,
+      "mc_draws": 256,
+      "simul_vol_scale": 1.0,
+      "eval_n_epis": 128,
+      "init_range": 5
+    }
+  }
+}

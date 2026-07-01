@@ -1,8 +1,10 @@
-from jax import numpy as jnp, random
+from jax import numpy as jnp
+from jax import random
 
 
 class RbcMultiSector:
-    """A JAX implementation of a multi-sector RBC model."""
+    """A JAX implementation of a multi-sector Ratiasc2
+    BC model."""
 
     def __init__(
         self,
@@ -14,7 +16,7 @@ class RbcMultiSector:
         shock_sd=0.1,
         xi_values=None,
         sigma_c=0.5,
-        discount_rate=0.9,
+        discount_rate=None,
     ):
 
         self.N = N
@@ -22,7 +24,7 @@ class RbcMultiSector:
         self.alpha = jnp.ones(N) * alpha_values
         self.delta = jnp.ones(N) * delta_values
         self.rho = jnp.ones(N) * rho_values
-        self.discount_rate = discount_rate
+        self.discount_rate = beta if discount_rate is None else discount_rate
         self.shock_sd = jnp.ones(N) * shock_sd
         self.sigma_c = sigma_c
         self.xi = jnp.ones(N) / N if xi_values is None else xi_values
@@ -33,6 +35,7 @@ class RbcMultiSector:
         self.obs_ss = jnp.concatenate([self.k_ss, self.a_ss])
         self.obs_sd = jnp.ones(2 * N)
         self.policy_ss = jnp.log(self.delta * jnp.exp(self.k_ss))
+        self.policy_sd = jnp.ones(N)
 
         # Steady state rewards and value
         self.I_ss = jnp.exp(self.policy_ss)
@@ -53,8 +56,9 @@ class RbcMultiSector:
 
     def reset(self, rng):
         """Get initial obs given first shock"""
-        K = random.uniform(rng, shape=(self.N,), minval=0.95 * jnp.exp(self.k_ss), maxval=1.05 * jnp.exp(self.k_ss))
-        A = random.uniform(rng, shape=(self.N,), minval=0.95 * jnp.exp(self.a_ss), maxval=1.05 * jnp.exp(self.a_ss))
+        rng_k, rng_a = random.split(rng, 2)
+        K = random.uniform(rng_k, shape=(self.N,), minval=0.95 * jnp.exp(self.k_ss), maxval=1.05 * jnp.exp(self.k_ss))
+        A = random.uniform(rng_a, shape=(self.N,), minval=0.95 * jnp.exp(self.a_ss), maxval=1.05 * jnp.exp(self.a_ss))
 
         obs_init_notnorm = jnp.concatenate([jnp.log(K), jnp.log(A)])
         obs_init = (obs_init_notnorm - self.obs_ss) / self.obs_sd  # normalize
@@ -72,7 +76,8 @@ class RbcMultiSector:
 
         # Evolution of state
         a_tplus1 = self.rho * a + self.shock_sd * random.normal(rng, (self.N,))
-        Inv = action * self.I_ss
+        action_notnorm = action * self.policy_sd + self.policy_ss
+        Inv = jnp.exp(action_notnorm)
         K_tplus1 = (1 - self.delta) * K + Inv
 
         # New observation and state

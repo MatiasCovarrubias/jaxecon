@@ -44,6 +44,26 @@ The key boundary is:
 - MATLAB produces benchmark objects and simulation artifacts.
 - Python loads them, aligns them with the DEQN nonlinear simulation, and renders the final comparative analysis.
 
+`ModelData.mat` or an equivalent configured model-data object is required for
+the current `RbcProdNet_April2026` analysis path because it provides the model
+state-space, steady-state, and benchmark metadata needed to rebuild the Python
+model. `ModelData_simulation.mat` and `ModelData_IRs.mat` are optional in the
+sense that they provide benchmark comparisons, but many presentation figures and
+common-shock workflows expect them.
+
+For DEQN-only analysis without Dynare overlays:
+
+- use `long_simulation = true` so the nonlinear DEQN simulation is the primary
+  reporting object;
+- set `model_data_simulation_file = None` when benchmark simulation comparisons
+  are unavailable;
+- provide explicit IR shock sizes if no `ModelData_IRs.mat` object is available;
+- expect benchmark-overlay figures, Dynare moments, and common-shock comparisons
+  to be absent or reduced.
+
+This is different from the pure-Python `RBC` and `NK` examples, which do not use
+this analysis stack.
+
 ## High-level flow
 
 The main execution flow in `DEQN/analysis.py` is:
@@ -94,6 +114,16 @@ The active April 2026 analysis contract is intentionally comprehensive by defaul
 - Python recomputes Dynare simulation moments through the common aggregation path even when `ergodic_price_aggregation = false`, so MATLAB and Python moments can be compared on identical definitions.
 - Saved PNGs and generated table fragments print `Saved: <filename>` to the Python console so Colab output identifies the object that was just written.
 - Saved machine-readable artifacts are intentionally compact: state and policy means/standard deviations, welfare rows, descriptive-stat rows, and stochastic-SS rows. The analysis no longer saves raw simulation arrays or full aggregate time-series CSVs.
+
+For unattended runs, analysis config can be supplied through:
+
+```bash
+python -m DEQN.analysis_importconfig --config DEQN/configs/RbcProdNet_April2026/highsigmam_smoke_runpod.json
+```
+
+If a combined train/analysis JSON is used, `analysis_importconfig.py` reads the
+`analysis` section. If the JSON is analysis-only, the top-level object is merged
+directly into the `DEQN/analysis.py` defaults.
 
 ## Moment-comparison contract
 

@@ -24,7 +24,7 @@
       "enabled": true,
       "source_exper_name": null,
       "source_step": null,
-      "exper_name": "CD_IR",
+      "exper_name": "highsigmay_IR",
       "exper_suffix": "_IR",
       "min_shock_size": 5.0,
       "max_shock_size": 30.0,
@@ -49,7 +49,7 @@
     "experiment_to_analyze": {
       "highsigmay": "highsigmay"
     },
-    "ir_experiment_to_analyze": "CD_IR",
+    "ir_experiment_to_analyze": "highsigmay_IR",
     "ir_sectors_to_plot": [0]
   }
 }

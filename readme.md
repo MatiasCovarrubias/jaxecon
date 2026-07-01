@@ -1,138 +1,106 @@
 # JaxEcon
 
-Solution algorithms for dynamic economic models implemented in Python using [JAX](https://github.com/google/jax) for high-performance numerical computing.
-
-## Features
-
--   **Multi-backend support**: Run on CPU, GPU, or TPU with a single codebase
--   **Google Colab ready**: Scripts auto-detect environment and configure themselves
--   **Modular design**: Clean separation between algorithms, models, and analysis
+JaxEcon collects JAX-based solution algorithms for dynamic economic models. The
+main research workflow is **DEQN**: Deep Equilibrium Networks for continuous-state
+dynamic models. The repository also contains an educational VFI implementation
+and an experimental APG implementation.
 
 ## Algorithms
 
-| Algorithm         | Status         | Description                                                                 |
-| ----------------- | -------------- | --------------------------------------------------------------------------- |
-| [**DEQN**](DEQN/) | ✅ Production  | Deep Equilibrium Networks for solving dynamic models with continuous shocks |
-| [**VFI**](VFI/)   | ✅ Complete    | Heavily parallelized Value Function Iteration optimized for GPU/TPU         |
-| [**APG**](APG/)   | 🔄 In Progress | Analytical Policy Gradient for MDPs and strategic games                     |
-| **PI**            | 📋 Planned     | Policy Iteration                                                            |
+| Algorithm | Status | Role |
+| --- | --- | --- |
+| [**DEQN**](DEQN/) | Mature core | Main framework for neural-network global solutions, training, and analysis |
+| [**VFI**](VFI/) | Educational | Self-contained value-function iteration example for JAX vectorization and device parallelism |
+| [**APG**](APG/) | Experimental | Analytical policy-gradient prototype for differentiable environments |
+| **PI** | Planned | Policy iteration placeholder |
 
-## Workflow
+## Quick Start
 
-The primary workflow uses **Python scripts** (`.py` files) that automatically detect their environment and configure themselves for either local execution or Google Colab. This approach:
-
--   Works seamlessly with coding agents and version control
--   Eliminates synchronization issues between notebooks and scripts
--   Provides a single source of truth for experiments
-
-### Running Scripts
-
-**Option 1: Google Colab (Recommended for GPU/TPU)**
-
-1. Create a new Colab notebook
-2. Copy the contents of any `.py` script (e.g., `DEQN/train.py`) into a cell
-3. Run — the script auto-detects Colab, installs dependencies, clones the repo, and mounts Drive
-
-**Option 2: Local Execution**
+The public examples below do not require private MATLAB or Dynare artifacts.
 
 ```bash
-# Setup (one-time)
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
-
-# Run training
-python DEQN/train.py
-
-# Run analysis
-python DEQN/analysis.py
 ```
 
-### Script Structure
+Run a simple DEQN model:
 
-All main scripts follow this pattern:
-
-```python
-# 1. Environment detection
-try:
-    import google.colab
-    IN_COLAB = True
-except ImportError:
-    IN_COLAB = False
-
-# 2. Environment-specific setup
-if IN_COLAB:
-    # Install deps, clone repo, mount Drive
-else:
-    # Configure local paths
-
-# 3. Configuration dictionary (edit this)
-config = {
-    "model_dir": "...",
-    "exper_name": "...",
-    # ...
-}
-
-# 4. Main logic
-def main():
-    ...
+```bash
+python -m DEQN.econ_models.RBC.train
 ```
 
-### Notebooks
+Run the educational VFI example:
 
-Jupyter notebooks (`.ipynb`) are available for interactive exploration and learning:
+```bash
+python VFI/vfi.py
+```
 
--   `DEQN/Rbc_CES.ipynb` — Introductory DEQN example
--   `DEQN/jaxDEQN.ipynb` — Detailed algorithm walkthrough
--   `VFI/Value_Function_Iteration_with_TPUs.ipynb` — VFI parallelization study
+Run the APG component smoke check:
 
-For serious experimentation, use the `.py` scripts.
+```bash
+python -m APG.smoke
+```
+
+The default APG training settings are intentionally heavier and should not be
+used as a quick local smoke test.
+
+## Research Workflow
+
+The production-network research workflow lives in:
+
+```text
+DEQN/train.py
+DEQN/analysis.py
+DEQN/econ_models/RbcProdNet_April2026/
+```
+
+That workflow is not a no-data quick start. It expects upstream MATLAB/Dynare
+objects such as `ModelData*.mat`, trained checkpoints for analysis, and optional
+simulation/IR benchmark files. See:
+
+- [DEQN guide](DEQN/readme.md)
+- [RbcProdNet training guide](DEQN/econ_models/RbcProdNet_April2026/TRAINING_README.md)
+- [RbcProdNet analysis guide](DEQN/econ_models/RbcProdNet_April2026/ANALYSIS_README.md)
 
 ## Repository Structure
 
-```
+```text
 jaxecon/
-├── DEQN/                    # Deep Equilibrium Networks
-│   ├── train.py             # Training script (local + Colab)
-│   ├── analysis.py          # Analysis script (local + Colab)
-│   ├── algorithm/           # Core algorithm components
-│   ├── analysis/            # Analysis utilities
-│   ├── econ_models/         # Economic model implementations
-│   ├── neural_nets/         # Neural network architectures
-│   └── training/            # Training utilities
-├── VFI/                     # Value Function Iteration
-├── APG/                     # Analytical Policy Gradient
-│   ├── apg_run.py           # Main script (local + Colab)
-│   ├── algorithm/           # Core algorithm components
-│   ├── environments/        # Environment implementations
-│   └── neural_nets/         # Neural network architectures
-└── PI/                      # Policy Iteration (planned)
+├── DEQN/
+│   ├── algorithm/       # Shared DEQN simulation, loss, training, and evaluation functions
+│   ├── analysis/        # Generic analysis utilities and reporting helpers
+│   ├── configs/         # JSON overlays for reproducible research runs
+│   ├── econ_models/     # Economic model implementations
+│   ├── neural_nets/     # Plain MLP and loglinear-baseline network architectures
+│   ├── training/        # Experiment orchestration, checkpoints, and plots
+│   ├── train.py         # RbcProdNet research training entry point
+│   └── analysis.py      # RbcProdNet research analysis entry point
+├── VFI/                 # Self-contained value-function iteration example
+├── APG/                 # Experimental analytical policy-gradient implementation
+└── PI/                  # Planned policy-iteration work
 ```
 
-## Installation
+## Configuration
 
-### Google Colab
-
-No installation needed — scripts handle everything automatically.
-
-### Local Development
+Most scripts keep an editable `config` dictionary near the top for local and
+Colab work. Reproducible DEQN research runs can also use JSON configs:
 
 ```bash
-git clone https://github.com/MatiasCovarrubias/jaxecon.git
-cd jaxecon
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
+python -m DEQN.train_importconfig --config DEQN/configs/RbcProdNet_April2026/highsigmam_smoke_runpod.json
+python -m DEQN.analysis_importconfig --config DEQN/configs/RbcProdNet_April2026/highsigmam_smoke_runpod.json
 ```
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed setup instructions.
+The JSON path is mainly for Runpod or unattended runs. The script-level configs
+remain the canonical defaults for interactive research.
 
 ## Requirements
 
--   Python 3.10–3.13 (3.14+ not yet supported by JAX)
--   JAX 0.7+
--   Flax 0.8+
--   Optax 0.2+
+- Python 3.10-3.13
+- JAX 0.7+
+- Flax 0.8+
+- Optax 0.2+
+- Orbax checkpointing for saved DEQN/APG experiments
 
 ## License
 

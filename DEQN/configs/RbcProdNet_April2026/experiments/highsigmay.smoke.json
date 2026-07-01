@@ -1,0 +1,50 @@
+{
+  "extends": ["highsigmay.json"],
+  "train": {
+    "exper_name": "highsigmay_smoke",
+    "n_epochs": 1,
+    "steps_per_epoch": 1,
+    "periods_per_epis": 8,
+    "epis_per_step": 2,
+    "mc_draws": 4,
+    "checkpoint_every_n_epochs": 1,
+    "config_eval": {
+      "periods_per_epis": 8,
+      "mc_draws": 4,
+      "eval_n_epis": 2
+    },
+    "config_ir_finetune": {
+      "source_exper_name": "highsigmay_smoke",
+      "exper_name": "highsigmay_smoke_IR",
+      "n_epochs": 1,
+      "steps_per_epoch": 1,
+      "periods_per_epis": 8,
+      "epis_per_step": 2,
+      "mc_draws": 4,
+      "checkpoint_every_n_epochs": 1,
+      "config_eval": {
+        "periods_per_epis": 8,
+        "mc_draws": 4,
+        "eval_n_epis": 2
+      }
+    }
+  },
+  "analysis": {
+    "analysis_name": "highsigmay_smoke",
+    "experiment_to_analyze": {
+      "highsigmay_smoke": "highsigmay_smoke"
+    },
+    "ir_experiment_to_analyze": "highsigmay_smoke_IR",
+    "long_simulation": false,
+    "periods_per_epis": 32,
+    "burn_in_periods": 4,
+    "n_simul_seeds": 1,
+    "welfare_n_trajects": 16,
+    "welfare_trajectory_length": 8,
+    "n_draws": 16,
+    "time_to_converge": 8,
+    "gir_n_draws": 8,
+    "gir_trajectory_length": 8,
+    "sectoral_ir_variables_to_plot": ["Cj", "Yj"]
+  }
+}

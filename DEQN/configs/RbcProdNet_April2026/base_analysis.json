@@ -1,0 +1,7 @@
+{
+  "analysis": {
+    "model_dir": "RbcProdNet_April2026",
+    "ir_sectors_to_plot": [0],
+    "show_ir_plots": false
+  }
+}

@@ -170,6 +170,177 @@ def _print_saved_file(path: str, indent: str = "    ") -> None:
     print(f"{indent}Saved: {os.path.basename(path)}", flush=True)
 
 
+def plot_upstreamness(
+    *,
+    upstreamness_data: Dict[str, Any],
+    save_dir: str,
+    analysis_name: str,
+    sector_labels: Optional[list[str]] = None,
+    figsize: Tuple[float, float] = (14, 8),
+    display_dpi: int = 100,
+    show_plot: bool = False,
+):
+    raw_sectors = upstreamness_data.get("sectors")
+    if raw_sectors is None:
+        raw_sectors = sector_labels
+    sectors = list(raw_sectors) if raw_sectors is not None else []
+
+    measure_specs = [
+        ("U_M", r"Intermediate Inputs ($U^M$)"),
+        ("U_I", r"Investment Flows ($U^I$)"),
+        ("U_simple", "Simple (Mout/Q)"),
+    ]
+    measures: list[tuple[str, str, np.ndarray]] = []
+    for key, label in measure_specs:
+        value = upstreamness_data.get(key)
+        if value is None:
+            continue
+        values = np.asarray(value, dtype=float).ravel()
+        if values.size == 0:
+            continue
+        measures.append((key, label, values))
+
+    if not measures:
+        return None, None
+
+    n_sectors = measures[0][2].size
+    measures = [measure for measure in measures if measure[2].size == n_sectors]
+    if not measures:
+        return None, None
+    if len(sectors) != n_sectors:
+        sectors = [f"Sector {idx + 1}" for idx in range(n_sectors)]
+
+    sort_values = next((values for key, _, values in measures if key == "U_M"), measures[0][2])
+    sorted_indices = np.argsort(sort_values)[::-1]
+    sorted_sectors = [sectors[idx] for idx in sorted_indices]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
+    x = np.arange(n_sectors)
+    bar_width = min(0.8 / len(measures), 0.28)
+    offsets = (np.arange(len(measures)) - (len(measures) - 1) / 2.0) * bar_width
+
+    for measure_idx, (_, label, values) in enumerate(measures):
+        ax.bar(
+            x + offsets[measure_idx],
+            values[sorted_indices],
+            bar_width,
+            label=label,
+            color=colors[measure_idx],
+            alpha=0.9,
+            edgecolor="black",
+            linewidth=0.5,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(sorted_sectors, rotation=45, ha="right")
+    ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel("Upstreamness", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+    ax.grid(True, axis="y", alpha=0.3)
+    plt.tight_layout()
+
+    os.makedirs(save_dir, exist_ok=True)
+    filename = f"sectoral_upstreamness_{analysis_name}.png" if analysis_name else "sectoral_upstreamness.png"
+    save_path = os.path.join(save_dir, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    _write_figure_note_tex(
+        save_path,
+        "The bars report sector-level upstreamness measures sorted by intermediate-input upstreamness. "
+        "U_M uses intermediate-input linkages, U_I uses investment-flow linkages, and Mout/Q is a simple "
+        "steady-state sales-based measure.",
+    )
+    _print_saved_file(save_path)
+
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig, ax
+
+
+def _sectoral_diagnostic_values(values: Any, n_sectors: int) -> Optional[np.ndarray]:
+    if values is None:
+        return None
+    arr = np.asarray(values, dtype=float)
+    if arr.size == 0:
+        return None
+    if arr.ndim == 0 or arr.size == 1:
+        return np.full(n_sectors, float(arr.ravel()[0]), dtype=float)
+    if arr.ndim == 2 and arr.shape[0] == arr.shape[1]:
+        arr = np.diag(arr)
+    arr = arr.ravel()
+    if arr.size < n_sectors:
+        return None
+    return arr[:n_sectors]
+
+
+def plot_sectoral_diagnostic_bar(
+    *,
+    values: Any,
+    save_dir: str,
+    analysis_name: str,
+    filename_stem: str,
+    ylabel: str,
+    note_text: str,
+    sector_labels: Optional[list[str]] = None,
+    sort_descending: bool = True,
+    figsize: Tuple[float, float] = (14, 8),
+    display_dpi: int = 100,
+    show_plot: bool = False,
+):
+    raw_labels = list(sector_labels or [])
+    n_sectors = len(raw_labels)
+    if n_sectors == 0:
+        arr = np.asarray(values, dtype=float).ravel()
+        n_sectors = int(arr.size)
+        raw_labels = [f"Sector {idx + 1}" for idx in range(n_sectors)]
+
+    sectoral_values = _sectoral_diagnostic_values(values, n_sectors)
+    if sectoral_values is None:
+        return None, None
+
+    sort_key = np.nan_to_num(sectoral_values, nan=-np.inf if sort_descending else np.inf)
+    sorted_indices = np.argsort(sort_key)
+    if sort_descending:
+        sorted_indices = sorted_indices[::-1]
+    sorted_labels = [raw_labels[idx] for idx in sorted_indices]
+    sorted_values = sectoral_values[sorted_indices]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=display_dpi)
+    x = np.arange(n_sectors)
+    ax.bar(
+        x,
+        sorted_values,
+        0.8,
+        color=colors[0],
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.5,
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(sorted_labels, rotation=45, ha="right")
+    ax.set_xlabel("Sector", fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.set_ylabel(ylabel, fontweight="bold", fontsize=MEDIUM_SIZE)
+    ax.grid(True, axis="y", alpha=0.3)
+    plt.tight_layout()
+
+    os.makedirs(save_dir, exist_ok=True)
+    filename = f"{filename_stem}_{analysis_name}.png" if analysis_name else f"{filename_stem}.png"
+    save_path = os.path.join(save_dir, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+    _write_figure_note_tex(save_path, note_text)
+    _print_saved_file(save_path)
+
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig, ax
+
+
 def plot_cir_shock_size_profiles(
     *,
     rows: list[Dict[str, Any]],
@@ -1267,31 +1438,6 @@ def plot_sector_ir_by_shock_size(
         get_matlab_ir_for_analysis_variable,
     )
 
-    def _should_print_global_consumption_ir() -> bool:
-        return variable_to_plot == "Agg. Consumption" and filename_suffix is None
-
-    def _format_ir_values(series: np.ndarray) -> str:
-        return np.array2string(
-            np.asarray(series, dtype=float),
-            separator=", ",
-            max_line_width=1_000_000,
-            formatter={"float_kind": lambda x: f"{x:.10f}"},
-        )
-
-    def _print_global_consumption_ir(*, experiment_name: str, sign_label: str, shock_size_value, series: np.ndarray) -> None:
-        if not _should_print_global_consumption_ir():
-            return
-        print(
-            "      Global solution aggregate consumption IR "
-            f"| sector={sector_label} "
-            f"| response={response_source} "
-            f"| experiment={experiment_name} "
-            f"| sign={sign_label} "
-            f"| shock={shock_size_value}%",
-            flush=True,
-        )
-        print(f"        {_format_ir_values(series)}", flush=True)
-
     def _format_solution_ir_label(exp_name: str, response_kind: str, distinguish_response_kinds: bool) -> str:
         response_labels = {
             "GIR": "GIR",
@@ -1505,12 +1651,6 @@ def plot_sector_ir_by_shock_size(
                 gir_vars_pos = state_gir_data[pos_response_key].get("gir_analysis_variables", {})
                 if variable_to_plot in gir_vars_pos:
                     response_pos = gir_vars_pos[variable_to_plot][:max_periods] * 100
-                    _print_global_consumption_ir(
-                        experiment_name=experiment_name,
-                        sign_label="positive",
-                        shock_size_value=shock_size,
-                        series=response_pos,
-                    )
                     style = _experiment_style(0, response_source)
                     _plot_line(
                         ax_pos,
@@ -1526,12 +1666,6 @@ def plot_sector_ir_by_shock_size(
                 gir_vars_neg = state_gir_data[neg_response_key].get("gir_analysis_variables", {})
                 if variable_to_plot in gir_vars_neg:
                     response_neg = gir_vars_neg[variable_to_plot][:max_periods] * 100
-                    _print_global_consumption_ir(
-                        experiment_name=experiment_name,
-                        sign_label="negative",
-                        shock_size_value=shock_size,
-                        series=response_neg,
-                    )
                     style = _experiment_style(0, response_source)
                     _plot_line(
                         ax_neg,
@@ -1615,8 +1749,6 @@ def plot_sector_ir_by_shock_size(
     if not negative_only:
         axes[0, 0].set_title("Negative shock", fontsize=SMALL_SIZE, color="gray")
         axes[0, 1].set_title("Positive shock", fontsize=SMALL_SIZE, color="gray")
-
-    print(f"      IR plot: [{variable_to_plot}]  {sector_label} TFP Shock")
 
     # Legend: always on the negative panel (col 0, row 0) so it is visible regardless of mode.
     handles_neg, labels_neg = axes[0, 0].get_legend_handles_labels()

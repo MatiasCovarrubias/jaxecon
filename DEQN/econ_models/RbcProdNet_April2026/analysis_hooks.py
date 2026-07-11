@@ -19,6 +19,8 @@ from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import get_available_shock
 from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import (
     plot_cir_shock_size_profiles,
     plot_ergodic_histograms,
+    plot_sectoral_diagnostic_bar,
+    plot_upstreamness,
     _write_figure_note_tex,
 )
 from DEQN.econ_models.RbcProdNet_April2026.plots import (
@@ -780,6 +782,43 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                 ("m", "intermediates"),
                 ("q", "gross output"),
             ]
+        ],
+    )
+
+    add_figure_section(
+        "3B. Sectoral Upstreamness",
+        [
+            build_simple_figure_spec(
+                analysis_named_path(simulation_dir, "sectoral_upstreamness", analysis_name, ".png"),
+                "Sector-level upstreamness measures.",
+                note_text=(
+                    "The bars report sector-level upstreamness measures sorted by intermediate-input upstreamness. "
+                    "U_M uses intermediate-input linkages, U_I uses investment-flow linkages, and Mout/Q is a simple "
+                    "steady-state sales-based measure."
+                ),
+            )
+        ],
+    )
+
+    add_figure_section(
+        "3C. Sectoral TFP Shock Diagnostics",
+        [
+            build_simple_figure_spec(
+                analysis_named_path(simulation_dir, "sectoral_shock_volatility", analysis_name, ".png"),
+                "Sector-level TFP shock volatility.",
+                note_text=(
+                    "The bars report the sector-level standard deviation of TFP innovations, using the diagonal "
+                    "of the sectoral shock covariance matrix when needed."
+                ),
+            ),
+            build_simple_figure_spec(
+                analysis_named_path(simulation_dir, "sectoral_tfp_persistence", analysis_name, ".png"),
+                "Sector-level TFP shock persistence.",
+                note_text=(
+                    "The bars report the autoregressive persistence parameter for sectoral TFP. "
+                    "If the model uses a common scalar persistence, the same value is shown for all sectors."
+                ),
+            ),
         ],
     )
 
@@ -2100,7 +2139,6 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
         )
         print(f"\n  Aggregate IRs: {sector_label} (sector {sector_idx + 1})")
         for ir_variable in ir_render_context["ir_variables"]:
-            print(f"    Plotting aggregate variable: {ir_variable} [full panel]")
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
                 matlab_ir_data=ir_render_context["matlab_ir_data"],
@@ -2123,7 +2161,6 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 ergodic_price_aggregation=ir_render_context["ergodic_price_aggregation"],
                 show_plot=show_ir_plots,
             )
-            print(f"    Plotting aggregate variable: {ir_variable} [largest negative shock]")
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
                 matlab_ir_data=ir_render_context["matlab_ir_data"],
@@ -2146,6 +2183,50 @@ def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpr
                 ergodic_price_aggregation=ir_render_context["ergodic_price_aggregation"],
                 show_plot=show_ir_plots,
             )
+
+
+def render_upstreamness_outputs(*, config, simulation_dir, econ_model, postprocess_context):
+    upstreamness_data = postprocess_context.get("upstreamness_data") if postprocess_context else None
+    if not upstreamness_data:
+        return
+
+    show_plot = bool(config.get("show_upstreamness_plot", False))
+    try:
+        plot_upstreamness(
+            upstreamness_data=upstreamness_data,
+            save_dir=simulation_dir,
+            analysis_name=config["analysis_name"],
+            sector_labels=econ_model.labels,
+            show_plot=show_plot,
+        )
+        plot_sectoral_diagnostic_bar(
+            values=upstreamness_data.get("shock_volatility"),
+            save_dir=simulation_dir,
+            analysis_name=config["analysis_name"],
+            filename_stem="sectoral_shock_volatility",
+            ylabel="TFP Shock Volatility",
+            note_text=(
+                "The bars report the sector-level standard deviation of TFP innovations, using the diagonal "
+                "of the sectoral shock covariance matrix when needed."
+            ),
+            sector_labels=econ_model.labels,
+            show_plot=show_plot,
+        )
+        plot_sectoral_diagnostic_bar(
+            values=getattr(econ_model, "rho", None),
+            save_dir=simulation_dir,
+            analysis_name=config["analysis_name"],
+            filename_stem="sectoral_tfp_persistence",
+            ylabel="TFP Persistence",
+            note_text=(
+                "The bars report the autoregressive persistence parameter for sectoral TFP. "
+                "If the model uses a common scalar persistence, the same value is shown for all sectors."
+            ),
+            sector_labels=econ_model.labels,
+            show_plot=show_plot,
+        )
+    except Exception as exc:
+        print(f"    Failed to create sectoral TFP diagnostic plots: {exc}", flush=True)
 
 
 def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_variables_data, postprocess_context):
@@ -2270,14 +2351,8 @@ def render_sectoral_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpro
         )
         if sectoral_ir_variables:
             print(f"\n  Sectoral IRs: {sector_label} (sector {sector_idx + 1})")
-            for variable_name in sectoral_ir_variables:
-                row_ref, desc = SECTORAL_VAR_DESC.get(variable_name, ("", variable_name))
-                print(f"    {row_ref}  {variable_name:<20}  {desc}")
-            print()
 
         for ir_variable in sectoral_ir_variables:
-            row_ref, desc = SECTORAL_VAR_DESC.get(ir_variable, ("", ir_variable))
-            print(f"    Plotting [{row_ref}] {ir_variable}: {desc} | {sector_label}")
             plot_sector_ir_by_shock_size(
                 gir_data=gir_data,
                 matlab_ir_data=ir_render_context["matlab_ir_data"],
@@ -2391,6 +2466,12 @@ def postprocess_analysis(
         econ_model=econ_model,
         stochastic_ss_states=stochastic_ss_states,
         stochastic_ss_policies=stochastic_ss_policies,
+        postprocess_context=postprocess_context,
+    )
+    render_upstreamness_outputs(
+        config=config,
+        simulation_dir=simulation_dir,
+        econ_model=econ_model,
         postprocess_context=postprocess_context,
     )
     render_sectoral_ir_outputs(

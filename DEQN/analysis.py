@@ -769,6 +769,24 @@ def main():
         )
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # SECTORAL UPSTREAMNESS
+    # ═══════════════════════════════════════════════════════════════════════════
+    print("\n" + "═" * 72)
+    print("  SECTORAL UPSTREAMNESS")
+    print("═" * 72, flush=True)
+    if (
+        analysis_hooks is not None
+        and hasattr(analysis_hooks, "render_upstreamness_outputs")
+        and postprocess_context
+    ):
+        analysis_hooks.render_upstreamness_outputs(
+            config=config,
+            simulation_dir=simulation_dir,
+            econ_model=econ_model,
+            postprocess_context=display_postprocess_context,
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # AGGREGATE STOCHASTIC STEADY STATE
     # ═══════════════════════════════════════════════════════════════════════════
     print("\n" + "═" * 72)

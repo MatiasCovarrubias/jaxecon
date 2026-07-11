@@ -347,6 +347,8 @@ def compute_model_moments_with_consistent_aggregation(
     C_ss = policies_ss_levels[:n]
     L_ss = policies_ss_levels[n : 2 * n]
     Pk_ss = policies_ss_levels[2 * n : 3 * n]
+    Pm_ss = policies_ss_levels[3 * n : 4 * n]
+    M_ss = policies_ss_levels[4 * n : 5 * n]
     Mout_ss = policies_ss_levels[5 * n : 6 * n]
     I_ss = policies_ss_levels[6 * n : 7 * n]
     Iout_ss = policies_ss_levels[7 * n : 8 * n]
@@ -355,6 +357,7 @@ def compute_model_moments_with_consistent_aggregation(
 
     C_levels = C_ss[None, :] * np.exp(policies_np[:, :n])
     L_levels = L_ss[None, :] * np.exp(policies_np[:, n : 2 * n])
+    M_levels = M_ss[None, :] * np.exp(policies_np[:, 4 * n : 5 * n])
     Mout_levels = Mout_ss[None, :] * np.exp(policies_np[:, 5 * n : 6 * n])
     Iout_levels = Iout_ss[None, :] * np.exp(policies_np[:, 7 * n : 8 * n])
     Q_levels = Q_ss[None, :] * np.exp(policies_np[:, 9 * n : 10 * n])
@@ -408,10 +411,14 @@ def compute_model_moments_with_consistent_aggregation(
         share_c_numerator = Cagg_policy_ss
         share_i_numerator = Iagg_policy_ss
 
-    va_price_weights = P_ergodic_np if ergodic_price_aggregation else P_ss
-    va_sector_ss = va_price_weights * (Q_ss - Mout_ss)
-    va_sector_levels = va_price_weights[None, :] * (Q_levels - Mout_levels)
-    va_sector_logdev = np.log(np.maximum(va_sector_levels, eps)) - np.log(np.maximum(va_sector_ss[None, :], eps))
+    va_sector_ss = _compute_sector_value_added_levels(Q_ss[None, :], M_ss[None, :], P_ss, Pm_ss).reshape(-1)
+    va_sector_levels = _compute_sector_value_added_levels(Q_levels, M_levels, P_ss, Pm_ss)
+    va_sector_logdev, va_floor_diagnostics = _logdev_rows_from_levels_with_floor(
+        va_sector_levels,
+        va_sector_ss,
+        label="sectoral VA",
+        floor_fraction=1e-4,
+    )
     va_weights = va_sector_ss / np.sum(va_sector_ss)
     go_weights = Q_ss / np.sum(Q_ss)
     emp_weights = L_ss / np.sum(L_ss)
@@ -442,7 +449,7 @@ def compute_model_moments_with_consistent_aggregation(
     sigma_Domar_sectoral = _matlab_std_axis(domar_simul, axis=1)
 
     A_VA_logdev = va_weights @ a_logdev
-    omega_Q = (va_price_weights * Q_ss) / np.sum(va_price_weights * (Q_ss - Mout_ss))
+    omega_Q = (P_ss * Q_ss) / np.sum(P_ss * (Q_ss - Mout_ss))
     A_GO_logdev = omega_Q @ a_logdev
     corr_L_TFP_sectoral = np.array([_safe_corr(l_logdev[j], a_logdev[j]) for j in range(n)])
 
@@ -460,7 +467,9 @@ def compute_model_moments_with_consistent_aggregation(
         "sigma_C_pref_agg": _matlab_std(C_logdev),
         "sigma_I_ces_agg": _matlab_std(I_logdev),
         "aggregate_definition": ("exact_logdev_to_deterministic_ss"),
-        "variable_convention": "Y=primary_factors; VA=P_ss*(Q-Mout); GDP=aggregate_VA",
+        "variable_convention": "Y=primary_factors; VA=P_ss*Q-Pm_ss*M; GDP=aggregate_VA",
+        "sectoral_va_moment_convention": "exact_fixed_price_VA_with_relative_floor",
+        "sectoral_va_floor": va_floor_diagnostics,
         "sample_window": "shocks_simul",
         "aggregate_moments": aggregate_moments,
         "share_C": float(share_c_numerator / share_c_denominator),
@@ -577,6 +586,72 @@ def _weighted_mean_ignore_nan(values: np.ndarray, weights: np.ndarray) -> float:
     weights = weights[mask]
     weights = weights / np.sum(weights)
     return float(np.sum(weights * values))
+
+
+def _compute_sector_value_added_levels(
+    q_levels: np.ndarray,
+    m_levels: np.ndarray,
+    p_ss: np.ndarray,
+    pm_ss: np.ndarray,
+) -> np.ndarray:
+    q_levels = np.asarray(q_levels, dtype=float)
+    m_levels = np.asarray(m_levels, dtype=float)
+    p_ss = np.asarray(p_ss, dtype=float).reshape(1, -1)
+    pm_ss = np.asarray(pm_ss, dtype=float).reshape(1, -1)
+    return p_ss * q_levels - pm_ss * m_levels
+
+
+def _logdev_rows_from_levels_with_floor(
+    levels: np.ndarray,
+    steady_state_levels: np.ndarray,
+    *,
+    label: str,
+    floor_fraction: float,
+) -> tuple[np.ndarray, dict]:
+    levels = np.asarray(levels, dtype=float)
+    steady_state_levels = np.asarray(steady_state_levels, dtype=float).reshape(-1)
+    if not np.all(np.isfinite(steady_state_levels) & (steady_state_levels > 0)):
+        raise ValueError(f"Steady-state {label} levels must be finite and strictly positive.")
+    if not np.all(np.isfinite(levels)):
+        raise ValueError(f"{label} contains non-finite simulated levels.")
+
+    floor_levels = np.maximum(1e-12, floor_fraction * steady_state_levels)
+    floor_matrix = floor_levels.reshape(1, -1)
+    floored_mask = levels < floor_matrix
+    adjusted_levels = np.maximum(levels, floor_matrix)
+    logdev = np.log(adjusted_levels) - np.log(steady_state_levels.reshape(1, -1))
+
+    diagnostics = {
+        "label": label,
+        "floor_fraction_of_ss": float(floor_fraction),
+        "n_floored": int(np.count_nonzero(floored_mask)),
+        "share_floored": float(np.count_nonzero(floored_mask) / levels.size) if levels.size else float("nan"),
+        "by_sector": np.sum(floored_mask, axis=0),
+        "min_raw_level": float(np.min(levels)) if levels.size else float("nan"),
+        "min_floor_level": float(np.min(floor_levels)) if floor_levels.size else float("nan"),
+    }
+    if diagnostics["n_floored"] > 0:
+        first_time_idx, first_sector_idx = np.argwhere(floored_mask)[0]
+        diagnostics.update(
+            {
+                "first_floored_sector": int(first_sector_idx + 1),
+                "first_floored_time": int(first_time_idx + 1),
+                "first_floored_raw_level": float(levels[first_time_idx, first_sector_idx]),
+                "first_floored_floor_level": float(floor_levels[first_sector_idx]),
+                "first_floored_ss_level": float(steady_state_levels[first_sector_idx]),
+            }
+        )
+    else:
+        diagnostics.update(
+            {
+                "first_floored_sector": float("nan"),
+                "first_floored_time": float("nan"),
+                "first_floored_raw_level": float("nan"),
+                "first_floored_floor_level": float("nan"),
+                "first_floored_ss_level": float("nan"),
+            }
+        )
+    return logdev, diagnostics
 
 
 def _safe_corr_matrix_rows(data: np.ndarray) -> tuple[np.ndarray, float]:

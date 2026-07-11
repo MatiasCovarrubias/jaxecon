@@ -90,9 +90,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- Python model moments now build sectoral value added as `P_ss Q - Pm_ss M`, with the same relative floor used by MATLAB.
 - CIR analysis now exports sector-level CSV sidecars for multi-experiment comparisons.
 - Sectoral stochastic-SS and ergodic-mean outputs now include deterministic-price composition-share bars that strip out aggregate level changes.
-- Python can now use a separate experiment checkpoint for DEQN IR/GIR trajectories through `ir_experiment_to_analyze`, while keeping the main simulation and welfare analysis on the normal experiment.
 
 ## Current defaults and compatibility
 
@@ -131,7 +131,7 @@ For the current April pipeline, the intended MATLAB/Python comparison convention
 
 - `ergodic_price_aggregation = false` means aggregate `C`, `I`, `GDP`, `L`, `K`, and `Intratemporal Utility` are read directly from the model-implied aggregate endogenous variables.
 - `ergodic_price_aggregation = true` means the fixed price vector is always taken from a long ergodic DEQN reference sample. If `long_simulation = false`, Python still runs that auxiliary ergodic reference and re-aggregates the shorter common-shock reporting sample under the ergodic price vector rather than using the short window itself as the price source.
-- Sectoral value added is still treated with fixed prices in both MATLAB and Python: `VA_j = \bar P_j (Q_j - M_j^{out})`. It does not switch to time-varying prices when aggregate re-aggregation is off.
+- Sectoral value added is treated with deterministic fixed prices in both MATLAB and Python: `VA_j = \bar P_j Q_j - \bar P^m_j M_j`, floored at `1e-4` of steady-state sectoral VA before taking logs for sectoral VA moments.
 - Volatility calculations are matched to MATLAB's default `std` normalization, so Python uses the sample standard deviation (`N-1`) rather than NumPy's population default.
 
 ## Main Python files

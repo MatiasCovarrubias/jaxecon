@@ -130,12 +130,12 @@ jax_config.update("jax_debug_nans", True)
 config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_April2026",
-    "analysis_name": "benchmark_May2026_allsectors",
+    "analysis_name": "baseline_July2026_withupstreamness",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
-    "model_data_file": "ModelData_newwds_v2.mat",
-    "model_data_irs_file": "ModelData_IRs_benchmark_allsectors.mat",
-    "model_data_simulation_file": "ModelData_simulation_newwds_v2.mat",  # Set to None to skip MATLAB simulation comparison
+    "model_data_file": "ModelData_July.mat",
+    "model_data_irs_file": "ModelData_IRs_July.mat",
+    "model_data_simulation_file": "ModelData_simulation_July.mat",  # Set to None to skip MATLAB simulation comparison
     # Aggregation convention
     # False (default): use aggregate endogenous policy variables directly from the model / Dynare objects.
     # True: re-aggregate using fixed ergodic-mean prices computed from a long ergodic reference run.
@@ -146,10 +146,11 @@ config = {
     "experiment_to_analyze": None,
     # Optional experiment checkpoint used only for DEQN IR/GIR trajectories.
     # Leave as "" or None to use the normal experiment checkpoint.
-    "ir_experiment_to_analyze": "",
+    "ir_experiment_to_analyze": "baseline_July2026_IR",
     # Legacy single-entry format
     "experiments_to_analyze": {
-        "benchmark": "GO_shocks_newWDS_v2",
+        # "benchmark": "GO_shocks_newWDS_v2",
+        "benchmark": "baseline_July2026",
     },
     # Simulation configuration
     # False: use the common-shock simulation as the main nonlinear reporting sample.
@@ -177,7 +178,7 @@ config = {
     # IR selection:
     # - False: stochastic-steady-state impulse response
     # - True: generalized impulse response averaged over ergodic draws
-    "use_gir": True,
+    "use_gir": False,
     # Save IR figures but do not display every figure inline by default.
     "show_ir_plots": False,
     # MATLAB benchmark overlays used in IR figures.

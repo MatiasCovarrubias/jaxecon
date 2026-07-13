@@ -83,6 +83,7 @@ from DEQN.tests.plots import (  # noqa: E402
     plot_grid_test_scaling,
 )
 from DEQN.training.checkpoints import load_experiment_data, load_trained_model_GPU  # noqa: E402
+from DEQN.econ_models import load_model_class  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
 
@@ -95,6 +96,7 @@ jax_config.update("jax_debug_nans", True)
 config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_Oct2025",
+    "exact_cobb_douglas": False,
     "test_name": "baseline_diagnostics",
     # Experiments to test
     "experiments_to_test": {
@@ -118,9 +120,8 @@ config = {
 # DYNAMIC IMPORTS (based on model_dir from config)
 # ============================================================================
 
-# Import Model class from the specified model directory
-model_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.model")
-Model = model_module.Model
+# Import Model class from the specified model directory/regime
+Model = load_model_class(config["model_dir"], config.get("exact_cobb_douglas", False))
 
 # Import model-specific table functions
 tables_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.tables")

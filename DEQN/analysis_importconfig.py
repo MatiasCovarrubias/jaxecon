@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -15,6 +14,7 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(repo_root))
 
 from DEQN.import_config import deep_merge, load_json_config  # noqa: E402
+from DEQN.econ_models import load_model_class  # noqa: E402
 
 
 def _load_analysis_script_module():
@@ -32,10 +32,10 @@ def _load_analysis_script_module():
 def _configure_analysis_module(analysis_module, overrides: dict) -> None:
     analysis_module.config = deep_merge(analysis_module.config, overrides)
 
-    model_module = importlib.import_module(
-        f"DEQN.econ_models.{analysis_module.config['model_dir']}.model"
+    analysis_module.Model = load_model_class(
+        analysis_module.config["model_dir"],
+        analysis_module.config.get("exact_cobb_douglas", False),
     )
-    analysis_module.Model = model_module.Model
     analysis_module.analysis_hooks = analysis_module.load_model_analysis_hooks(
         analysis_module.config["model_dir"]
     )

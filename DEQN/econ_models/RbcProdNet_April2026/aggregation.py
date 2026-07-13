@@ -360,6 +360,7 @@ def compute_model_moments_with_consistent_aggregation(
     M_levels = M_ss[None, :] * np.exp(policies_np[:, 4 * n : 5 * n])
     Mout_levels = Mout_ss[None, :] * np.exp(policies_np[:, 5 * n : 6 * n])
     Iout_levels = Iout_ss[None, :] * np.exp(policies_np[:, 7 * n : 8 * n])
+    P_levels = P_ss[None, :] * np.exp(policies_np[:, 8 * n : 9 * n])
     Q_levels = Q_ss[None, :] * np.exp(policies_np[:, 9 * n : 10 * n])
     K_levels = state_ss_levels[None, :] * np.exp(obs_np[:, :n])
 
@@ -420,7 +421,7 @@ def compute_model_moments_with_consistent_aggregation(
         floor_fraction=1e-4,
     )
     va_weights = va_sector_ss / np.sum(va_sector_ss)
-    go_weights = Q_ss / np.sum(Q_ss)
+    go_weights = (P_ss * Q_ss) / np.sum(P_ss * Q_ss)
     emp_weights = L_ss / np.sum(L_ss)
     inv_weights = (I_ss * Pk_ss) / np.sum(I_ss * Pk_ss)
 
@@ -443,10 +444,15 @@ def compute_model_moments_with_consistent_aggregation(
     sigma_L_sectoral = _matlab_std_axis(l_logdev, axis=1)
     sigma_I_sectoral = _matlab_std_axis(i_logdev, axis=1)
 
-    # Vol(log(P_ss_j * Q_j / GDP)) equals Vol(log(Q_j / GDP)) because log(P_ss_j)
-    # is sector-specific but time-invariant.
-    domar_simul = q_logdev - GDP_logdev[None, :]
+    sales_currentprice = P_levels * Q_levels
+    GDP_currentprice = np.sum(P_levels * (Q_levels - Mout_levels), axis=1)
+    domar_simul = np.log(np.maximum(sales_currentprice, eps)).T - np.log(
+        np.maximum(GDP_currentprice, eps)
+    )[None, :]
     sigma_Domar_sectoral = _matlab_std_axis(domar_simul, axis=1)
+    domar_fixedprice_simul = q_logdev - GDP_logdev[None, :]
+    sigma_Domar_fixedprice_sectoral = _matlab_std_axis(domar_fixedprice_simul, axis=1)
+    sigma_Domar_fixedprice_avg = float(np.sum((Q_ss / np.sum(Q_ss)) * sigma_Domar_fixedprice_sectoral))
 
     A_VA_logdev = va_weights @ a_logdev
     omega_Q = (P_ss * Q_ss) / np.sum(P_ss * (Q_ss - Mout_ss))
@@ -490,13 +496,15 @@ def compute_model_moments_with_consistent_aggregation(
         "sigma_I_avg_invweighted": float(np.sum(inv_weights * sigma_I_sectoral)),
         "sigma_Domar_avg": float(np.sum(go_weights * sigma_Domar_sectoral)),
         "sigma_Domar_avg_legacy": float(np.sum(go_weights * sigma_Domar_sectoral)),
+        "sigma_Domar_fixedprice_avg": sigma_Domar_fixedprice_avg,
         "corr_matrix_C": corr_matrix_C,
         "sigma_L_sectoral": sigma_L_sectoral,
         "sigma_I_sectoral": sigma_I_sectoral,
         "sigma_Domar_sectoral": sigma_Domar_sectoral,
         "sigma_Domar_sectoral_legacy": sigma_Domar_sectoral,
-        "domar_definition": "log_fixed_price_gross_output_share_in_GDP",
-        "domar_average_weight_definition": "legacy_normalized_gross_output_weights",
+        "sigma_Domar_fixedprice_sectoral": sigma_Domar_fixedprice_sectoral,
+        "domar_definition": "log_current_price_gross_output_over_current_price_GDP",
+        "domar_average_weight_definition": "steady_state_current_price_gross_output_weights",
         "corr_matrix_VA": corr_matrix_VA,
         "corr_matrix_L": corr_matrix_L,
         "corr_matrix_I": corr_matrix_I,

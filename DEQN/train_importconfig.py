@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import os
 import subprocess
 import sys
@@ -17,6 +16,7 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(repo_root))
 
 from DEQN.import_config import deep_merge, load_json_config, split_run_config  # noqa: E402
+from DEQN.econ_models import load_model_class  # noqa: E402
 
 
 def _write_temp_analysis_config(analysis_overrides: dict) -> Path:
@@ -39,10 +39,10 @@ def _configure_train_module(train_module, overrides: dict) -> None:
     train_module.config = deep_merge(train_module.config, overrides)
     train_module._set_derived_training_config(train_module.config)
 
-    model_module = importlib.import_module(
-        f"DEQN.econ_models.{train_module.config['model_dir']}.model"
+    train_module.Model = load_model_class(
+        train_module.config["model_dir"],
+        train_module.config.get("exact_cobb_douglas", False),
     )
-    train_module.Model = model_module.Model
     train_module.analysis_hooks = train_module.load_model_analysis_hooks(
         train_module.config["model_dir"]
     )
@@ -87,6 +87,7 @@ def main() -> None:
         experiment_name = train_module.config["exper_name"]
         analysis_overrides = {
             "model_dir": train_module.config["model_dir"],
+            "exact_cobb_douglas": train_module.config.get("exact_cobb_douglas", False),
             "analysis_name": experiment_name,
             "model_data_file": train_module.config.get("model_data_file"),
             "experiment_to_analyze": {experiment_name: experiment_name},

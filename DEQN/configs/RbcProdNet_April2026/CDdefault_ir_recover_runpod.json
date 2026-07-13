@@ -3,6 +3,7 @@
   "train": {
     "exper_name": "CDdefault",
     "model_dir": "RbcProdNet_April2026",
+    "exact_cobb_douglas": true,
     "model_data_file": "ModelData_CDdefault.mat",
     "model_data_object": "ModelData",
     "date": "Jun8_2026",
@@ -45,6 +46,7 @@
   },
   "analysis": {
     "model_dir": "RbcProdNet_April2026",
+    "exact_cobb_douglas": true,
     "analysis_name": "CDdefault",
     "model_data_file": "ModelData_CDdefault.mat",
     "model_data_irs_file": "ModelData_IRs_CDdefault.mat",

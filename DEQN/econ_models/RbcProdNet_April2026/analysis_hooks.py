@@ -1217,38 +1217,22 @@ def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_
     }
 
 
-def _extract_matlab_upstreamness(model_data, fallback_upstreamness, *, n_sectors: Optional[int] = None):
+def _build_upstreamness_data(model_data, model_upstreamness, *, n_sectors: Optional[int] = None):
     model_data = _as_dict(model_data)
-    diagnostics = _as_dict(model_data.get("Diagnostics") or model_data.get("diagnostics"))
-    upstreamness = _as_dict(diagnostics.get("upstreamness"))
-
     result = {}
-    for source_key, target_key in [
-        ("U_M", "U_M"),
-        ("U_I", "U_I"),
-        ("U_simple", "U_simple"),
-        ("sectoral_shock_std", "shock_volatility"),
-        ("shock_volatility", "shock_volatility"),
-        ("sigma_A", "shock_volatility"),
-    ]:
-        value = upstreamness.get(source_key)
-        if value is not None and target_key not in result:
-            if target_key == "shock_volatility":
-                shock_volatility = _sectoral_shock_volatility(value, n_sectors)
-                if shock_volatility is not None:
-                    result[target_key] = shock_volatility
-            else:
-                result[target_key] = np.asarray(value, dtype=float).ravel()
 
-    if "shock_volatility" not in result:
-        steady_state = _as_dict(model_data.get("SteadyState") or model_data.get("steadystate"))
-        parameters = _as_dict(steady_state.get("parameters") or model_data.get("parameters"))
-        shock_volatility = _sectoral_shock_volatility(parameters.get("parSigma_A"), n_sectors)
-        if shock_volatility is not None:
-            result["shock_volatility"] = shock_volatility
+    for key, value in (model_upstreamness or {}).items():
+        if key in {"U_M", "U_I", "U_simple"}:
+            result[key] = np.asarray(value, dtype=float).ravel()
+        else:
+            result[key] = value
 
-    for key, value in (fallback_upstreamness or {}).items():
-        result.setdefault(key, value)
+    steady_state = _as_dict(model_data.get("SteadyState") or model_data.get("steadystate"))
+    parameters = _as_dict(steady_state.get("parameters") or model_data.get("parameters"))
+    shock_volatility = _sectoral_shock_volatility(parameters.get("parSigma_A"), n_sectors)
+    if shock_volatility is not None:
+        result["shock_volatility"] = shock_volatility
+
     return result
 
 
@@ -1902,7 +1886,7 @@ def prepare_postprocess_analysis(
         ergodic_price_aggregation=use_ergodic_prices,
     )
 
-    upstreamness_data = _extract_matlab_upstreamness(
+    upstreamness_data = _build_upstreamness_data(
         model_data,
         econ_model.upstreamness(),
         n_sectors=n_sectors,

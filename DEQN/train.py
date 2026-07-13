@@ -62,13 +62,12 @@ else:
 # IMPORTS
 # ============================================================================
 
-import importlib  # noqa: E402
-
 import jax.numpy as jnp  # noqa: E402
 import scipy.io as sio  # noqa: E402
 from jax import config as jax_config  # noqa: E402
 
 from DEQN.algorithm import create_epoch_train_fn  # noqa: E402
+from DEQN.econ_models import load_model_class  # noqa: E402
 from DEQN.analysis.model_hooks import load_model_analysis_hooks  # noqa: E402
 from DEQN.neural_nets.with_loglinear_baseline import NeuralNet  # noqa: E402
 from DEQN.training.run_experiment import load_experiment_train_state, run_experiment  # noqa: E402
@@ -94,6 +93,7 @@ config = {
     # Key configuration - Edit these first
     "exper_name": "benchmark_final_long",
     "model_dir": "RbcProdNet_April2026",
+    "exact_cobb_douglas": False,
     # MATLAB data file and object name. Set model_data_file to None to use defaults.
     "model_data_file": "ModelData_newwds_v2.mat",
     "model_data_object": "ModelData",
@@ -152,9 +152,8 @@ _set_derived_training_config(config)
 # DYNAMIC IMPORTS (based on model_dir from config)
 # ============================================================================
 
-# Import Model class from the specified model directory
-model_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.model")
-Model = model_module.Model
+# Import Model class from the specified model directory/regime
+Model = load_model_class(config["model_dir"], config.get("exact_cobb_douglas", False))
 analysis_hooks = load_model_analysis_hooks(config["model_dir"])
 
 

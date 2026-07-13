@@ -62,7 +62,6 @@ else:
 # IMPORTS
 # ============================================================================
 
-import importlib  # noqa: E402
 from typing import cast  # noqa: E402
 
 import jax  # noqa: E402
@@ -106,6 +105,7 @@ from DEQN.analysis.model_hooks import (  # noqa: E402
     load_model_analysis_hooks,
     run_model_postprocess,
 )
+from DEQN.econ_models import load_model_class  # noqa: E402
 from DEQN.analysis.stochastic_ss import (  # noqa: E402
     create_stochss_fn,
     create_stochss_loss_fn,
@@ -130,6 +130,7 @@ jax_config.update("jax_debug_nans", True)
 config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_April2026",
+    "exact_cobb_douglas": False,
     "analysis_name": "baseline_July2026_withupstreamness",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
@@ -223,9 +224,8 @@ config = {
 # DYNAMIC IMPORTS (based on model_dir from config)
 # ============================================================================
 
-# Import Model class from the specified model directory
-model_module = importlib.import_module(f"DEQN.econ_models.{config['model_dir']}.model")
-Model = model_module.Model
+# Import Model class from the specified model directory/regime
+Model = load_model_class(config["model_dir"], config.get("exact_cobb_douglas", False))
 analysis_hooks = load_model_analysis_hooks(config["model_dir"])
 analysis_reporting.analysis_hooks = analysis_hooks
 config = apply_model_config_defaults(config, analysis_hooks)

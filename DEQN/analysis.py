@@ -19,6 +19,7 @@ Usage:
 
 import os
 import sys
+import importlib
 
 # ============================================================================
 # ENVIRONMENT DETECTION AND SETUP
@@ -34,10 +35,24 @@ except ImportError:
 print(f"Environment: {'Google Colab' if IN_COLAB else 'Local'}")
 
 if IN_COLAB:
-    print("Installing JAX with CUDA support...")
+    print("Installing compatible NumPy/SciPy/JAX stack with CUDA support...")
     import subprocess
 
-    subprocess.run(["pip", "install", "--upgrade", "jax[cuda12]"], check=True)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--force-reinstall",
+            "--no-cache-dir",
+            "numpy<2.3",
+            "scipy<1.16",
+            "jax[cuda12]",
+        ],
+        check=True,
+    )
 
     print("Cloning jaxecon repository...")
     if not os.path.exists("/content/jaxecon"):
@@ -131,12 +146,12 @@ config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_April2026",
     "exact_cobb_douglas": False,
-    "analysis_name": "baseline_July2026_withupstreamness",
+    "analysis_name": "finercal",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
-    "model_data_file": "ModelData_July.mat",
-    "model_data_irs_file": "ModelData_IRs_July.mat",
-    "model_data_simulation_file": "ModelData_simulation_July.mat",  # Set to None to skip MATLAB simulation comparison
+    "model_data_file": "ModelData_finercal.mat",
+    "model_data_irs_file": "ModelData_IRs_finercal.mat",
+    "model_data_simulation_file": "ModelData_simulation_finercal.mat",  # Set to None to skip MATLAB simulation comparison
     # Aggregation convention
     # False (default): use aggregate endogenous policy variables directly from the model / Dynare objects.
     # True: re-aggregate using fixed ergodic-mean prices computed from a long ergodic reference run.
@@ -147,11 +162,11 @@ config = {
     "experiment_to_analyze": None,
     # Optional experiment checkpoint used only for DEQN IR/GIR trajectories.
     # Leave as "" or None to use the normal experiment checkpoint.
-    "ir_experiment_to_analyze": "baseline_July2026_IR",
+    "ir_experiment_to_analyze": "finercal_July_IR",
     # Legacy single-entry format
     "experiments_to_analyze": {
         # "benchmark": "GO_shocks_newWDS_v2",
-        "benchmark": "baseline_July2026",
+        "benchmark": "finercal_July",
     },
     # Simulation configuration
     # False: use the common-shock simulation as the main nonlinear reporting sample.
@@ -179,7 +194,7 @@ config = {
     # IR selection:
     # - False: stochastic-steady-state impulse response
     # - True: generalized impulse response averaged over ergodic draws
-    "use_gir": False,
+    "use_gir": True,
     # Save IR figures but do not display every figure inline by default.
     "show_ir_plots": False,
     # MATLAB benchmark overlays used in IR figures.
@@ -261,8 +276,10 @@ def _resolve_experiment_config(config_dict):
             raise ValueError("config['experiment_to_analyze'] must be a single-entry dictionary.")
         if legacy_experiments and legacy_experiments != single_experiment:
             print("  Using config['experiment_to_analyze']; ignoring legacy config['experiments_to_analyze'].")
-        return single_experiment
-    return legacy_experiments
+        return cast("dict[str, str]", single_experiment)
+    if not isinstance(legacy_experiments, dict):
+        raise ValueError("config['experiments_to_analyze'] must be a single-entry dictionary.")
+    return cast("dict[str, str]", legacy_experiments)
 
 
 # ============================================================================

@@ -35,10 +35,24 @@ except ImportError:
 print(f"Environment: {'Google Colab' if IN_COLAB else 'Local'}")
 
 if IN_COLAB:
-    print("Installing JAX with CUDA support...")
+    print("Installing compatible NumPy/SciPy/JAX stack with CUDA support...")
     import subprocess
 
-    subprocess.run(["pip", "install", "--upgrade", "jax[cuda12]"], check=True)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--force-reinstall",
+            "--no-cache-dir",
+            "numpy<2.3",
+            "scipy<1.16",
+            "jax[cuda12]",
+        ],
+        check=True,
+    )
 
     print("Cloning jaxecon repository...")
     if not os.path.exists("/content/jaxecon"):

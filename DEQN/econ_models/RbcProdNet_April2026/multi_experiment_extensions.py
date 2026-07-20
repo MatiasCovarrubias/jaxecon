@@ -21,6 +21,7 @@ except ImportError:
     IN_COLAB = False
 
 if IN_COLAB:
+
     def _colab_package_stack_is_usable() -> bool:
         try:
             import jax
@@ -30,10 +31,7 @@ if IN_COLAB:
         except Exception as exc:
             print(f"Package stack check failed in current kernel: {exc!r}")
             return False
-        print(
-            "Package stack OK: "
-            f"numpy={numpy.__version__} scipy={scipy.__version__} jax={jax.__version__}"
-        )
+        print("Package stack OK: " f"numpy={numpy.__version__} scipy={scipy.__version__} jax={jax.__version__}")
         return True
 
     repair_marker = "/content/.jaxecon_colab_numpy_repair_attempted"
@@ -104,9 +102,10 @@ from DEQN.analysis.simul_analysis import (  # noqa: E402
     create_episode_simulation_fn_verbose,
     simulation_analysis,
 )
-from DEQN.analysis.stochastic_ss import create_stochss_fn  # noqa: E402
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
-from DEQN.analysis.welfare_outputs import _compute_welfare_cost_from_sample  # noqa: E402
+from DEQN.analysis.welfare_outputs import (
+    _compute_welfare_cost_from_sample,  # noqa: E402
+)
 from DEQN.econ_models import load_model_class  # noqa: E402
 from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import (  # noqa: E402
     _sectoral_levels_from_logdev,
@@ -118,7 +117,6 @@ from DEQN.training.checkpoints import (  # noqa: E402
     load_experiment_data,
     load_trained_model_orbax,
 )
-
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "model_dir": "RbcProdNet_April2026",
@@ -134,10 +132,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "welfare_n_trajects": 16000,
     "welfare_traject_length": 200,
     "welfare_seed": 0,
-    "n_draws": 2000,
-    "time_to_converge": 500,
-    "seed": 0,
-    "stochastic_ss_max_std": 0.001,
     "caption_tex": "Additional insights and robustness",
     "table_label": "tab:robustness_summary",
     "experiments": [],
@@ -157,28 +151,41 @@ config: dict[str, Any] = {
             "section": "Baseline",
         },
         {
-            "experiment_name": "homogenous_shocks",
-            "model_data_file": "ModelData_homogenous_shocks.mat",
+            "experiment_name": "homogenousshocks",
+            "model_data_file": "ModelData_homogenousshocks.mat",
             "label": "Homogeneous shocks",
             "section": "Robustness",
         },
         {
-            "experiment_name": "highsigmay",
-            "model_data_file": "ModelData_highsigmay.mat",
+            "experiment_name": "correlatedshocks",
+            "model_data_file": "ModelData_correlatedshocks.mat",
+            "label": "Correlated shocks",
+            "section": "Robustness",
+        },
+        {
+            "experiment_name": "sigmay0dot8",
+            "model_data_file": "ModelData_sigmay0dot8.mat",
             "label_tex": r"High $\sigma_y$ (0.8)",
             "section": "Robustness",
         },
         {
-            "experiment_name": "highsigmam",
-            "model_data_file": "ModelData_highsigmam.mat",
+            "experiment_name": "sigmam0dot1",
+            "model_data_file": "ModelData_sigmam0dot1.mat",
             "label_tex": r"High $\sigma_m$ (0.1)",
             "section": "Robustness",
         },
         {
             "experiment_name": "CDdefault",
             "model_data_file": "ModelData_CDdefault.mat",
+            "exact_cobb_douglas": False,
+            "label_tex": r"Cobb--Douglas for $\sigma_c$, $\sigma_I$, $\sigma_q$",
+            "section": "Robustness",
+        },
+        {
+            "experiment_name": "CDexact",
+            "model_data_file": "ModelData_CDexact.mat",
             "exact_cobb_douglas": True,
-            "label_tex": "Cobb--Douglas",
+            "label_tex": "Cobb--Douglas for all elasticities",
             "section": "Robustness",
         },
     ],
@@ -187,9 +194,9 @@ config: dict[str, Any] = {
         "simulation and reported as percent log differences from the deterministic steady state. "
         "The welfare cost is the consumption-equivalent cost of business cycles, in percent. "
         "Capital reallocation is the sum of the absolute sectoral capital-composition changes "
-        "shown in the stochastic-steady-state figure. Each sectoral change is the percent change "
-        "in its stochastic-steady-state capital share relative to its deterministic-steady-state "
-        "share. ``Homogeneous shocks'' sets sectoral shock volatilities to a common value."
+        "shown in the ergodic-mean figure. Each sectoral change is the percent change in its "
+        "ergodic-mean capital share relative to its deterministic-steady-state share. "
+        "``Homogeneous shocks'' sets sectoral shock volatilities to a common value."
     ),
 }
 
@@ -313,21 +320,21 @@ def _check_checkpoint_model_data(
     print(f"  Warning: {message}", flush=True)
 
 
-def _capital_reallocation_pp(
+def _ergodic_capital_reallocation_pp(
     *,
-    stochastic_ss_state: Any,
+    simul_obs: Any,
     state_ss: Any,
     policies_ss: Any,
     n_sectors: int,
 ) -> float:
     variable_info = _sectoral_variable_info("K", n_sectors)
-    capital_logdev = np.asarray(stochastic_ss_state, dtype=float)[:n_sectors]
+    capital_logdev = np.asarray(simul_obs, dtype=float)[:, :n_sectors]
     capital_ss_log = np.asarray(state_ss, dtype=float)[:n_sectors]
-    capital_stochastic_ss = _sectoral_levels_from_logdev(capital_logdev, capital_ss_log)
+    capital_ergodic_mean = _sectoral_levels_from_logdev(capital_logdev, capital_ss_log)
     capital_deterministic_ss = np.exp(capital_ss_log)
     weights, _ = _sectoral_share_weights(policies_ss, variable_info, n_sectors)
     share_changes = _sectoral_share_change(
-        capital_stochastic_ss,
+        capital_ergodic_mean,
         capital_deterministic_ss,
         weights,
     )
@@ -412,9 +419,7 @@ def _run_experiment(
         simulation_fn=simulation_fn,
         analysis_hooks=analysis_hooks,
     )
-    mean_consumption, sd_consumption = _consumption_statistics(
-        analysis_variables["Agg. Consumption"]
-    )
+    mean_consumption, sd_consumption = _consumption_statistics(analysis_variables["Agg. Consumption"])
 
     welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
     welfare_fn = jax.jit(get_welfare_fn(econ_model, config))
@@ -428,17 +433,8 @@ def _run_experiment(
         )
     )
 
-    stochastic_ss_fn = jax.jit(create_stochss_fn(econ_model, config, analysis_hooks=analysis_hooks))
-    _, stochastic_ss_state, stochastic_ss_std = stochastic_ss_fn(simul_obs, train_state)
-    max_stochastic_ss_std = float(jnp.max(stochastic_ss_std))
-    if max_stochastic_ss_std > float(config["stochastic_ss_max_std"]):
-        raise ValueError(
-            f"Stochastic steady state did not converge for '{experiment_name}': "
-            f"maximum cross-draw std is {max_stochastic_ss_std:.6g}."
-        )
-
-    capital_reallocation = _capital_reallocation_pp(
-        stochastic_ss_state=stochastic_ss_state,
+    capital_reallocation = _ergodic_capital_reallocation_pp(
+        simul_obs=simul_obs,
         state_ss=econ_model.state_ss,
         policies_ss=econ_model.policies_ss,
         n_sectors=model_data["n_sectors"],
@@ -455,7 +451,6 @@ def _run_experiment(
         "sd_consumption_percent": sd_consumption,
         "welfare_cost_percent": welfare_cost,
         "capital_reallocation_pp": capital_reallocation,
-        "stochastic_ss_max_std": max_stochastic_ss_std,
     }
 
 
@@ -470,7 +465,6 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "sd_consumption_percent",
         "welfare_cost_percent",
         "capital_reallocation_pp",
-        "stochastic_ss_max_std",
     ]
     with path.open("w", newline="", encoding="utf-8") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction="ignore")
@@ -479,7 +473,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     print(f"Saved: {path}", flush=True)
 
 
-def _write_latex_table(path: Path, rows: list[dict[str, Any]], config: dict[str, Any]) -> None:
+def _write_latex_table(path: Path, rows: list[dict[str, Any]], config: dict[str, Any]) -> str:
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
@@ -522,8 +516,8 @@ def _write_latex_table(path: Path, rows: list[dict[str, Any]], config: dict[str,
         "simulation and reported as percent log differences from the deterministic steady state. "
         "The welfare cost is the consumption-equivalent cost of business cycles, in percent. "
         "Capital reallocation is the sum of the absolute sectoral capital-composition changes "
-        "shown in the stochastic-steady-state figure. Each sectoral change is the percent change "
-        "in its stochastic-steady-state capital share relative to its deterministic-steady-state share.",
+        "shown in the ergodic-mean figure. Each sectoral change is the percent change in its "
+        "ergodic-mean capital share relative to its deterministic-steady-state share.",
     )
     lines.extend(
         [
@@ -539,8 +533,10 @@ def _write_latex_table(path: Path, rows: list[dict[str, Any]], config: dict[str,
             "",
         ]
     )
-    path.write_text("\n".join(lines), encoding="utf-8")
+    latex_code = "\n".join(lines)
+    path.write_text(latex_code, encoding="utf-8")
     print(f"Saved: {path}", flush=True)
+    return latex_code
 
 
 def run(config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -566,11 +562,11 @@ def run(config: dict[str, Any]) -> list[dict[str, Any]]:
     print(f"Saved: {config_path}", flush=True)
 
     rows: list[dict[str, Any]] = []
+    latex_code = ""
     total = len(config["experiments"])
     for index, spec in enumerate(config["experiments"], start=1):
         print(
-            f"\n[{index}/{total}] {spec.get('label', spec['experiment_name'])} "
-            f"({spec['model_data_file']})",
+            f"\n[{index}/{total}] {spec.get('label', spec['experiment_name'])} " f"({spec['model_data_file']})",
             flush=True,
         )
         try:
@@ -584,10 +580,16 @@ def run(config: dict[str, Any]) -> list[dict[str, Any]]:
                 )
             )
             _write_csv(csv_path, rows)
-            _write_latex_table(table_path, rows, config)
+            latex_code = _write_latex_table(table_path, rows, config)
         finally:
             jax.clear_caches()
             gc.collect()
+
+    print("\n" + "=" * 72)
+    print("FINAL LATEX TABLE")
+    print("=" * 72)
+    print(latex_code)
+    print("=" * 72, flush=True)
     return rows
 
 

@@ -12,31 +12,44 @@
         "section": "Baseline"
       },
       {
-        "experiment_name": "homogenous_shocks",
-        "model_data_file": "ModelData_homogenous_shocks.mat",
+        "experiment_name": "homogenousshocks",
+        "model_data_file": "ModelData_homogenousshocks.mat",
         "label": "Homogeneous shocks",
         "section": "Robustness"
       },
       {
-        "experiment_name": "highsigmay",
-        "model_data_file": "ModelData_highsigmay.mat",
+        "experiment_name": "correlatedshocks",
+        "model_data_file": "ModelData_correlatedshocks.mat",
+        "label": "Correlated shocks",
+        "section": "Robustness"
+      },
+      {
+        "experiment_name": "sigmay0dot8",
+        "model_data_file": "ModelData_sigmay0dot8.mat",
         "label_tex": "High $\\sigma_y$ (0.8)",
         "section": "Robustness"
       },
       {
-        "experiment_name": "highsigmam",
-        "model_data_file": "ModelData_highsigmam.mat",
+        "experiment_name": "sigmam0dot1",
+        "model_data_file": "ModelData_sigmam0dot1.mat",
         "label_tex": "High $\\sigma_m$ (0.1)",
         "section": "Robustness"
       },
       {
         "experiment_name": "CDdefault",
         "model_data_file": "ModelData_CDdefault.mat",
+        "exact_cobb_douglas": false,
+        "label_tex": "Cobb--Douglas for $\\sigma_c$, $\\sigma_I$, $\\sigma_q$",
+        "section": "Robustness"
+      },
+      {
+        "experiment_name": "CDexact",
+        "model_data_file": "ModelData_CDexact.mat",
         "exact_cobb_douglas": true,
-        "label_tex": "Cobb--Douglas",
+        "label_tex": "Cobb--Douglas for all elasticities",
         "section": "Robustness"
       }
     ],
-    "notes_tex": "Mean and standard deviation of consumption are computed from the long nonlinear simulation and reported as percent log differences from the deterministic steady state. The welfare cost is the consumption-equivalent cost of business cycles, in percent. Capital reallocation is the sum of the absolute sectoral capital-composition changes shown in the stochastic-steady-state figure. Each sectoral change is the percent change in its stochastic-steady-state capital share relative to its deterministic-steady-state share. ``Homogeneous shocks'' sets sectoral shock volatilities to a common value."
+    "notes_tex": "Mean and standard deviation of consumption are computed from the long nonlinear simulation and reported as percent log differences from the deterministic steady state. The welfare cost is the consumption-equivalent cost of business cycles, in percent. Capital reallocation is the sum of the absolute sectoral capital-composition changes shown in the ergodic-mean figure. Each sectoral change is the percent change in its ergodic-mean capital share relative to its deterministic-steady-state share. ``Homogeneous shocks'' sets sectoral shock volatilities to a common value."
   }
 }

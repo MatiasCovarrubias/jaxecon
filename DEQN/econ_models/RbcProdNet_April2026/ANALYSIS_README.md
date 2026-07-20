@@ -90,9 +90,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
-- Extensions analysis now rebuilds and simulates each configured ModelData/checkpoint pair.
-- Sectoral comovement now uses current-price consumption, value added, and investment, matching MATLAB.
-- Python model moments build sectoral value added with the same relative floor used by MATLAB.
+- Figure and table notes now state calculations and quantitative horizons directly.
+- Model-vs-data output now presents only untargeted moments in paper order.
+- Histogram curves are thicker, and impulse-response legends now sit at bottom right.
 
 ## Current defaults and compatibility
 
@@ -275,7 +275,7 @@ For the current `basefinal` output, use this map:
 | What you see in generated LaTeX                                                                                                      | Generated fragment file                                                 | Change the source here                                                                                     | Why this is the right place                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `\input{calibration_table_basefinal.tex}`                                                                                            | `analysis/basefinal/calibration_table_basefinal.tex`                    | `DEQN/analysis/tables.py` → `create_calibration_table(...)` and `_create_model_vs_data_moments_table(...)` | This function writes the LaTeX table body, caption, label, note text, panel titles, row labels, and column headers for the model-vs-data table.                                                                            |
-| Caption `Model vs. data business cycle moments`                                                                                      | inside `calibration_table_basefinal.tex`                                | `DEQN/analysis/tables.py` → `_create_model_vs_data_moments_table(...)`                                     | The caption string is hardcoded there. If you say “modify the table title `Model vs. data business cycle moments`,” this is the function to edit.                                                                          |
+| Caption `Untargeted model vs. data business cycle moments`                                                                           | inside `calibration_table_basefinal.tex`                                | `DEQN/analysis/tables.py` → `_create_model_vs_data_moments_table(...)`                                     | The caption string is hardcoded there. This table excludes moments directly targeted in the calibration.                                                                                                                   |
 | `\input{stochastic_ss_aggregates_basefinal.tex}`                                                                                     | `analysis/basefinal/stochastic_ss_aggregates_basefinal.tex`             | `DEQN/analysis/tables.py` → `create_stochastic_ss_aggregates_table(...)`                                   | This function writes the aggregate stochastic-steady-state LaTeX table, including caption, label, note, and row set.                                                                                                       |
 | Caption `Aggregate stochastic steady state`                                                                                          | inside `stochastic_ss_aggregates_basefinal.tex`                         | `DEQN/analysis/tables.py` → `create_stochastic_ss_aggregates_table(...)`                                   | The caption is set directly in that writer.                                                                                                                                                                                |
 | `\input{simulation/descriptive_stats_basefinal.tex}`                                                                                 | `analysis/basefinal/simulation/descriptive_stats_basefinal.tex`         | `DEQN/analysis/tables.py` → `create_descriptive_stats_table(...)`                                          | This function writes the descriptive-statistics table caption, label, note, and the displayed method/variable layout.                                                                                                      |
@@ -340,9 +340,9 @@ command-line use, the inline config is the default and
 `configs/RbcProdNet_April2026/extensions_table.json` can be supplied with
 `--config`. The script rebuilds the model for each configured checkpoint and
 ModelData pair, runs only the long nonlinear simulation, welfare calculation,
-and stochastic-steady-state calculation, then writes a paper-ready table and its
-CSV under `analysis/comparisons/<comparative_name>/`. It does not compute IRs,
-figures, or Dynare comparisons.
+and ergodic-mean capital reallocation calculation, then writes a paper-ready
+table and its CSV under `analysis/comparisons/<comparative_name>/`. It does not
+compute stochastic steady states, IRs, figures, or Dynare comparisons.
 
 For the exact current execution inventory, see:
 

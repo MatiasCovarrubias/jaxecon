@@ -125,6 +125,8 @@ def _load_sector_rows(model_dir: str, analysis_spec: dict[str, str], sector_idx:
                 "sector_idx": row.get("sector_idx", ""),
                 "sector_label": row.get("sector_label", ""),
                 "shock_size": row.get("shock_size", ""),
+                "positive_horizon_periods": row.get("positive_horizon_periods", ""),
+                "negative_horizon_periods": row.get("negative_horizon_periods", ""),
                 "measure_panel": row.get("measure_panel", ""),
                 "measure": row.get("measure", ""),
                 "formula": CIR_MEASURE_FORMULAS.get(row.get("measure", ""), ""),
@@ -185,6 +187,46 @@ def _difference_rows(rows: list[dict[str, Any]], baseline_label: str, experiment
     return differences
 
 
+def _comparison_horizon_note(rows: list[dict[str, Any]]) -> str:
+    horizon_specs = {
+        (
+            row.get("analysis_label", ""),
+            row.get("shock_size", ""),
+            row.get("negative_horizon_periods", ""),
+            row.get("positive_horizon_periods", ""),
+        )
+        for row in rows
+        if row.get("negative_horizon_periods") or row.get("positive_horizon_periods")
+    }
+    if not horizon_specs:
+        return ""
+
+    horizon_pairs = {(negative, positive) for _, _, negative, positive in horizon_specs}
+    if len(horizon_pairs) == 1:
+        negative, positive = next(iter(horizon_pairs))
+        if negative == positive:
+            horizon = int(float(negative))
+            return f" Each CIR sums periods 0 through {horizon - 1} ({horizon} periods)."
+        negative_horizon = int(float(negative))
+        positive_horizon = int(float(positive))
+        return (
+            f" Negative-shock CIRs sum periods 0 through {negative_horizon - 1} "
+            f"({negative_horizon} periods), and positive-shock CIRs sum periods 0 through "
+            f"{positive_horizon - 1} ({positive_horizon} periods)."
+        )
+
+    details = []
+    for analysis_label, shock_size, negative, positive in sorted(
+        horizon_specs,
+        key=lambda spec: (spec[0], _shock_sort_key(spec[1])),
+    ):
+        details.append(
+            f"{analysis_label}, {float(shock_size):g} percent: {int(float(negative))} negative-shock periods "
+            f"and {int(float(positive))} positive-shock periods"
+        )
+    return " CIR horizons are: " + "; ".join(details) + "."
+
+
 def _write_comparison_table_tex(
     path: str,
     *,
@@ -240,10 +282,14 @@ def _write_comparison_table_tex(
             r"\end{tabular}",
             r"\begin{minipage}{0.92\textwidth}",
             r"\footnotesize",
-            r"\textit{Notes:} The table reports volatility-sensitive CIR measures for the selected sector only. "
-            r"CIR is the sum over the displayed IR horizon of the aggregate consumption response to a "
-            r"sectoral TFP shock. Values are reported in percent; the difference row is measured in "
-            r"percentage points. $GIR_{GS}$ is the global-solution CIR and $GIR_{MIT}$ is the MIT shock CIR.",
+            rf"\textit{{Notes:}} The table reports volatility-sensitive CIR measures for {escape_latex(sector_label)}. "
+            r"CIR is the sum of the aggregate consumption response to a sectoral TFP shock beginning with the "
+            r"impact period."
+            + _comparison_horizon_note(rows)
+            + r" The formulas are applied separately to the baseline and scaled-volatility CIRs. Values are "
+            r"reported in percent; each difference row subtracts the baseline value from the scaled-volatility "
+            r"value and is reported in percentage points. $GIR_{GS}$ is the global-solution CIR and "
+            r"$GIR_{MIT}$ is the MIT shock CIR.",
             r"\end{minipage}",
             r"\end{table}",
             "",
@@ -301,6 +347,8 @@ def main():
             "sector_idx",
             "sector_label",
             "shock_size",
+            "positive_horizon_periods",
+            "negative_horizon_periods",
             "measure_panel",
             "measure",
             "formula",

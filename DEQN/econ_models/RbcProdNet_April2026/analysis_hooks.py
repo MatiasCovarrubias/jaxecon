@@ -116,6 +116,52 @@ CIR_MEASURE_DESCRIPTIONS = {
     "corr(MIT asym., sigA)": "corr(MIT asym., sigA)",
 }
 
+CIR_MEASURE_NOTE_DESCRIPTIONS = {
+    "Nonlin. ampl. (-)": (
+        "100 times the negative-shock MIT CIR divided by the negative-shock first-order CIR, minus 100"
+    ),
+    "Nonlin. ampl. (+)": (
+        "100 times the positive-shock MIT CIR divided by the positive-shock first-order CIR, minus 100"
+    ),
+    "MIT asym.": (
+        "100 times one minus the absolute negative-shock MIT CIR divided by the absolute positive-shock MIT CIR"
+    ),
+    "Opt. atten. (-)": (
+        "100 times one minus the negative-shock global-solution CIR divided by the negative-shock MIT CIR"
+    ),
+    "Opt. atten. (+)": (
+        "100 times one minus the positive-shock global-solution CIR divided by the positive-shock MIT CIR"
+    ),
+    "Global asym.": (
+        "100 times one minus the absolute negative-shock global-solution CIR divided by the absolute "
+        "positive-shock global-solution CIR"
+    ),
+    "corr(opt. atten., U_M)": "the Pearson correlation between negative-shock optimal attenuation and IO upstreamness",
+    "corr(global asym., U_M)": "the Pearson correlation between global asymmetry and IO upstreamness",
+    "corr(nonlin. ampl., U_M)": (
+        "the Pearson correlation between negative-shock nonlinear amplification and IO upstreamness"
+    ),
+    "corr(opt. atten., U_I)": (
+        "the Pearson correlation between negative-shock optimal attenuation and investment upstreamness"
+    ),
+    "corr(global asym., U_I)": "the Pearson correlation between global asymmetry and investment upstreamness",
+    "corr(nonlin. ampl., U_I)": (
+        "the Pearson correlation between negative-shock nonlinear amplification and investment upstreamness"
+    ),
+    "corr(opt. atten., sigA)": (
+        "the Pearson correlation between negative-shock optimal attenuation and sectoral TFP shock volatility"
+    ),
+    "corr(global asym., sigA)": (
+        "the Pearson correlation between global asymmetry and sectoral TFP shock volatility"
+    ),
+    "corr(nonlin. ampl., sigA)": (
+        "the Pearson correlation between negative-shock nonlinear amplification and sectoral TFP shock volatility"
+    ),
+    "corr(MIT asym., sigA)": (
+        "the Pearson correlation between MIT-shock asymmetry and sectoral TFP shock volatility"
+    ),
+}
+
 CIR_TABLE_PANELS = [
     (
         "MIT shock vs 1st-order approx.",
@@ -576,7 +622,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
             sections.append({"title": title, "tables": [], "figures": existing_figures})
 
     add_table_section(
-        "1. Model vs. Data Moments",
+        "1. Untargeted Model vs. Data Moments",
         [os.path.join(analysis_dir, f"calibration_table_{analysis_name}.tex")],
     )
 
@@ -599,6 +645,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     }
     ir_shock_sizes = list(config.get("ir_shock_sizes", []))
     largest_ir_shock = max(ir_shock_sizes) if ir_shock_sizes else None
+    ir_max_periods = int(config.get("ir_max_periods", 80))
     aggregate_benchmark_labels = describe_ir_benchmark_methods(config)
     deqn_ir_note = describe_deqn_ir_note(config)
     aggregate_ir_variables = list(DEFAULT_AGGREGATE_IR_LABELS)
@@ -625,22 +672,22 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     def _build_grouped_aggregate_ir_note(*, sector_label, variable_names):
         displayed_labels = [_aggregate_note_label(variable_name) for variable_name in variable_names]
         shock_text = (
-            f"The panels show responses to the largest discovered negative TFP shock in {sector_label} "
+            f"The panels show responses to the largest analyzed negative TFP shock in {sector_label} "
             f"({largest_ir_shock} percent). "
-            if largest_ir_shock is not None
-            else f"The panels show responses to a negative TFP shock in {sector_label}. "
         )
         return (
             f"{shock_text}"
             f"The panels report aggregate {join_labels(displayed_labels)}. "
             f"{deqn_ir_note}"
-            "The horizontal axis reports periods after impact. "
-            "The vertical axis reports impulse responses in percent. "
+            f"The horizontal axis reports periods 0 through {ir_max_periods - 1} after impact. "
+            "The vertical axis reports 100 times the log deviation from the deterministic steady state. "
             "Dashed lines report comparison IRs from the "
             f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
             "steady state."
         )
     for sector_idx in config.get("ir_sectors_to_plot", []):
+        if not ir_shock_sizes:
+            continue
         sector_label = (
             econ_model.labels[sector_idx] if sector_idx < len(econ_model.labels) else f"Sector {sector_idx + 1}"
         )
@@ -652,8 +699,6 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
             shock_layout_text = (
                 f"The rows correspond to {format_percent_list(ir_shock_sizes)} percent TFP shocks in {sector_label}; "
                 "the left column shows negative shocks and the right column positive shocks. "
-                if ir_shock_sizes
-                else ""
             )
             aggregate_ir_figures.append(
                 build_simple_figure_spec(
@@ -663,8 +708,8 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                         f"{shock_layout_text}"
                         f"The figure plots the response of aggregate {note_label}. "
                         f"{deqn_ir_note}"
-                        "The horizontal axis reports periods after impact. "
-                        "The vertical axis reports impulse responses in percent. "
+                        f"The horizontal axis reports periods 0 through {ir_max_periods - 1} after impact. "
+                        "The vertical axis reports 100 times the log deviation from the deterministic steady state. "
                         "Dashed lines report comparison IRs from the "
                         f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
                         "steady state."
@@ -736,10 +781,10 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
             build_simple_figure_spec(
                 analysis_named_path(cir_figures_dir, figure_spec["filename_stem"], analysis_name, ".png"),
                 f"{figure_spec['title']} by shock size.",
-                note_text=(
-                    "The horizontal axis reports the discovered TFP shock size in percent. "
-                    "Percent-difference figures report amplification, attenuation, and asymmetry in percent; "
-                    "correlation figures are unitless."
+                note_text=_build_cir_profile_note(
+                    figure_spec,
+                    n_sectors=econ_model.n_sectors,
+                    rows=[],
                 ),
             )
             for figure_spec in CIR_FIGURE_SPECS
@@ -792,9 +837,10 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                 analysis_named_path(simulation_dir, "sectoral_upstreamness", analysis_name, ".png"),
                 "Sector-level upstreamness measures.",
                 note_text=(
-                    "The bars report sector-level upstreamness measures sorted by intermediate-input upstreamness. "
-                    "U_M uses intermediate-input linkages, U_I uses investment-flow linkages, and Mout/Q is a simple "
-                    "steady-state sales-based measure."
+                    "Sectors are sorted by intermediate-input upstreamness. U_M solves (I - Delta_M) U_M = 1 using "
+                    "steady-state intermediate-input expenditure shares, and U_I solves (I - Delta_I) U_I = 1 using "
+                    "steady-state investment-flow expenditure shares. Mout/Q is steady-state intermediate sales "
+                    "divided by gross output."
                 ),
             )
         ],
@@ -807,16 +853,16 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                 analysis_named_path(simulation_dir, "sectoral_shock_volatility", analysis_name, ".png"),
                 "Sector-level TFP shock volatility.",
                 note_text=(
-                    "The bars report the sector-level standard deviation of TFP innovations, using the diagonal "
-                    "of the sectoral shock covariance matrix when needed."
+                    "Each bar reports a sector's TFP innovation standard deviation. For a covariance-matrix input, "
+                    "the value is the square root of the corresponding diagonal element."
                 ),
             ),
             build_simple_figure_spec(
                 analysis_named_path(simulation_dir, "sectoral_tfp_persistence", analysis_name, ".png"),
                 "Sector-level TFP shock persistence.",
                 note_text=(
-                    "The bars report the autoregressive persistence parameter for sectoral TFP. "
-                    "If the model uses a common scalar persistence, the same value is shown for all sectors."
+                    "Each bar reports the sectoral AR(1) persistence coefficient rho_j. A common scalar rho produces "
+                    "the same bar value for every sector."
                 ),
             ),
         ],
@@ -946,14 +992,20 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                             ".png",
                         ),
                         "caption": variable_caption,
+                        "variable_name": variable_name,
                     }
                 )
 
-            if subfigures:
+            if subfigures and largest_sectoral_shock is not None:
                 shock_text = (
-                    f"The panels plot responses to a negative {largest_sectoral_shock} percent TFP shock in {sector_label}."
-                    if largest_sectoral_shock
-                    else f"The panels plot responses to the sectoral TFP shock used in the analysis for {sector_label}."
+                    f"The panels plot responses to a negative {largest_sectoral_shock} percent TFP shock in "
+                    f"{sector_label}."
+                )
+                vertical_axis_text = (
+                    "The vertical axis reports 100 times the log deviation from the deterministic steady state; "
+                    "the expenditure-share panel reports percentage-point deviations. "
+                    if any(subfigure["variable_name"] == "gammaij_client" for subfigure in subfigures)
+                    else "The vertical axis reports 100 times the log deviation from the deterministic steady state. "
                 )
                 sectoral_ir_groups.append(
                     {
@@ -961,8 +1013,8 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                         "note_text": (
                             f"{shock_text} "
                             f"{deqn_ir_note}"
-                            "The horizontal axis reports periods after impact. "
-                            "The vertical axis reports impulse responses in percent. "
+                            f"The horizontal axis reports periods 0 through {ir_max_periods - 1} after impact. "
+                            f"{vertical_axis_text}"
                             "Dashed lines report comparison IRs from the "
                             f"{sectoral_benchmark_labels}; these comparison IRs are anchored at the deterministic "
                             "steady state."
@@ -1368,7 +1420,17 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
         pf_neg = []
         fo_neg = []
         fo_pos = []
+        horizon_periods = []
         for sector_idx in range(n_sectors):
+            pos_horizon = (
+                _get_matlab_cir_horizon_for_sector(matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx)
+                or max_periods
+            )
+            neg_horizon = (
+                _get_matlab_cir_horizon_for_sector(matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx)
+                or max_periods
+            )
+            horizon_periods.extend([pos_horizon, neg_horizon])
             g_pos = _get_global_cir_for_sector(
                 gir_data,
                 experiment_name=experiment_name,
@@ -1376,10 +1438,7 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
                 shock_key=pos_key,
                 variable_name=variable_name,
                 n_sectors=n_sectors,
-                max_periods=_get_matlab_cir_horizon_for_sector(
-                    matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx
-                )
-                or max_periods,
+                max_periods=pos_horizon,
                 response_source=response_source,
             )
             g_neg = _get_global_cir_for_sector(
@@ -1389,10 +1448,7 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
                 shock_key=neg_key,
                 variable_name=variable_name,
                 n_sectors=n_sectors,
-                max_periods=_get_matlab_cir_horizon_for_sector(
-                    matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx
-                )
-                or max_periods,
+                max_periods=neg_horizon,
                 response_source=response_source,
             )
             p_pos = _get_matlab_cir_for_sector(
@@ -1432,6 +1488,7 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
         rows.append(
             {
                 "shock_size": shock_size,
+                "horizon_periods": sorted(set(horizon_periods)),
                 "values": {
                     "Opt. atten. (-)": _nanmean_or_none(attenuation_neg),
                     "Opt. atten. (+)": _nanmean_or_none(attenuation_pos),
@@ -1462,6 +1519,44 @@ def _cir_panel_title(measure: str) -> str:
     return "Other"
 
 
+def _format_cir_horizon_note(rows) -> str:
+    horizon_parts = []
+    for row in rows:
+        horizons = sorted({int(value) for value in row.get("horizon_periods", []) if int(value) > 0})
+        if not horizons:
+            continue
+        shock_label = f"{float(row['shock_size']):g} percent shocks"
+        if len(horizons) == 1:
+            horizon = horizons[0]
+            horizon_parts.append(f"{shock_label} sum periods 0 through {horizon - 1} ({horizon} periods)")
+        else:
+            horizon_list = ", ".join(str(horizon) for horizon in horizons)
+            horizon_parts.append(
+                f"{shock_label} use {horizon_list} periods across sector-sign pairs, each beginning at period 0"
+            )
+    if not horizon_parts:
+        return ""
+    return " CIR horizons are: " + "; ".join(horizon_parts) + "."
+
+
+def _build_cir_profile_note(figure_spec, *, n_sectors: int, rows) -> str:
+    descriptions = [
+        CIR_MEASURE_NOTE_DESCRIPTIONS[measure]
+        for measure in figure_spec.get("measures", [])
+        if measure in CIR_MEASURE_NOTE_DESCRIPTIONS
+    ]
+    unit_text = (
+        "The vertical axis is a unitless correlation."
+        if figure_spec.get("ylabel") == "Correlation"
+        else "The vertical axis reports the cross-sector mean in percent."
+    )
+    return (
+        f"The horizontal axis reports TFP shock size in percent. Each point reports {'; '.join(descriptions)} "
+        f"across {n_sectors} shocked sectors. {unit_text}"
+        + _format_cir_horizon_note(rows)
+    )
+
+
 def _nan_if_none(value: Any) -> float:
     scalar = _as_float(value)
     return np.nan if scalar is None else scalar
@@ -1488,6 +1583,14 @@ def _build_cir_sector_value_rows(*, config, gir_data, matlab_ir_data, n_sectors,
         neg_key = build_shock_key("neg", shock_size)
 
         for sector_idx in range(n_sectors):
+            pos_horizon = (
+                _get_matlab_cir_horizon_for_sector(matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx)
+                or max_periods
+            )
+            neg_horizon = (
+                _get_matlab_cir_horizon_for_sector(matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx)
+                or max_periods
+            )
             g_pos = _get_global_cir_for_sector(
                 gir_data,
                 experiment_name=experiment_name,
@@ -1495,10 +1598,7 @@ def _build_cir_sector_value_rows(*, config, gir_data, matlab_ir_data, n_sectors,
                 shock_key=pos_key,
                 variable_name=variable_name,
                 n_sectors=n_sectors,
-                max_periods=_get_matlab_cir_horizon_for_sector(
-                    matlab_ir_data, shock_key=pos_key, sector_idx=sector_idx
-                )
-                or max_periods,
+                max_periods=pos_horizon,
                 response_source=response_source,
             )
             g_neg = _get_global_cir_for_sector(
@@ -1508,10 +1608,7 @@ def _build_cir_sector_value_rows(*, config, gir_data, matlab_ir_data, n_sectors,
                 shock_key=neg_key,
                 variable_name=variable_name,
                 n_sectors=n_sectors,
-                max_periods=_get_matlab_cir_horizon_for_sector(
-                    matlab_ir_data, shock_key=neg_key, sector_idx=sector_idx
-                )
-                or max_periods,
+                max_periods=neg_horizon,
                 response_source=response_source,
             )
             p_pos = _get_matlab_cir_for_sector(
@@ -1554,6 +1651,8 @@ def _build_cir_sector_value_rows(*, config, gir_data, matlab_ir_data, n_sectors,
                         "sector_idx": sector_idx,
                         "sector_label": sector_label,
                         "shock_size": shock_size,
+                        "positive_horizon_periods": pos_horizon,
+                        "negative_horizon_periods": neg_horizon,
                         "measure_panel": _cir_panel_title(measure),
                         "measure": measure,
                         "formula": CIR_MEASURE_DESCRIPTIONS.get(measure, ""),
@@ -1579,6 +1678,8 @@ def _write_cir_sector_values_csv(*, rows, save_path):
         "sector_idx",
         "sector_label",
         "shock_size",
+        "positive_horizon_periods",
+        "negative_horizon_periods",
         "measure_panel",
         "measure",
         "formula",
@@ -1612,7 +1713,9 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
     column_count = 2 + len(rows)
     with open(save_path, "w") as table_file:
         table_file.write("\\begin{table}[htbp]\n\\centering\n")
-        table_file.write("\\caption{Cumulative impulse-response analysis}\n")
+        table_file.write(
+            "\\caption{Cumulative aggregate-consumption response measures by TFP shock size}\n"
+        )
         table_file.write(f"\\label{{tab:cir_analysis_{_latex_label_token(analysis_name)}}}\n")
         table_file.write("\\begin{tabular}{ll" + "r" * len(rows) + "}\n\\hline\n")
         headers = ["Metric", "Formula"] + [f"{row['shock_size']:g}%" for row in rows]
@@ -1635,15 +1738,22 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
         table_file.write("\\hline\n\\end{tabular}\n")
         table_file.write(
             "\\begin{minipage}{0.92\\textwidth}\n\\footnotesize\n"
-            "\\textit{Notes:} CIR is the sum over the displayed IR horizon of the aggregate consumption response. "
-            f"The Python global-solution CIR uses the selected IR source: {_latex_escape(response_source)}. "
-            r"Notation: $GIR_{GS}$ is the global-solution CIR, $GIR_{MIT}$ is the MIT shock CIR, "
+            "\\textit{Notes:} CIR is the sum of the aggregate consumption response beginning with the impact period."
+            + _format_cir_horizon_note(rows)
+            + (
+                " The global-solution CIR is the generalized impulse response averaged across ergodic "
+                "initial-state draws. "
+                if response_source == "GIR"
+                else " The global-solution CIR is the impulse response from the stochastic steady state. "
+            )
+            + r"Notation: $GIR_{GS}$ is the global-solution CIR, $GIR_{MIT}$ is the MIT shock CIR, "
             r"and $GIR_{1or}$ is the 1st-order approximation CIR; + and - denote positive and negative shocks. "
             "Opt. atten., nonlin. ampl., asym., and corr denote optimal attenuation, nonlinear amplification, "
             "asymmetry, and correlation. "
             r"$U_M$ and $U_I$ are IO and investment upstreamness, and sigA is sectoral shock volatility. "
-            "Amplification, attenuation, and asymmetry rows are reported in percent, while correlation rows are unitless. "
-            "Missing benchmark CIR or diagnostic fields are left blank.\n"
+            "Each amplification, attenuation, and asymmetry measure is computed sector by sector and then averaged "
+            "across sectors; correlation rows are Pearson correlations across sectors. Amplification, attenuation, "
+            "and asymmetry rows are reported in percent, and correlation rows are unitless.\n"
             "\\end{minipage}\n"
         )
         table_file.write("\\end{table}\n")
@@ -1733,7 +1843,17 @@ def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postpr
     print("  CIR shock-size profile figures", flush=True)
     plot_cir_shock_size_profiles(
         rows=rows,
-        figure_specs=CIR_FIGURE_SPECS,
+        figure_specs=[
+            {
+                **figure_spec,
+                "note_text": _build_cir_profile_note(
+                    figure_spec,
+                    n_sectors=econ_model.n_sectors,
+                    rows=rows,
+                ),
+            }
+            for figure_spec in CIR_FIGURE_SPECS
+        ],
         save_dir=cir_figures_dir,
         analysis_name=config["analysis_name"],
         show_plot=bool(config.get("show_ir_plots", False)),
@@ -2037,10 +2157,10 @@ def _common_shock_window_text(histogram_context):
     total_periods = _format_histogram_count(histogram_context.get("common_shock_total_periods"))
     if burn_in and active_periods and burn_out and total_periods:
         return (
-            "the shorter common-shock window "
+            "the common-shock window "
             f"({burn_in} burn-in, {active_periods} active, {burn_out} burn-out; {total_periods} total)"
         )
-    return "the shorter common-shock window"
+    return "the common-shock window"
 
 
 def _build_aggregate_histogram_note(histogram_context):
@@ -2054,14 +2174,16 @@ def _build_aggregate_histogram_note(histogram_context):
     else:
         comparison_text = ", ".join(comparison_labels[:-1]) + f", and {comparison_labels[-1]}"
     base_text = (
-        "The reported histograms summarize the distribution of the simulated series for each displayed aggregate. "
-        "Each panel plots percent log deviations from the deterministic steady state. "
+        "The horizontal axis spans -7.5 to 7.5 percent log deviations from the deterministic steady state in "
+        "20 bins of width 0.75 percentage points. For simulated series, the vertical axis is the fraction of "
+        "observations in each bin, and lines connect those frequencies at the bin centers. "
         f"The solid colored line reports the global solution; dashed gray lines report {comparison_text}. "
     )
     if histogram_context.get("theoretical_distribution_params"):
         comparison_source_text = (
-            "For the 1st Order Approximation, the dashed curve is the Gaussian density implied by its theoretical moments rather than a simulated histogram. "
-            f"The remaining comparison distributions use {_common_shock_window_text(histogram_context)}."
+            "The 1st Order Approximation curve is the Gaussian density implied by its theoretical mean and "
+            "standard deviation, multiplied by the 0.75-point bin width. "
+            f"The MIT-shock distribution uses {_common_shock_window_text(histogram_context)}."
         )
     else:
         comparison_source_text = (
@@ -2076,9 +2198,8 @@ def _build_aggregate_histogram_note(histogram_context):
         reference_prefix = ""
         if histogram_context.get("uses_auxiliary_ergodic_reference"):
             reference_prefix = (
-                "Because fixed-price aggregation is anchored to ergodic prices, "
-                "the global-solution histogram uses the auxiliary long ergodic reference sample rather "
-                "than the shorter common-shock window. "
+                "The global-solution distribution uses the auxiliary long ergodic sample that supplies the "
+                "fixed-price aggregation weights. "
             )
         if periods_per_episode and burn_in and kept_periods_per_seed and active_observations and n_simul_seeds:
             nonlinear_text = (
@@ -2099,7 +2220,7 @@ def _build_aggregate_histogram_note(histogram_context):
         )
     return (
         base_text
-        + "The global-solution histogram is computed from the shorter common-shock sample, with "
+        + "The global-solution histogram is computed from the common-shock sample, with "
         f"{histogram_context.get('burn_in', 0)} burn-in periods, "
         f"{histogram_context.get('active_periods', 0)} active-shock periods, and "
         f"{histogram_context.get('burn_out', 0)} burn-out periods "
@@ -2190,8 +2311,8 @@ def render_upstreamness_outputs(*, config, simulation_dir, econ_model, postproce
             filename_stem="sectoral_shock_volatility",
             ylabel="TFP Shock Volatility",
             note_text=(
-                "The bars report the sector-level standard deviation of TFP innovations, using the diagonal "
-                "of the sectoral shock covariance matrix when needed."
+                "Each bar reports a sector's TFP innovation standard deviation. For a covariance-matrix input, "
+                "the value is the square root of the corresponding diagonal element."
             ),
             sector_labels=econ_model.labels,
             show_plot=show_plot,
@@ -2203,8 +2324,8 @@ def render_upstreamness_outputs(*, config, simulation_dir, econ_model, postproce
             filename_stem="sectoral_tfp_persistence",
             ylabel="TFP Persistence",
             note_text=(
-                "The bars report the autoregressive persistence parameter for sectoral TFP. "
-                "If the model uses a common scalar persistence, the same value is shown for all sectors."
+                "Each bar reports the sectoral AR(1) persistence coefficient rho_j. A common scalar rho produces "
+                "the same bar value for every sector."
             ),
             sector_labels=econ_model.labels,
             show_plot=show_plot,

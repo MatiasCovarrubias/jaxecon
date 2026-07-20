@@ -245,9 +245,9 @@ def plot_upstreamness(
     plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
     _write_figure_note_tex(
         save_path,
-        "The bars report sector-level upstreamness measures sorted by intermediate-input upstreamness. "
-        "U_M uses intermediate-input linkages, U_I uses investment-flow linkages, and Mout/Q is a simple "
-        "steady-state sales-based measure.",
+        "Sectors are sorted by intermediate-input upstreamness. U_M solves (I - Delta_M) U_M = 1 using steady-state "
+        "intermediate-input expenditure shares, and U_I solves (I - Delta_I) U_I = 1 using steady-state "
+        "investment-flow expenditure shares. Mout/Q is steady-state intermediate sales divided by gross output.",
     )
     _print_saved_file(save_path)
 
@@ -409,9 +409,11 @@ def plot_cir_shock_size_profiles(
         plt.savefig(save_path, dpi=300, format="png")
         _write_figure_note_tex(
             save_path,
-            "The figure plots cumulative impulse-response table measures against the discovered TFP shock size. "
-            "The horizontal axis reports shock size in percent. Percent-difference figures report amplification, "
-            "attenuation, and asymmetry in percent; correlation figures are unitless and bounded between -1 and 1.",
+            figure_spec.get(
+                "note_text",
+                "The horizontal axis reports TFP shock size in percent. The vertical axis reports the cumulative "
+                "aggregate consumption response measure named in the figure title.",
+            ),
         )
         _print_saved_file(save_path, indent="  ")
         saved_paths.append(save_path)
@@ -433,33 +435,41 @@ def _build_ir_note(
     response_source: str,
     negative_only: bool,
     is_aggregate: bool,
+    max_periods: int,
 ) -> str:
     shock_text = _format_number_list(shock_sizes)
     if negative_only:
         layout_text = (
-            f"The figure shows the response to a negative {shock_text} percent TFP shock to {sector_label}."
+            f"The figure plots the {variable_to_plot} response to a negative {shock_text} percent TFP shock "
+            f"to {sector_label}."
             if shock_text
-            else f"The figure shows a negative TFP shock to {sector_label}."
+            else f"The figure plots the {variable_to_plot} response to a negative TFP shock to {sector_label}."
         )
     else:
         layout_text = (
-            f"Each row corresponds to a {shock_text} percent TFP shock to {sector_label}; "
-            "the left column shows negative shocks and the right column positive shocks."
+            f"Each row plots the {variable_to_plot} response for TFP shock magnitudes of {shock_text} percent "
+            f"in {sector_label}; the left column shows negative shocks and the right column positive shocks."
             if shock_text
-            else f"The figure compares positive and negative TFP shocks to {sector_label}."
-        )
-
-    anchor_text = "Dashed comparison IRs are anchored at the deterministic steady state."
-    axis_text = (
-        "The horizontal axis reports periods after impact. The vertical axis reports impulse responses in percent."
-    )
-    if variable_to_plot == "gammaij_client":
-        axis_text = (
-            "The horizontal axis reports periods after impact. The vertical axis reports deviations in the client "
-            "sector expenditure share, so this panel should be read as a share response rather than a log-percent response."
+            else f"The figure plots the {variable_to_plot} response to positive and negative TFP shocks in {sector_label}."
         )
 
     described_benchmarks = [_describe_benchmark_method(method) for method in benchmark_methods]
+    anchor_text = (
+        "Dashed benchmark series report 100 times the log deviation from the deterministic steady state "
+        f"for the same shock over periods 0 through {max_periods - 1}."
+        if described_benchmarks
+        else ""
+    )
+    axis_text = (
+        f"The horizontal axis reports periods 0 through {max_periods - 1} after impact. The vertical axis reports "
+        "100 times the log deviation from the deterministic steady state."
+    )
+    if variable_to_plot == "gammaij_client":
+        axis_text = (
+            f"The horizontal axis reports periods 0 through {max_periods - 1} after impact. The vertical axis reports "
+            "the client-sector expenditure-share deviation in percentage points."
+        )
+
     if not described_benchmarks:
         benchmark_text = ""
     elif len(described_benchmarks) == 1:
@@ -468,11 +478,11 @@ def _build_ir_note(
         benchmark_text = f"The dashed lines report {_join_text_list(described_benchmarks)}."
     if not is_aggregate and "_client" in variable_to_plot:
         benchmark_text += (
-            " Variables with the suffix 'client' refer to the petroleum client sector of the shocked sector in the "
+            " Client-sector variables report the petroleum client sector linked to the shocked sector in the "
             "input-output network."
         )
     elif not is_aggregate:
-        benchmark_text += " Un-suffixed sectoral variables refer to the shocked sector itself."
+        benchmark_text += " Sectoral variables report the shocked sector."
 
     return " ".join(
         part
@@ -494,29 +504,28 @@ def _build_sectoral_distribution_note(
     source_kind: str,
     include_upstreamness: bool,
 ) -> str:
-    comparison_text = "Bars report the displayed experiment sector by sector."
+    del display_labels
     if source_kind == "stochss":
         source_text = (
-            "The figure reports the stochastic steady state computed by taking draws from the ergodic distribution, "
-            "simulating forward with zero shocks, and taking the common limit to which those paths converge; "
-            "convergence to the same point across initial draws is checked."
+            "The stochastic steady state is the common endpoint of zero-shock paths initialized with draws from "
+            "the ergodic distribution."
         )
     else:
         source_text = (
-            "The figure reports the ergodic mean from the long nonlinear simulation, i.e. the time average over "
-            "the simulated ergodic sample."
+            "The ergodic mean is the time average of each sector's log deviation in the long nonlinear simulation."
         )
 
     upstreamness_text = ""
     if include_upstreamness:
         upstreamness_text = (
-            " The textbox reports cross-sector correlations with IO upstreamness and investment upstreamness."
+            " The textbox reports Pearson correlations across sectors with IO and investment upstreamness; "
+            "one, two, and three stars denote p-values below 0.10, 0.05, and 0.01."
         )
 
     return (
-        f"{source_text} {comparison_text} The horizontal axis lists sectors sorted by the displayed "
-        f"experiment from highest to lowest {variable_title.lower()}. The vertical axis reports log differences "
-        "from the deterministic steady state; for small changes, a value of -0.1 means roughly 0.1 percent below "
+        f"{source_text} Each bar reports one sector, sorted from highest to lowest {variable_title.lower()}. "
+        "The vertical axis reports 100 times the log difference from the deterministic steady state; a value of "
+        "-0.1 is approximately 0.1 percent below "
         f"the deterministic steady state.{upstreamness_text}"
     )
 
@@ -530,8 +539,8 @@ def _build_sectoral_composition_note(
 ) -> str:
     if source_kind == "stochss":
         source_text = (
-            "The figure reports the stochastic steady state computed by taking draws from the ergodic distribution, "
-            "simulating forward with zero shocks, and taking the common limit to which those paths converge."
+            "The stochastic steady state is the common endpoint of zero-shock paths initialized with draws from "
+            "the ergodic distribution."
         )
     else:
         source_text = (
@@ -542,14 +551,14 @@ def _build_sectoral_composition_note(
     upstreamness_text = ""
     if include_upstreamness:
         upstreamness_text = (
-            " The textbox reports cross-sector correlations with IO upstreamness and investment upstreamness."
+            " The textbox reports Pearson correlations across sectors with IO and investment upstreamness; "
+            "one, two, and three stars denote p-values below 0.10, 0.05, and 0.01."
         )
 
     return (
-        f"{source_text} Bars report the percent change in each sector's share of aggregate "
-        f"{variable_title.lower()} relative to the deterministic steady state. Both the deterministic and comparison "
-        f"shares are computed with {weight_label}; positive values mean the sector accounts for a larger aggregate "
-        f"share after removing the aggregate level change.{upstreamness_text}"
+        f"{source_text} Each bar is 100 times the ratio of the sector's {variable_title.lower()} share to its "
+        f"deterministic-steady-state share, minus 100. Shares use {weight_label}. Positive values indicate a larger "
+        f"share of aggregate {variable_title.lower()}.{upstreamness_text}"
     )
 
 
@@ -731,6 +740,7 @@ def plot_ergodic_histograms(
                 pdf_values = norm.pdf(x_smooth, loc=mean_pct, scale=std_pct) * bin_width
 
                 style = benchmark_style_map.get(method_name, _experiment_style(i, "IR_stoch_ss"))
+                style["linewidth"] = 2.5
                 ax.plot(x_smooth, pdf_values, label=method_name, **style)
             else:
                 if method_name not in analysis_variables_data or var_label not in analysis_variables_data[method_name]:
@@ -744,6 +754,7 @@ def plot_ergodic_histograms(
 
                 # Plot the frequency line
                 style = benchmark_style_map.get(method_name, _experiment_style(i, "IR_stoch_ss"))
+                style["linewidth"] = 2.5
                 ax.plot(bin_centers, freqs, label=method_name, **style)
 
         # Add vertical line at deterministic steady state (x=0)
@@ -1756,7 +1767,7 @@ def plot_sector_ir_by_shock_size(
         axes[0, 0].legend(
             handles_neg,
             labels_neg,
-            loc="upper right",
+            loc="lower right",
             fontsize=SMALL_SIZE - 1,
             framealpha=0.9,
         )
@@ -1790,6 +1801,7 @@ def plot_sector_ir_by_shock_size(
                 response_source=response_source,
                 negative_only=negative_only,
                 is_aggregate=variable_to_plot.startswith("Agg.") or variable_to_plot == "Intratemporal Utility",
+                max_periods=max_periods,
             ),
         )
         _print_saved_file(save_path, indent="      ")
@@ -2113,7 +2125,7 @@ def plot_sectoral_variable_stochss(
         corr_I, p_I = stats.pearsonr(values, U_I)
         sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
         sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-        corr_text = f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}"
+        corr_text = f"Pearson ρ: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
@@ -2231,7 +2243,7 @@ def plot_sectoral_variable_composition_stochss(
         corr_I, p_I = stats.pearsonr(values, U_I)
         sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
         sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-        corr_text = f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}"
+        corr_text = f"Pearson ρ: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
@@ -2382,7 +2394,7 @@ def plot_sectoral_variable_ergodic(
         corr_I, p_I = stats.pearsonr(values, U_I)
         sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
         sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-        corr_text = f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}"
+        corr_text = f"Pearson ρ: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
@@ -2496,7 +2508,7 @@ def plot_sectoral_variable_composition_ergodic(
         corr_I, p_I = stats.pearsonr(values, U_I)
         sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
         sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-        corr_text = f"ρ(IO Upstr.)={corr_M:.2f}{sig_M}, ρ(Inv Upstr.)={corr_I:.2f}{sig_I}"
+        corr_text = f"Pearson ρ: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,

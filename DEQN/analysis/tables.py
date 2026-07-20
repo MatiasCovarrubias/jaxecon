@@ -37,50 +37,25 @@ _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
 
 _MODEL_VS_DATA_PANELS = [
     (
-        "Targeted moments",
-        [
-            ("$\\sum_j \\omega_j^{VA}\\sigma(I_{jt})$", "sigma_I_avg", "sigma_I_avg", "sum w^VA sigma(I_jt)"),
-            (
-                "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt},A_{jt})$",
-                "corr_L_TFP_sectoral_avg_vashare",
-                ("correlations", "L_TFP_sectoral_avg_vashare"),
-                "sum w^VA corr(L_jt,A_jt)",
-            ),
-        ],
-    ),
-    (
-        "Sectoral weighted-average volatilities",
-        [
-            ("$\\sum_j \\omega_j^{VA}\\sigma(VA_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(VA_jt)"),
-            ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
-            (
-                "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}_{jt})$",
-                "sigma_Domar_avg",
-                "sigma_Domar_avg",
-                "sum w^GO sigma(Domar_jt)",
-            ),
-        ],
-    ),
-    (
         "Sectoral comovement",
         [
             (
-                "Average correlation across sectors in current-price consumption",
+                "Average correlation across sectors in consumption",
                 "avg_pairwise_corr_C_nominal",
                 "avg_pairwise_corr_C_nominal",
-                "avg corr across sectors in PC",
+                "avg corr across sectors in C",
             ),
             (
-                "Average correlation across sectors in current-price value added",
+                "Average correlation across sectors in value added",
                 "avg_pairwise_corr_VA",
                 "avg_pairwise_corr_VA",
                 "avg corr across sectors in VA",
             ),
             (
-                "Average correlation across sectors in current-price investment",
+                "Average correlation across sectors in investment",
                 "avg_pairwise_corr_I_nominal",
                 "avg_pairwise_corr_I_nominal",
-                "avg corr across sectors in PkI",
+                "avg corr across sectors in I",
             ),
             (
                 "Average correlation across sectors in labor",
@@ -88,6 +63,19 @@ _MODEL_VS_DATA_PANELS = [
                 "avg_pairwise_corr_L",
                 "avg corr across sectors in L",
             ),
+        ],
+    ),
+    (
+        "Sectoral weighted-average volatilities",
+        [
+            (
+                "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}_{jt})$",
+                "sigma_Domar_avg",
+                "sigma_Domar_avg",
+                "sum w^GO sigma(Domar_jt)",
+            ),
+            ("$\\sum_j \\omega_j^{VA}\\sigma(VA_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(VA_jt)"),
+            ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
         ],
     ),
     (
@@ -102,8 +90,8 @@ _MODEL_VS_DATA_PANELS = [
     (
         "Correlation of aggregates",
         [
-            ("$\\mathrm{corr}(C_t,L_t)$", "corr_L_C_agg", ("correlations", "L_C_agg"), "corr(C_t,L_t)"),
             ("$\\mathrm{corr}(C_t,I_t)$", "corr_I_C_agg", ("correlations", "I_C_agg"), "corr(C_t,I_t)"),
+            ("$\\mathrm{corr}(C_t,L_t)$", "corr_L_C_agg", ("correlations", "L_C_agg"), "corr(C_t,L_t)"),
         ],
     ),
 ]
@@ -155,7 +143,7 @@ def _format_count(value: Any) -> Optional[str]:
 
 def _common_shock_window_text(note_context: Optional[Dict[str, Any]]) -> str:
     if not note_context:
-        return "the shorter common-shock window"
+        return "the common-shock window"
 
     burn_in = _format_count(note_context.get("common_shock_burn_in"))
     active_periods = _format_count(note_context.get("common_shock_active_periods"))
@@ -164,11 +152,11 @@ def _common_shock_window_text(note_context: Optional[Dict[str, Any]]) -> str:
 
     if burn_in and active_periods and burn_out and total_periods:
         return (
-            "the shorter common-shock window "
+            "the common-shock window "
             f"({burn_in} burn-in, {active_periods} active, {burn_out} burn-out; {total_periods} total)"
         )
 
-    return "the shorter common-shock window"
+    return "the common-shock window"
 
 
 def _long_simulation_sentence(note_context: Optional[Dict[str, Any]], *, subject: str) -> str:
@@ -217,16 +205,20 @@ def _select_model_vs_data_display_method(method_model_stats: Dict[str, Dict[str,
 
 
 def _build_model_vs_data_note(selected_method: Optional[str], note_context: Optional[Dict[str, Any]]) -> str:
-    del selected_method, note_context
-    note_text = (
-        r"Entries are business cycle moments. Volatility rows report standard deviations of log differences from the deterministic steady state; correlations are unit-free."
-        r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
-        r" The data column reports the empirical moments used in the calibration, and the model column reports the corresponding moments implied by the model."
-        r" Comovement refers to average correlation across sectors in a given variable."
-        r" Targeted and sectoral weighted-average rows use value-added shares unless a row is explicitly Domar-weighted, in which case normalized gross-output shares are used."
-        r" Aggregate rows use the same definitions in the data and the model."
+    del note_context
+    model_source_text = (
+        f" The model column reports moments from the {selected_method} solution."
+        if selected_method is not None
+        else ""
     )
-    return note_text
+    return (
+        r"Entries are untargeted business-cycle moments. "
+        r"Data volatilities are standard deviations of HP-filtered log series; model volatilities are "
+        r"standard deviations of log deviations from the deterministic steady state. Correlations are "
+        r"unit-free. Comovement refers to average correlation across sectors in a given variable. "
+        r"$\omega_j^{VA}$ are value-added shares, and $\omega_j^{GO}$ are normalized gross-output shares."
+        + model_source_text
+    )
 
 
 def _build_descriptive_stats_note(
@@ -235,9 +227,7 @@ def _build_descriptive_stats_note(
     *,
     uses_theoretical_first_order: bool,
 ) -> str:
-    note_text = (
-        r"For each variable, rows compare the reported methods."
-    )
+    note_text = r"For each variable and method, the table reports the mean, standard deviation, skewness, and excess kurtosis."
 
     if _has_method(method_names, {"Global Solution", "Global Solution (Long Simulation)"}):
         if note_context and note_context.get("long_simulation"):
@@ -248,8 +238,8 @@ def _build_descriptive_stats_note(
     if _has_method(method_names, {"1st Order Approx.", "1st Order Approximation"}):
         if uses_theoretical_first_order:
             note_text += (
-                r" The 1st Order Approximation reports the Gaussian moments implied by the first-order "
-                r"theoretical solution rather than simulation moments."
+                r" The 1st Order Approximation reports the mean, variance, zero skewness, and zero excess kurtosis "
+                r"of the Gaussian distribution implied by the first-order solution."
             )
         else:
             note_text += (
@@ -258,13 +248,12 @@ def _build_descriptive_stats_note(
 
     if _has_method(method_names, {"SecondOrder", "PerfectForesight", "Perfect Foresight", "MIT shocks", "MITShocks"}):
         note_text += (
-            r" Rows other than the 1st Order Approximation use their corresponding simulation series when available."
+            r" Second Order, Perfect Foresight, and MIT-shock rows report moments calculated from their simulated series."
         )
 
     if _has_method(method_names, {"PerfectForesight", "Perfect Foresight", "MIT shocks", "MITShocks"}):
         note_text += (
-            f" Perfect Foresight and MIT shocks, when reported, use {_common_shock_window_text(note_context)} "
-            r"because those exercises are more computationally intensive."
+            f" Perfect Foresight and MIT-shock moments use {_common_shock_window_text(note_context)}."
         )
 
     note_text += (
@@ -300,8 +289,7 @@ def _build_welfare_note(method_names: list[str], note_context: Optional[Dict[str
 
     if _has_method(method_names, {"PerfectForesight", "Perfect Foresight", "MITShocks", "MIT shocks"}):
         note_text += (
-            f" Perfect Foresight and MIT shocks use {_common_shock_window_text(note_context)} because those "
-            r"exercises are more computationally intensive."
+            f" Perfect Foresight and MIT-shock welfare costs use {_common_shock_window_text(note_context)}."
         )
 
     note_text += _welfare_counterfactual_note(method_names)
@@ -320,8 +308,8 @@ def _format_method_display_name(method_name: str, method_names: Optional[list[st
 def _nonlinear_method_note(method_names: list[str]) -> str:
     if "Global Solution" in method_names and "Global Solution (Common Shocks)" in method_names:
         return (
-            r" Global Solution (Long Simulation) uses the long simulation sample, while "
-            r"Global Solution (Common Shocks) uses the shorter common-shock sample."
+            r" Global Solution (Long Simulation) uses the long simulation sample. "
+            r"Global Solution (Common Shocks) uses the common-shock sample."
         )
     return ""
 
@@ -358,12 +346,14 @@ def _descriptive_distribution_source_note(method_names: list[str]) -> str:
         return (
             r" The reported moments summarize the distribution of the simulated series for the displayed method."
             + _selected_nonlinear_sample_note(method_names)
-            + r" Other reported methods use their corresponding simulation series when those are available, except that the 1st Order Approximation uses theoretical moments when those are available."
+            + r" Simulation-based rows use their method-specific series. The 1st Order Approximation uses the "
+            r"Gaussian moments implied by the theoretical first-order solution."
         )
     return (
         r" The reported moments summarize the distribution of the simulated series for each displayed method."
         + _selected_nonlinear_row_note(method_names)
-        + r" Other reported methods use their corresponding simulation series when those are available, except that the 1st Order Approximation uses theoretical moments when those are available."
+        + r" Simulation-based rows use their method-specific series. The 1st Order Approximation uses the "
+        r"Gaussian moments implied by the theoretical first-order solution."
     )
 
 
@@ -603,8 +593,8 @@ def _create_model_vs_data_moments_table(
     latex_code = (
         r"\begin{table}[H]" + "\n"
         r"\centering" + "\n"
-        r"\caption{Model vs. data business cycle moments}" + "\n"
-        r"\label{tab:model_vs_data_moments}"
+        r"\caption{Untargeted model vs. data business cycle moments}" + "\n"
+        r"\label{tab:untargeted_moments}"
         + "\n"
         + r"\begin{tabular}{lrr}" + "\n"
         + r"\toprule"
@@ -770,7 +760,6 @@ def _generate_calibration_latex_table(targeted_rows: list, untargeted_rows: list
         r"In the model, aggregates are fixed-price expenditure sums at steady-state prices: "
         r"$\text{GDP}^{\bar{P}}_t = \sum_j \bar{P}_j(Q_{jt} - M^{\text{out}}_{jt})$, "
         r"$C^{\bar{P}}_t = \sum_j \bar{P}_j C_{jt}$, and $I^{\bar{P}}_t = \sum_j \bar{P}_j I^{\text{out}}_{jt}$ "
-        r"(see Appendix~\ref{sec:app_aggregation}). "
         r"Model moments are from the first-order (log-linear) perturbation solution." + "\n"
         r"\end{minipage}" + "\n"
     )
@@ -1349,7 +1338,7 @@ def _generate_stochastic_ss_latex_table(stochastic_ss_data: Dict[str, Dict[str, 
         label="tab:stochastic_ss",
         note_text=(
             r"Entries report stochastic steady-state values as log differences from the deterministic steady state."
-            r" The stochastic steady state is computed by taking draws from the ergodic distribution, simulating forward with zero shocks, and taking the point to which those paths converge irrespective of the initial draw; this convergence condition is checked."
+            r" It is computed as the common endpoint of zero-shock paths initialized with draws from the ergodic distribution; convergence across initial draws is checked."
             r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
         ),
     )
@@ -1420,7 +1409,7 @@ def create_stochastic_ss_aggregates_table(
         note_text=(
             r"Entries report aggregate stochastic steady-state values for consumption, investment, GDP, labor, capital, and intratemporal utility as log differences from the deterministic steady state."
             + _nonlinear_method_note(method_names)
-            + r" The stochastic steady state is computed by taking draws from the ergodic distribution, simulating forward with zero shocks, and taking the point to which those paths converge irrespective of the initial draw; this convergence condition is checked."
+            + r" It is computed as the common endpoint of zero-shock paths initialized with draws from the ergodic distribution; convergence across initial draws is checked."
             + r" For small changes, a value such as $-0.1$ means approximately $0.1$ percent below the deterministic steady state."
         ),
     )

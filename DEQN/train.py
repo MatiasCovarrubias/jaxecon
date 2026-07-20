@@ -34,24 +34,52 @@ except ImportError:
 print(f"Environment: {'Google Colab' if IN_COLAB else 'Local'}")
 
 if IN_COLAB:
-    print("Installing compatible NumPy/SciPy/JAX stack with CUDA support...")
     import subprocess
 
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "--force-reinstall",
-            "--no-cache-dir",
-            "numpy<2.3",
-            "scipy<1.16",
-            "jax[cuda12]",
-        ],
-        check=True,
-    )
+    def _colab_package_stack_is_usable() -> bool:
+        try:
+            import numpy
+            import scipy
+            import scipy.io  # noqa: F401
+            import jax
+        except Exception as exc:
+            print(f"Package stack check failed in current kernel: {exc!r}")
+            return False
+        print(
+            "Package stack OK: "
+            f"numpy={numpy.__version__} scipy={scipy.__version__} jax={jax.__version__}"
+        )
+        return True
+
+    _COLAB_REPAIR_MARKER = "/content/.jaxecon_colab_numpy_repair_attempted"
+    if _colab_package_stack_is_usable():
+        if os.path.exists(_COLAB_REPAIR_MARKER):
+            os.remove(_COLAB_REPAIR_MARKER)
+    else:
+        if os.path.exists(_COLAB_REPAIR_MARKER):
+            raise RuntimeError(
+                "The Colab NumPy/SciPy/JAX stack is still inconsistent after a repair restart. "
+                "Use Runtime > Disconnect and delete runtime, then rerun the notebook."
+            )
+        print("Installing pinned NumPy/SciPy/JAX stack, then restarting Colab.")
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "--force-reinstall",
+                "numpy==2.0.2",
+                "scipy==1.15.3",
+                "jax[cuda12]",
+            ],
+            check=True,
+        )
+        with open(_COLAB_REPAIR_MARKER, "w", encoding="utf-8") as marker:
+            marker.write("numpy==2.0.2 scipy==1.15.3 jax[cuda12]\n")
+        print("Package stack repaired. Restarting Colab runtime; rerun this cell after reconnecting.")
+        os.kill(os.getpid(), 9)
 
     print("Cloning jaxecon repository...")
     if not os.path.exists("/content/jaxecon"):

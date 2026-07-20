@@ -329,8 +329,9 @@ def compute_model_moments_with_consistent_aggregation(
     Compute MATLAB-style `ModelStats` moments for a nonlinear simulation path.
 
     Aggregate moments use the same fixed-price aggregation as the Python analysis
-    pipeline, and sectoral value added is also computed with fixed prices.
-    Volatilities use MATLAB's sample-standard-deviation convention.
+    pipeline. Sectoral value-added volatility uses fixed prices, while sectoral
+    comovement uses current prices. Volatilities use MATLAB's
+    sample-standard-deviation convention.
     """
     n = n_sectors
 
@@ -357,6 +358,8 @@ def compute_model_moments_with_consistent_aggregation(
 
     C_levels = C_ss[None, :] * np.exp(policies_np[:, :n])
     L_levels = L_ss[None, :] * np.exp(policies_np[:, n : 2 * n])
+    Pk_levels = Pk_ss[None, :] * np.exp(policies_np[:, 2 * n : 3 * n])
+    Pm_levels = Pm_ss[None, :] * np.exp(policies_np[:, 3 * n : 4 * n])
     M_levels = M_ss[None, :] * np.exp(policies_np[:, 4 * n : 5 * n])
     Mout_levels = Mout_ss[None, :] * np.exp(policies_np[:, 5 * n : 6 * n])
     Iout_levels = Iout_ss[None, :] * np.exp(policies_np[:, 7 * n : 8 * n])
@@ -368,7 +371,12 @@ def compute_model_moments_with_consistent_aggregation(
     l_logdev = policies_np[:, n : 2 * n].T
     i_logdev = policies_np[:, 6 * n : 7 * n].T
     a_logdev = obs_np[:, n : 2 * n].T
+    p_logdev = policies_np[:, 8 * n : 9 * n].T
     q_logdev = policies_np[:, 9 * n : 10 * n].T
+    pk_logdev = policies_np[:, 2 * n : 3 * n].T
+    c_nominal_logdev = c_logdev + p_logdev
+    i_nominal_logdev = i_logdev + pk_logdev
+    q_nominal_logdev = q_logdev + p_logdev
     utility_intratemp_logdev = policies_np[:, 11 * n + 7]
 
     Cagg_exp = C_levels @ P_ergodic_np
@@ -420,6 +428,13 @@ def compute_model_moments_with_consistent_aggregation(
         label="sectoral VA",
         floor_fraction=1e-4,
     )
+    va_comovement_levels = P_levels * Q_levels - Pm_levels * M_levels
+    va_comovement_logdev, va_comovement_floor_diagnostics = _logdev_rows_from_levels_with_floor(
+        va_comovement_levels,
+        va_sector_ss,
+        label="sectoral VA comovement",
+        floor_fraction=1e-4,
+    )
     va_weights = va_sector_ss / np.sum(va_sector_ss)
     go_weights = (P_ss * Q_ss) / np.sum(P_ss * Q_ss)
     emp_weights = L_ss / np.sum(L_ss)
@@ -436,13 +451,21 @@ def compute_model_moments_with_consistent_aggregation(
     }
 
     corr_matrix_C, avg_pairwise_corr_C = _safe_corr_matrix_rows(c_logdev)
-    corr_matrix_VA, avg_pairwise_corr_VA = _safe_corr_matrix_rows(va_sector_logdev.T)
+    corr_matrix_C_nominal, avg_pairwise_corr_C_nominal = _safe_corr_matrix_rows(c_nominal_logdev)
+    corr_matrix_Q_nominal, avg_pairwise_corr_Q_nominal = _safe_corr_matrix_rows(q_nominal_logdev)
+    corr_matrix_VA, avg_pairwise_corr_VA = _safe_corr_matrix_rows(va_comovement_logdev.T)
     corr_matrix_L, avg_pairwise_corr_L = _safe_corr_matrix_rows(l_logdev)
     corr_matrix_I, avg_pairwise_corr_I = _safe_corr_matrix_rows(i_logdev)
+    corr_matrix_I_nominal, avg_pairwise_corr_I_nominal = _safe_corr_matrix_rows(i_nominal_logdev)
 
     sigma_VA_sectoral = _matlab_std_axis(va_sector_logdev, axis=0)
+    sigma_C_nominal_sectoral = _matlab_std_axis(c_nominal_logdev, axis=1)
+    sigma_Q_sectoral = _matlab_std_axis(q_logdev, axis=1)
+    sigma_Q_nominal_sectoral = _matlab_std_axis(q_nominal_logdev, axis=1)
     sigma_L_sectoral = _matlab_std_axis(l_logdev, axis=1)
     sigma_I_sectoral = _matlab_std_axis(i_logdev, axis=1)
+    sigma_logP_sectoral = _matlab_std_axis(p_logdev, axis=1)
+    sigma_logTFP_sectoral = _matlab_std_axis(a_logdev, axis=1)
 
     sales_currentprice = P_levels * Q_levels
     GDP_currentprice = np.sum(P_levels * (Q_levels - Mout_levels), axis=1)
@@ -473,9 +496,15 @@ def compute_model_moments_with_consistent_aggregation(
         "sigma_C_pref_agg": _matlab_std(C_logdev),
         "sigma_I_ces_agg": _matlab_std(I_logdev),
         "aggregate_definition": ("exact_logdev_to_deterministic_ss"),
-        "variable_convention": "Y=primary_factors; VA=P_ss*Q-Pm_ss*M; GDP=aggregate_VA",
-        "sectoral_va_moment_convention": "exact_fixed_price_VA_with_relative_floor",
+        "variable_convention": (
+            "Y=primary_factors; VA_vol=P_ss*Q-Pm_ss*M; "
+            "VA_corr=P*Q-Pm*M; GDP=aggregate_VA"
+        ),
+        "sectoral_va_moment_convention": (
+            "volatility_fixed_price_comovement_current_price_with_relative_floor"
+        ),
         "sectoral_va_floor": va_floor_diagnostics,
+        "sectoral_va_comovement_floor": va_comovement_floor_diagnostics,
         "sample_window": "shocks_simul",
         "aggregate_moments": aggregate_moments,
         "share_C": float(share_c_numerator / share_c_denominator),
@@ -485,19 +514,34 @@ def compute_model_moments_with_consistent_aggregation(
         "corr_I_C_agg": _safe_corr(I_logdev, C_logdev),
         "rho_VA_agg": _safe_corr(GDP_logdev[:-1], GDP_logdev[1:]) if GDP_logdev.size >= 2 else float("nan"),
         "avg_pairwise_corr_C": avg_pairwise_corr_C,
+        "avg_pairwise_corr_C_nominal": avg_pairwise_corr_C_nominal,
+        "avg_pairwise_corr_Q_nominal": avg_pairwise_corr_Q_nominal,
         "avg_pairwise_corr_VA": avg_pairwise_corr_VA,
         "avg_pairwise_corr_L": avg_pairwise_corr_L,
         "avg_pairwise_corr_I": avg_pairwise_corr_I,
+        "avg_pairwise_corr_I_nominal": avg_pairwise_corr_I_nominal,
         "sigma_VA_avg": float(np.sum(va_weights * sigma_VA_sectoral)),
         "sigma_VA_sectoral": sigma_VA_sectoral,
+        "sigma_C_nominal_avg": float(np.sum(va_weights * sigma_C_nominal_sectoral)),
+        "sigma_C_nominal_sectoral": sigma_C_nominal_sectoral,
+        "sigma_Q_avg": float(np.sum(go_weights * sigma_Q_sectoral)),
+        "sigma_Q_sectoral": sigma_Q_sectoral,
+        "q_volatility_definition": "std_log_real_sectoral_gross_output",
+        "sigma_Q_nominal_avg": float(np.sum(go_weights * sigma_Q_nominal_sectoral)),
+        "sigma_Q_nominal_sectoral": sigma_Q_nominal_sectoral,
+        "q_nominal_volatility_definition": "std_log_current_price_sectoral_gross_output",
         "sigma_L_avg": float(np.sum(va_weights * sigma_L_sectoral)),
         "sigma_I_avg": float(np.sum(va_weights * sigma_I_sectoral)),
+        "sigma_logP_sectoral": sigma_logP_sectoral,
+        "sigma_logTFP_sectoral": sigma_logTFP_sectoral,
         "sigma_L_avg_empweighted": float(np.sum(emp_weights * sigma_L_sectoral)),
         "sigma_I_avg_invweighted": float(np.sum(inv_weights * sigma_I_sectoral)),
         "sigma_Domar_avg": float(np.sum(go_weights * sigma_Domar_sectoral)),
         "sigma_Domar_avg_legacy": float(np.sum(go_weights * sigma_Domar_sectoral)),
         "sigma_Domar_fixedprice_avg": sigma_Domar_fixedprice_avg,
         "corr_matrix_C": corr_matrix_C,
+        "corr_matrix_C_nominal": corr_matrix_C_nominal,
+        "corr_matrix_Q_nominal": corr_matrix_Q_nominal,
         "sigma_L_sectoral": sigma_L_sectoral,
         "sigma_I_sectoral": sigma_I_sectoral,
         "sigma_Domar_sectoral": sigma_Domar_sectoral,
@@ -508,6 +552,7 @@ def compute_model_moments_with_consistent_aggregation(
         "corr_matrix_VA": corr_matrix_VA,
         "corr_matrix_L": corr_matrix_L,
         "corr_matrix_I": corr_matrix_I,
+        "corr_matrix_I_nominal": corr_matrix_I_nominal,
         "corr_L_TFP_agg": _safe_corr(L_hc_logdev, A_VA_logdev),
         "corr_L_TFP_GO_agg": _safe_corr(L_hc_logdev, A_GO_logdev),
         "corr_L_TFP_sectoral": corr_L_TFP_sectoral,

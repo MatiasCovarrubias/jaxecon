@@ -1,0 +1,42 @@
+{
+  "multi_experiment_analysis": {
+    "model_dir": "RbcProdNet_April2026",
+    "comparative_name": "extensions",
+    "caption_tex": "Additional insights and robustness",
+    "table_label": "tab:robustness_summary",
+    "experiments": [
+      {
+        "experiment_name": "finercal_July",
+        "model_data_file": "ModelData_finercal.mat",
+        "label": "Baseline",
+        "section": "Baseline"
+      },
+      {
+        "experiment_name": "homogenous_shocks",
+        "model_data_file": "ModelData_homogenous_shocks.mat",
+        "label": "Homogeneous shocks",
+        "section": "Robustness"
+      },
+      {
+        "experiment_name": "highsigmay",
+        "model_data_file": "ModelData_highsigmay.mat",
+        "label_tex": "High $\\sigma_y$ (0.8)",
+        "section": "Robustness"
+      },
+      {
+        "experiment_name": "highsigmam",
+        "model_data_file": "ModelData_highsigmam.mat",
+        "label_tex": "High $\\sigma_m$ (0.1)",
+        "section": "Robustness"
+      },
+      {
+        "experiment_name": "CDdefault",
+        "model_data_file": "ModelData_CDdefault.mat",
+        "exact_cobb_douglas": true,
+        "label_tex": "Cobb--Douglas",
+        "section": "Robustness"
+      }
+    ],
+    "notes_tex": "Mean and standard deviation of consumption are computed from the long nonlinear simulation and reported as percent log differences from the deterministic steady state. The welfare cost is the consumption-equivalent cost of business cycles, in percent. Capital reallocation is the sum of the absolute sectoral capital-composition changes shown in the stochastic-steady-state figure. Each sectoral change is the percent change in its stochastic-steady-state capital share relative to its deterministic-steady-state share. ``Homogeneous shocks'' sets sectoral shock volatilities to a common value."
+  }
+}

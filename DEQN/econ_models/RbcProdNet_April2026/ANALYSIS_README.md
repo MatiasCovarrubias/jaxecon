@@ -90,9 +90,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
-- Python model moments now build sectoral value added as `P_ss Q - Pm_ss M`, with the same relative floor used by MATLAB.
-- CIR analysis now exports sector-level CSV sidecars for multi-experiment comparisons.
-- Sectoral stochastic-SS and ergodic-mean outputs now include deterministic-price composition-share bars that strip out aggregate level changes.
+- Extensions analysis now rebuilds and simulates each configured ModelData/checkpoint pair.
+- Sectoral comovement now uses current-price consumption, value added, and investment, matching MATLAB.
+- Python model moments build sectoral value added with the same relative floor used by MATLAB.
 
 ## Current defaults and compatibility
 
@@ -131,7 +131,8 @@ For the current April pipeline, the intended MATLAB/Python comparison convention
 
 - `ergodic_price_aggregation = false` means aggregate `C`, `I`, `GDP`, `L`, `K`, and `Intratemporal Utility` are read directly from the model-implied aggregate endogenous variables.
 - `ergodic_price_aggregation = true` means the fixed price vector is always taken from a long ergodic DEQN reference sample. If `long_simulation = false`, Python still runs that auxiliary ergodic reference and re-aggregates the shorter common-shock reporting sample under the ergodic price vector rather than using the short window itself as the price source.
-- Sectoral value added is treated with deterministic fixed prices in both MATLAB and Python: `VA_j = \bar P_j Q_j - \bar P^m_j M_j`, floored at `1e-4` of steady-state sectoral VA before taking logs for sectoral VA moments.
+- Sectoral comovement uses current-price consumption `P_j C_j`, investment `P^k_j I_j`, and value added `P_j Q_j - P^m_j M_j` in both MATLAB and Python.
+- Sectoral value-added volatility continues to use deterministic fixed prices: `VA_j = \bar P_j Q_j - \bar P^m_j M_j`. Both value-added series are floored at `1e-4` of steady-state sectoral VA before taking logs.
 - Volatility calculations are matched to MATLAB's default `std` normalization, so Python uses the sample standard deviation (`N-1`) rather than NumPy's population default.
 
 ## Main Python files
@@ -328,7 +329,17 @@ Main displayed exercises:
 12. ergodic mean sectoral variables
 13. ergodic mean sectoral composition-share changes
 
-Multi-experiment custom analyses should read only saved single-experiment artifacts. For RbcProdNet-specific comparison scripts, keep the code in this model folder and write generated tables, CSVs, and wrappers under `analysis/comparisons/<comparative_name>/`. The Mining, Oil, and Gas CIR comparison reports the volatility-sensitive optimal attenuation and global asymmetry rows from `IRs/IR_tables/cir_sector_values_<analysis_name>.csv`, so each single experiment must be rerun once with a code version that exports that sidecar.
+Most multi-experiment custom analyses should read only saved single-experiment artifacts. For RbcProdNet-specific comparison scripts, keep the code in this model folder and write generated tables, CSVs, and wrappers under `analysis/comparisons/<comparative_name>/`. The Mining, Oil, and Gas CIR comparison reports the volatility-sensitive optimal attenuation and global asymmetry rows from `IRs/IR_tables/cir_sector_values_<analysis_name>.csv`, so each single experiment must be rerun once with a code version that exports that sidecar.
+
+The extensions table is the exception because every row can use a different
+`ModelData_<experiment>.mat` object. Run
+`econ_models/RbcProdNet_April2026/multi_experiment_extensions.py` with
+`configs/RbcProdNet_April2026/extensions_table.json`. The script rebuilds the
+model for each configured checkpoint and ModelData pair, runs only the long
+nonlinear simulation, welfare calculation, and stochastic-steady-state
+calculation, then writes a paper-ready table and its CSV under
+`analysis/comparisons/<comparative_name>/`. It does not compute IRs, figures, or
+Dynare comparisons.
 
 For the exact current execution inventory, see:
 

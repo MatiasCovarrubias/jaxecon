@@ -65,22 +65,22 @@ _MODEL_VS_DATA_PANELS = [
         "Sectoral comovement",
         [
             (
-                "Average correlation across sectors in consumption",
-                "avg_pairwise_corr_C",
-                "avg_pairwise_corr_C",
-                "avg corr across sectors in C",
+                "Average correlation across sectors in current-price consumption",
+                "avg_pairwise_corr_C_nominal",
+                "avg_pairwise_corr_C_nominal",
+                "avg corr across sectors in PC",
             ),
             (
-                "Average correlation across sectors in value added",
+                "Average correlation across sectors in current-price value added",
                 "avg_pairwise_corr_VA",
                 "avg_pairwise_corr_VA",
                 "avg corr across sectors in VA",
             ),
             (
-                "Average correlation across sectors in investment",
-                "avg_pairwise_corr_I",
-                "avg_pairwise_corr_I",
-                "avg corr across sectors in I",
+                "Average correlation across sectors in current-price investment",
+                "avg_pairwise_corr_I_nominal",
+                "avg_pairwise_corr_I_nominal",
+                "avg corr across sectors in PkI",
             ),
             (
                 "Average correlation across sectors in labor",

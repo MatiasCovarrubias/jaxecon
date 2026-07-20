@@ -8,6 +8,7 @@ import csv
 import gc
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,8 +21,68 @@ except ImportError:
     IN_COLAB = False
 
 if IN_COLAB:
+    def _colab_package_stack_is_usable() -> bool:
+        try:
+            import jax
+            import numpy
+            import scipy
+            import scipy.io  # noqa: F401
+        except Exception as exc:
+            print(f"Package stack check failed in current kernel: {exc!r}")
+            return False
+        print(
+            "Package stack OK: "
+            f"numpy={numpy.__version__} scipy={scipy.__version__} jax={jax.__version__}"
+        )
+        return True
+
+    repair_marker = "/content/.jaxecon_colab_numpy_repair_attempted"
+    if _colab_package_stack_is_usable():
+        if os.path.exists(repair_marker):
+            os.remove(repair_marker)
+    else:
+        if os.path.exists(repair_marker):
+            raise RuntimeError(
+                "The Colab NumPy/SciPy/JAX stack is still inconsistent after a repair restart. "
+                "Use Runtime > Disconnect and delete runtime, then rerun the cell."
+            )
+        print("Installing pinned NumPy/SciPy/JAX stack, then restarting Colab.")
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "--force-reinstall",
+                "numpy==2.0.2",
+                "scipy==1.15.3",
+                "jax[cuda12]",
+            ],
+            check=True,
+        )
+        Path(repair_marker).write_text(
+            "numpy==2.0.2 scipy==1.15.3 jax[cuda12]\n",
+            encoding="utf-8",
+        )
+        print("Package stack repaired. Restarting Colab runtime; rerun the cell after reconnecting.")
+        os.kill(os.getpid(), 9)
+
+    print("Cloning jaxecon repository...")
+    if not os.path.exists("/content/jaxecon"):
+        subprocess.run(
+            ["git", "clone", "https://github.com/MatiasCovarrubias/jaxecon"],
+            check=True,
+        )
+    else:
+        subprocess.run(
+            ["git", "-C", "/content/jaxecon", "pull", "--ff-only"],
+            check=True,
+        )
+
     from google.colab import drive  # type: ignore
 
+    print("Mounting Google Drive...")
     drive.mount("/content/drive")
     REPO_ROOT = Path("/content/jaxecon")
     DATA_ROOT = Path("/content/drive/MyDrive/Jaxecontemp")
@@ -80,6 +141,56 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "caption_tex": "Additional insights and robustness",
     "table_label": "tab:robustness_summary",
     "experiments": [],
+}
+
+# Edit this block when pasting the complete runner into a Colab cell.
+config: dict[str, Any] = {
+    "model_dir": "RbcProdNet_April2026",
+    "comparative_name": "extensions",
+    "caption_tex": "Additional insights and robustness",
+    "table_label": "tab:robustness_summary",
+    "experiments": [
+        {
+            "experiment_name": "finercal_July",
+            "model_data_file": "ModelData_finercal.mat",
+            "label": "Baseline",
+            "section": "Baseline",
+        },
+        {
+            "experiment_name": "homogenous_shocks",
+            "model_data_file": "ModelData_homogenous_shocks.mat",
+            "label": "Homogeneous shocks",
+            "section": "Robustness",
+        },
+        {
+            "experiment_name": "highsigmay",
+            "model_data_file": "ModelData_highsigmay.mat",
+            "label_tex": r"High $\sigma_y$ (0.8)",
+            "section": "Robustness",
+        },
+        {
+            "experiment_name": "highsigmam",
+            "model_data_file": "ModelData_highsigmam.mat",
+            "label_tex": r"High $\sigma_m$ (0.1)",
+            "section": "Robustness",
+        },
+        {
+            "experiment_name": "CDdefault",
+            "model_data_file": "ModelData_CDdefault.mat",
+            "exact_cobb_douglas": True,
+            "label_tex": "Cobb--Douglas",
+            "section": "Robustness",
+        },
+    ],
+    "notes_tex": (
+        "Mean and standard deviation of consumption are computed from the long nonlinear "
+        "simulation and reported as percent log differences from the deterministic steady state. "
+        "The welfare cost is the consumption-equivalent cost of business cycles, in percent. "
+        "Capital reallocation is the sum of the absolute sectoral capital-composition changes "
+        "shown in the stochastic-steady-state figure. Each sectoral change is the percent change "
+        "in its stochastic-steady-state capital share relative to its deterministic-steady-state "
+        "share. ``Homogeneous shocks'' sets sectoral shock volatilities to a common value."
+    ),
 }
 
 
@@ -481,9 +592,20 @@ def run(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def main() -> None:
+    if IN_COLAB:
+        run(config)
+        return
+
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", required=True, help="Path to the multi-experiment JSON config.")
+    parser.add_argument(
+        "--config",
+        help="Optional path to a multi-experiment JSON config; otherwise use the inline config.",
+    )
     args = parser.parse_args()
+    if not args.config:
+        run(config)
+        return
+
     with open(args.config, encoding="utf-8") as config_file:
         raw_config = json.load(config_file)
     overrides = raw_config.get("multi_experiment_analysis", raw_config)

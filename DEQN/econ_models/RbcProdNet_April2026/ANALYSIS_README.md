@@ -332,14 +332,17 @@ Main displayed exercises:
 Most multi-experiment custom analyses should read only saved single-experiment artifacts. For RbcProdNet-specific comparison scripts, keep the code in this model folder and write generated tables, CSVs, and wrappers under `analysis/comparisons/<comparative_name>/`. The Mining, Oil, and Gas CIR comparison reports the volatility-sensitive optimal attenuation and global asymmetry rows from `IRs/IR_tables/cir_sector_values_<analysis_name>.csv`, so each single experiment must be rerun once with a code version that exports that sidecar.
 
 The extensions table is the exception because every row can use a different
-`ModelData_<experiment>.mat` object. Run
-`econ_models/RbcProdNet_April2026/multi_experiment_extensions.py` with
-`configs/RbcProdNet_April2026/extensions_table.json`. The script rebuilds the
-model for each configured checkpoint and ModelData pair, runs only the long
-nonlinear simulation, welfare calculation, and stochastic-steady-state
-calculation, then writes a paper-ready table and its CSV under
-`analysis/comparisons/<comparative_name>/`. It does not compute IRs, figures, or
-Dynare comparisons.
+`ModelData_<experiment>.mat` object. The complete
+`econ_models/RbcProdNet_April2026/multi_experiment_extensions.py` file can be
+pasted directly into a Colab cell: its inline config is editable and it handles
+the package-stack check, repository clone, Drive mount, and execution. For
+command-line use, the inline config is the default and
+`configs/RbcProdNet_April2026/extensions_table.json` can be supplied with
+`--config`. The script rebuilds the model for each configured checkpoint and
+ModelData pair, runs only the long nonlinear simulation, welfare calculation,
+and stochastic-steady-state calculation, then writes a paper-ready table and its
+CSV under `analysis/comparisons/<comparative_name>/`. It does not compute IRs,
+figures, or Dynare comparisons.
 
 For the exact current execution inventory, see:
 

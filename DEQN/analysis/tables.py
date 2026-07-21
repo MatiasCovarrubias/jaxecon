@@ -37,10 +37,10 @@ _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
 
 _TARGETED_MOMENT_ROWS = [
     (
-        "$\\sum_j \\omega_j^I\\sigma(I_{jt})$",
-        "sigma_I_avg_invweighted",
-        "sigma_I_avg_invweighted",
-        "sum w^I sigma(I_jt)",
+        "$\\sum_j \\omega_j^{VA}\\sigma(I_{jt})$",
+        "sigma_I_avg",
+        "sigma_I_avg",
+        "sum w^VA sigma(I_jt)",
     ),
     (
         "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt}, A_{jt})$",
@@ -87,19 +87,7 @@ _MODEL_VS_DATA_PANELS = [
                 "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}_{jt})$",
                 "sigma_Domar_avg",
                 "sigma_Domar_avg",
-                "sum w^Q sigma(Domar_fixed_jt)",
-            ),
-            (
-                "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}^{\\mathrm{current}}_{jt})$",
-                "sigma_Domar_currentprice_avg",
-                "sigma_Domar_currentprice_avg",
-                "sum w^GO sigma(Domar_current_jt)",
-            ),
-            (
-                "$\\sum_j \\omega_j^{VA}\\sigma(\\mathrm{Domar}^{\\mathrm{current}}_{jt})$",
-                "sigma_Domar_currentprice_vaweighted_avg",
-                "sigma_Domar_currentprice_vaweighted_avg",
-                "sum w^VA sigma(Domar_current_jt)",
+                "sum w^GO sigma(Domar_jt)",
             ),
             ("$\\sum_j \\omega_j^{VA}\\sigma(VA_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(VA_jt)"),
             ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
@@ -250,9 +238,7 @@ def _select_model_vs_data_display_method(method_model_stats: Dict[str, Dict[str,
 def _build_model_vs_data_note(selected_method: Optional[str], note_context: Optional[Dict[str, Any]]) -> str:
     del note_context
     model_source_text = (
-        f" The model column reports moments from the {selected_method} solution."
-        if selected_method is not None
-        else ""
+        f" The model column reports moments from the {selected_method} solution." if selected_method is not None else ""
     )
     return (
         r"Entries are untargeted business-cycle moments. "
@@ -263,8 +249,7 @@ def _build_model_vs_data_note(selected_method: Optional[str], note_context: Opti
         r"expenditures $P_jC_j$, $P_j^kI_j$, and $P_jQ_j-P_j^mM_j$. "
         r"$\omega_j^{VA}$ are value-added shares, $\omega_j^{GO}$ are normalized gross-output shares, "
         r"and $\omega_j^{Q}$ are steady-state gross-output quantity weights. The fixed-price Domar "
-        r"row retains the historical Domar target used in calibration."
-        + model_source_text
+        r"row retains the historical Domar target used in calibration." + model_source_text
     )
 
 
@@ -274,7 +259,9 @@ def _build_descriptive_stats_note(
     *,
     uses_theoretical_first_order: bool,
 ) -> str:
-    note_text = r"For each variable and method, the table reports the mean, standard deviation, skewness, and excess kurtosis."
+    note_text = (
+        r"For each variable and method, the table reports the mean, standard deviation, skewness, and excess kurtosis."
+    )
 
     if _has_method(method_names, {"Global Solution", "Global Solution (Long Simulation)"}):
         if note_context and note_context.get("long_simulation"):
@@ -289,19 +276,13 @@ def _build_descriptive_stats_note(
                 r"of the Gaussian distribution implied by the first-order solution."
             )
         else:
-            note_text += (
-                f" The 1st Order Approximation uses {_common_shock_window_text(note_context)}."
-            )
+            note_text += f" The 1st Order Approximation uses {_common_shock_window_text(note_context)}."
 
     if _has_method(method_names, {"SecondOrder", "PerfectForesight", "Perfect Foresight", "MIT shocks", "MITShocks"}):
-        note_text += (
-            r" Second Order, Perfect Foresight, and MIT-shock rows report moments calculated from their simulated series."
-        )
+        note_text += r" Second Order, Perfect Foresight, and MIT-shock rows report moments calculated from their simulated series."
 
     if _has_method(method_names, {"PerfectForesight", "Perfect Foresight", "MIT shocks", "MITShocks"}):
-        note_text += (
-            f" Perfect Foresight and MIT-shock moments use {_common_shock_window_text(note_context)}."
-        )
+        note_text += f" Perfect Foresight and MIT-shock moments use {_common_shock_window_text(note_context)}."
 
     note_text += (
         r" Mean and standard deviation are reported for log differences from the deterministic steady state; "
@@ -313,9 +294,7 @@ def _build_descriptive_stats_note(
 
 
 def _build_welfare_note(method_names: list[str], note_context: Optional[Dict[str, Any]]) -> str:
-    note_text = (
-        r"$V_c$ is the consumption-equivalent amount of consumption agents would be willing to give up in order to eliminate shocks and remain forever at the deterministic steady state."
-    )
+    note_text = r"$V_c$ is the consumption-equivalent amount of consumption agents would be willing to give up in order to eliminate shocks and remain forever at the deterministic steady state."
 
     if _has_method(method_names, {"Global Solution", "Global Solution (Long Simulation)"}):
         if note_context and note_context.get("long_simulation"):
@@ -330,19 +309,13 @@ def _build_welfare_note(method_names: list[str], note_context: Optional[Dict[str
                 r"seeds, periods per seed, and burn-in as the Global Solution."
             )
         else:
-            note_text += (
-                f" The 1st Order Approximation uses {_common_shock_window_text(note_context)}."
-            )
+            note_text += f" The 1st Order Approximation uses {_common_shock_window_text(note_context)}."
 
     if _has_method(method_names, {"PerfectForesight", "Perfect Foresight", "MITShocks", "MIT shocks"}):
-        note_text += (
-            f" Perfect Foresight and MIT-shock welfare costs use {_common_shock_window_text(note_context)}."
-        )
+        note_text += f" Perfect Foresight and MIT-shock welfare costs use {_common_shock_window_text(note_context)}."
 
     note_text += _welfare_counterfactual_note(method_names)
-    note_text += (
-        r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would give up 1\% of consumption to remove business cycle risk."
-    )
+    note_text += r" A positive value means business cycles reduce welfare. A value of 1.0 means agents would give up 1\% of consumption to remove business cycle risk."
     return note_text
 
 
@@ -377,7 +350,11 @@ def _welfare_counterfactual_note(method_names: list[str]) -> str:
 
     if not note_parts:
         return ""
-    return " " + " ".join(note_parts) + r" These counterfactual rows use the same discounting and trajectory-sampling procedure as the baseline welfare calculation."
+    return (
+        " "
+        + " ".join(note_parts)
+        + r" These counterfactual rows use the same discounting and trajectory-sampling procedure as the baseline welfare calculation."
+    )
 
 
 def _selected_nonlinear_sample_note(method_names: list[str]) -> str:
@@ -585,9 +562,7 @@ def create_targeted_moments_table(
         latex_code += f"{row_label} & {data_text} & {model_text} \\\\\n"
 
     model_source_text = (
-        f" The model column reports moments from the {selected_method} solution."
-        if selected_method is not None
-        else ""
+        f" The model column reports moments from the {selected_method} solution." if selected_method is not None else ""
     )
     latex_code += (
         r"\bottomrule" + "\n"
@@ -596,7 +571,7 @@ def create_targeted_moments_table(
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
         r"\textit{Notes:} The table reports the two moments targeted in calibration. "
-        r"$\omega_j^I$ are investment-expenditure shares and $\omega_j^{VA}$ are value-added shares."
+        r"$\omega_j^{VA}$ are value-added shares."
         + model_source_text
         + "\n"
         r"\end{minipage}" + "\n"
@@ -711,7 +686,8 @@ def _create_model_vs_data_moments_table(
         r"\caption{Untargeted model vs. data business cycle moments}" + "\n"
         r"\label{tab:untargeted_moments}"
         + "\n"
-        + r"\begin{tabular}{lrr}" + "\n"
+        + r"\begin{tabular}{lrr}"
+        + "\n"
         + r"\toprule"
         + "\n"
         + r"\textbf{Moment}"
@@ -722,9 +698,7 @@ def _create_model_vs_data_moments_table(
     panel_labels = ["Panel A", "Panel B", "Panel C", "Panel D", "Panel E"]
     for panel_index, (panel_title, panel_rows) in enumerate(_MODEL_VS_DATA_PANELS):
         panel_prefix = panel_labels[panel_index] if panel_index < len(panel_labels) else f"Panel {panel_index + 1}"
-        latex_code += (
-            rf"\multicolumn{{{total_columns}}}{{c}}{{\textit{{{panel_prefix}. {panel_title}}}}} \\" + "\n"
-        )
+        latex_code += rf"\multicolumn{{{total_columns}}}{{c}}{{\textit{{{panel_prefix}. {panel_title}}}}} \\" + "\n"
         for row_label, model_key, data_key, _ in panel_rows:
             latex_code += row_label
             data_value = _resolve_empirical_value(empirical_targets, data_key)
@@ -741,9 +715,7 @@ def _create_model_vs_data_moments_table(
         r"\begin{minipage}{0.92\textwidth}" + "\n"
         r"\vspace{0.5em}" + "\n"
         r"\footnotesize" + "\n"
-        r"\textit{Notes:} "
-        + _build_model_vs_data_note(selected_method, note_context)
-        + "\n"
+        r"\textit{Notes:} " + _build_model_vs_data_note(selected_method, note_context) + "\n"
         r"\end{minipage}" + "\n"
     )
     latex_code += r"\end{table}" + "\n"
@@ -910,7 +882,7 @@ def create_descriptive_stats_table(
     --------
     str : The LaTeX table code
     """
-    excluded_vars = ["Utility"]
+    excluded_vars = ["Utility", "Agg. Output"]
 
     # Combine experiment names from both sources
     experiment_names = list(analysis_variables_data.keys())
@@ -1046,8 +1018,7 @@ def _generate_single_method_latex_table(
 ) -> str:
     """LaTeX table for single-method case: variables as rows, metrics as columns."""
     tabular_code = (
-        r"{\small" + "\n"
-        + r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
+        r"{\small" + "\n" + r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
         r"\textbf{Variable} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\"
         + "\n"
@@ -1089,8 +1060,7 @@ def _generate_variable_organized_latex_table(
     n_experiments = len(method_names)
 
     tabular_code = (
-        r"{\small" + "\n"
-        + r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
+        r"{\small" + "\n" + r"\begin{tabularx}{\textwidth}{l *{4}{X}}" + "\n"
         r"\toprule" + "\n"
         r"\textbf{Method} & \textbf{Mean (\%)} & \textbf{Sd (\%)} & \textbf{Skewness} & \textbf{Excess Kurtosis} \\"
         + "\n"

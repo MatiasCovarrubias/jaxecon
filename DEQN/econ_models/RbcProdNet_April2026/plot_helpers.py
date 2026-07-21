@@ -740,7 +740,7 @@ def plot_ergodic_histograms(
                 pdf_values = norm.pdf(x_smooth, loc=mean_pct, scale=std_pct) * bin_width
 
                 style = benchmark_style_map.get(method_name, _experiment_style(i, "IR_stoch_ss"))
-                style["linewidth"] = 2.5
+                style["linewidth"] = 4.0
                 ax.plot(x_smooth, pdf_values, label=method_name, **style)
             else:
                 if method_name not in analysis_variables_data or var_label not in analysis_variables_data[method_name]:
@@ -754,7 +754,7 @@ def plot_ergodic_histograms(
 
                 # Plot the frequency line
                 style = benchmark_style_map.get(method_name, _experiment_style(i, "IR_stoch_ss"))
-                style["linewidth"] = 2.5
+                style["linewidth"] = 4.0
                 ax.plot(bin_centers, freqs, label=method_name, **style)
 
         # Add vertical line at deterministic steady state (x=0)

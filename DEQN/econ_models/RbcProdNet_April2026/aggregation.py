@@ -875,6 +875,7 @@ def create_theoretical_descriptive_stats(theo_stats: dict, label: str = "Log-Lin
     var_mapping = {
         "Agg. Consumption": ("sigma_C_agg", "C"),
         "Agg. Labor": ("sigma_L_agg", "L"),
+        "Agg. Output": ("sigma_VA_agg", "GDP"),
         "Agg. GDP": ("sigma_VA_agg", "GDP"),
         "Agg. Investment": ("sigma_I_agg", "I"),
         "Agg. Capital": ("sigma_K_agg", "K"),

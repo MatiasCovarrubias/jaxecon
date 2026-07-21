@@ -116,6 +116,25 @@ CIR_MEASURE_DESCRIPTIONS = {
     "corr(MIT asym., sigA)": "corr(MIT asym., sigA)",
 }
 
+CIR_TABLE_MEASURE_LABELS = {
+    "Nonlin. ampl. (-)": "Nonlin. ampl. (-)",
+    "Nonlin. ampl. (+)": "Nonlin. ampl. (+)",
+    "MIT asym.": "MIT asym.",
+    "Opt. atten. (-)": "Attenuation (-)",
+    "Opt. atten. (+)": "Attenuation (+)",
+    "Global asym.": "Global asym.",
+    "corr(opt. atten., U_M)": "corr(Attenuation, U_M)",
+    "corr(global asym., U_M)": "corr(global asym., U_M)",
+    "corr(nonlin. ampl., U_M)": "corr(nonlin. ampl., U_M)",
+    "corr(opt. atten., U_I)": "corr(Attenuation, U_I)",
+    "corr(global asym., U_I)": "corr(global asym., U_I)",
+    "corr(nonlin. ampl., U_I)": "corr(nonlin. ampl., U_I)",
+    "corr(opt. atten., sigA)": "corr(Attenuation, sigA)",
+    "corr(global asym., sigA)": "corr(global asym., sigA)",
+    "corr(nonlin. ampl., sigA)": "corr(nonlin. ampl., sigA)",
+    "corr(MIT asym., sigA)": "corr(MIT asym., sigA)",
+}
+
 CIR_MEASURE_NOTE_DESCRIPTIONS = {
     "Nonlin. ampl. (-)": (
         "100 times the negative-shock MIT CIR divided by the negative-shock first-order CIR, minus 100"
@@ -1717,10 +1736,10 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
     column_count = 2 + len(rows)
     with open(save_path, "w") as table_file:
         table_file.write("\\begin{table}[htbp]\n\\centering\n")
-        table_file.write(
-            "\\caption{Cumulative aggregate-consumption response measures by TFP shock size}\n"
-        )
+        table_file.write("\\caption{Cumulative impulse-response analysis}\n")
         table_file.write(f"\\label{{tab:cir_analysis_{_latex_label_token(analysis_name)}}}\n")
+        table_file.write("\\scriptsize\n\\setlength{\\tabcolsep}{3pt}\n")
+        table_file.write("\\resizebox{\\textwidth}{!}{%\n")
         table_file.write("\\begin{tabular}{ll" + "r" * len(rows) + "}\n\\hline\n")
         headers = ["Metric", "Formula"] + [f"{row['shock_size']:g}%" for row in rows]
         table_file.write(" & ".join(_latex_escape(header) for header in headers) + " \\\\\n\\hline\n")
@@ -1732,32 +1751,27 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
                 description = CIR_MEASURE_DESCRIPTIONS.get(measure, "")
                 values = [_format_table_value(row["values"].get(measure), measure) for row in rows]
                 table_file.write(
-                    _latex_escape(measure)
+                    _latex_escape(CIR_TABLE_MEASURE_LABELS.get(measure, measure))
                     + " & "
                     + description
                     + " & "
                     + " & ".join(values)
                     + " \\\\\n"
                 )
-        table_file.write("\\hline\n\\end{tabular}\n")
+        table_file.write("\\hline\n\\end{tabular}\n}\n")
         table_file.write(
             "\\begin{minipage}{0.92\\textwidth}\n\\footnotesize\n"
-            "\\textit{Notes:} CIR is the sum of the aggregate consumption response beginning with the impact period."
-            + _format_cir_horizon_note(rows)
-            + (
-                " The global-solution CIR is the generalized impulse response averaged across ergodic "
-                "initial-state draws. "
-                if response_source == "GIR"
-                else " The global-solution CIR is the impulse response from the stochastic steady state. "
-            )
+            "\\textit{Notes:} CIR is the sum over the displayed impulse-response horizon of the aggregate "
+            "consumption response. The global-solution CIR uses the selected IR source: "
+            + _latex_escape(response_source)
+            + ". "
             + r"Notation: $GIR_{GS}$ is the global-solution CIR, $GIR_{MIT}$ is the MIT shock CIR, "
             r"and $GIR_{1or}$ is the 1st-order approximation CIR; + and - denote positive and negative shocks. "
             "Opt. atten., nonlin. ampl., asym., and corr denote optimal attenuation, nonlinear amplification, "
             "asymmetry, and correlation. "
             r"$U_M$ and $U_I$ are IO and investment upstreamness, and sigA is sectoral shock volatility. "
-            "Each amplification, attenuation, and asymmetry measure is computed sector by sector and then averaged "
-            "across sectors; correlation rows are Pearson correlations across sectors. Amplification, attenuation, "
-            "and asymmetry rows are reported in percent, and correlation rows are unitless.\n"
+            "Amplification, attenuation, and asymmetry rows are reported in percent, while correlation rows are "
+            "unitless. Missing benchmark CIR or diagnostic fields are left blank.\n"
             "\\end{minipage}\n"
         )
         table_file.write("\\end{table}\n")

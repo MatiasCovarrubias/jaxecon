@@ -472,7 +472,11 @@ def compute_model_moments_with_consistent_aggregation(
     domar_simul = np.log(np.maximum(sales_currentprice, eps)).T - np.log(
         np.maximum(GDP_currentprice, eps)
     )[None, :]
-    sigma_Domar_sectoral = _matlab_std_axis(domar_simul, axis=1)
+    sigma_Domar_currentprice_sectoral = _matlab_std_axis(domar_simul, axis=1)
+    sigma_Domar_currentprice_avg = float(np.sum(go_weights * sigma_Domar_currentprice_sectoral))
+    sigma_Domar_currentprice_vaweighted_avg = float(
+        np.sum(va_weights * sigma_Domar_currentprice_sectoral)
+    )
     domar_fixedprice_simul = q_logdev - GDP_logdev[None, :]
     sigma_Domar_fixedprice_sectoral = _matlab_std_axis(domar_fixedprice_simul, axis=1)
     sigma_Domar_fixedprice_avg = float(np.sum((Q_ss / np.sum(Q_ss)) * sigma_Domar_fixedprice_sectoral))
@@ -536,19 +540,29 @@ def compute_model_moments_with_consistent_aggregation(
         "sigma_logTFP_sectoral": sigma_logTFP_sectoral,
         "sigma_L_avg_empweighted": float(np.sum(emp_weights * sigma_L_sectoral)),
         "sigma_I_avg_invweighted": float(np.sum(inv_weights * sigma_I_sectoral)),
-        "sigma_Domar_avg": float(np.sum(go_weights * sigma_Domar_sectoral)),
-        "sigma_Domar_avg_legacy": float(np.sum(go_weights * sigma_Domar_sectoral)),
+        "sigma_Domar_avg": sigma_Domar_fixedprice_avg,
         "sigma_Domar_fixedprice_avg": sigma_Domar_fixedprice_avg,
+        "sigma_Domar_currentprice_avg": sigma_Domar_currentprice_avg,
+        "sigma_Domar_currentprice_vaweighted_avg": sigma_Domar_currentprice_vaweighted_avg,
+        "sigma_Domar_avg_legacy": sigma_Domar_currentprice_avg,
         "corr_matrix_C": corr_matrix_C,
         "corr_matrix_C_nominal": corr_matrix_C_nominal,
         "corr_matrix_Q_nominal": corr_matrix_Q_nominal,
         "sigma_L_sectoral": sigma_L_sectoral,
         "sigma_I_sectoral": sigma_I_sectoral,
-        "sigma_Domar_sectoral": sigma_Domar_sectoral,
-        "sigma_Domar_sectoral_legacy": sigma_Domar_sectoral,
+        "sigma_Domar_sectoral": sigma_Domar_fixedprice_sectoral,
         "sigma_Domar_fixedprice_sectoral": sigma_Domar_fixedprice_sectoral,
-        "domar_definition": "log_current_price_gross_output_over_current_price_GDP",
-        "domar_average_weight_definition": "steady_state_current_price_gross_output_weights",
+        "sigma_Domar_currentprice_sectoral": sigma_Domar_currentprice_sectoral,
+        "sigma_Domar_sectoral_legacy": sigma_Domar_currentprice_sectoral,
+        "domar_definition": "log_fixed_price_gross_output_over_fixed_price_GDP",
+        "domar_average_weight_definition": "steady_state_gross_output_quantity_weights",
+        "domar_currentprice_definition": "log_current_price_gross_output_over_current_price_GDP",
+        "domar_currentprice_average_weight_definition": (
+            "steady_state_current_price_gross_output_weights"
+        ),
+        "domar_currentprice_vaweighted_average_weight_definition": (
+            "steady_state_value_added_weights"
+        ),
         "corr_matrix_VA": corr_matrix_VA,
         "corr_matrix_L": corr_matrix_L,
         "corr_matrix_I": corr_matrix_I,

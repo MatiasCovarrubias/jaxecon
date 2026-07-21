@@ -35,6 +35,21 @@ _CALIBRATION_UNTARGETED_CONSOLE_LABELS = [
     "σ(I^exp_agg)",
 ]
 
+_TARGETED_MOMENT_ROWS = [
+    (
+        "$\\sum_j \\omega_j^I\\sigma(I_{jt})$",
+        "sigma_I_avg_invweighted",
+        "sigma_I_avg_invweighted",
+        "sum w^I sigma(I_jt)",
+    ),
+    (
+        "$\\sum_j \\omega_j^{VA}\\mathrm{corr}(L_{jt}, A_{jt})$",
+        "corr_L_TFP_sectoral_avg_vashare",
+        ("correlations", "L_TFP_sectoral_avg_vashare"),
+        "sum w^VA corr(L_j,A_j)",
+    ),
+]
+
 _MODEL_VS_DATA_PANELS = [
     (
         "Sectoral comovement",
@@ -72,7 +87,19 @@ _MODEL_VS_DATA_PANELS = [
                 "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}_{jt})$",
                 "sigma_Domar_avg",
                 "sigma_Domar_avg",
-                "sum w^GO sigma(Domar_jt)",
+                "sum w^Q sigma(Domar_fixed_jt)",
+            ),
+            (
+                "$\\sum_j \\omega_j^{GO}\\sigma(\\mathrm{Domar}^{\\mathrm{current}}_{jt})$",
+                "sigma_Domar_currentprice_avg",
+                "sigma_Domar_currentprice_avg",
+                "sum w^GO sigma(Domar_current_jt)",
+            ),
+            (
+                "$\\sum_j \\omega_j^{VA}\\sigma(\\mathrm{Domar}^{\\mathrm{current}}_{jt})$",
+                "sigma_Domar_currentprice_vaweighted_avg",
+                "sigma_Domar_currentprice_vaweighted_avg",
+                "sum w^VA sigma(Domar_current_jt)",
             ),
             ("$\\sum_j \\omega_j^{VA}\\sigma(VA_{jt})$", "sigma_VA_avg", "sigma_VA_avg", "sum w^VA sigma(VA_jt)"),
             ("$\\sum_j \\omega_j^{VA}\\sigma(L_{jt})$", "sigma_L_avg", "sigma_L_avg", "sum w^VA sigma(L_jt)"),
@@ -100,13 +127,29 @@ _MODEL_VS_DATA_MODEL_KEY_ALIASES = {
     "sigma_VA_agg": ["sigma_VA_agg", "sigma_GDP_agg"],
     "sigma_L_hc_agg": ["sigma_L_hc_agg", "sigma_L_agg", "sigma_L_headcount_agg"],
     "corr_I_C_agg": ["corr_I_C_agg", "corr_CI_agg"],
-    "sigma_Domar_avg": ["sigma_Domar_avg", "sigma_Domar_avg_legacy"],
+    "sigma_Domar_avg": ["sigma_Domar_avg", "sigma_Domar_fixedprice_avg"],
+    "sigma_Domar_currentprice_avg": [
+        "sigma_Domar_currentprice_avg",
+        "sigma_Domar_avg_legacy",
+    ],
+    "sigma_Domar_currentprice_vaweighted_avg": [
+        "sigma_Domar_currentprice_vaweighted_avg",
+    ],
 }
 
 _MODEL_VS_DATA_DATA_KEY_ALIASES = {
     "sigma_VA_agg": ["sigma_VA_agg", "sigma_GDP_agg"],
     "sigma_L_agg": ["sigma_L_agg", "sigma_L_hc_agg", "sigma_L_headcount_agg"],
     "sigma_Domar_avg": ["sigma_Domar_avg", "sigma_Domar_avg_legacy"],
+    "sigma_Domar_fixedprice_avg": ["sigma_Domar_fixedprice_avg"],
+    "sigma_Domar_currentprice_avg": [
+        "sigma_Domar_currentprice_avg",
+        "sigma_Domar_avg",
+        "sigma_Domar_avg_legacy",
+    ],
+    "sigma_Domar_currentprice_vaweighted_avg": [
+        "sigma_Domar_currentprice_vaweighted_avg",
+    ],
 }
 
 _MODEL_VS_DATA_ROW_DEFS = [
@@ -216,7 +259,11 @@ def _build_model_vs_data_note(selected_method: Optional[str], note_context: Opti
         r"Data volatilities are standard deviations of HP-filtered log series; model volatilities are "
         r"standard deviations of log deviations from the deterministic steady state. Correlations are "
         r"unit-free. Comovement refers to average correlation across sectors in a given variable. "
-        r"$\omega_j^{VA}$ are value-added shares, and $\omega_j^{GO}$ are normalized gross-output shares."
+        r"For sectoral consumption, investment, and value added, comovement uses current-price "
+        r"expenditures $P_jC_j$, $P_j^kI_j$, and $P_jQ_j-P_j^mM_j$. "
+        r"$\omega_j^{VA}$ are value-added shares, $\omega_j^{GO}$ are normalized gross-output shares, "
+        r"and $\omega_j^{Q}$ are steady-state gross-output quantity weights. The fixed-price Domar "
+        r"row retains the historical Domar target used in calibration."
         + model_source_text
     )
 
@@ -507,6 +554,74 @@ def create_calibration_table(
         _print_saved_file(final_save_path)
 
     print(console_output)
+    return latex_code
+
+
+def create_targeted_moments_table(
+    empirical_targets: Dict[str, Any],
+    method_model_stats: Dict[str, Dict[str, Any]],
+    save_path: Optional[str] = None,
+    analysis_name: Optional[str] = None,
+) -> str:
+    """Create a separate model-vs-data table for targeted calibration moments."""
+    selected_method = _select_model_vs_data_display_method(method_model_stats)
+    method_stats = method_model_stats.get(selected_method) if selected_method is not None else None
+
+    latex_code = (
+        r"\begin{table}[H]" + "\n"
+        r"\centering" + "\n"
+        r"\caption{Targeted moments}" + "\n"
+        r"\label{tab:targeted_moments}" + "\n"
+        r"\begin{tabular}{lrr}" + "\n"
+        r"\toprule" + "\n"
+        r"\textbf{Moment} & \textbf{Data} & \textbf{Model} \\" + "\n"
+        r"\midrule" + "\n"
+    )
+    for row_label, model_key, data_key, _ in _TARGETED_MOMENT_ROWS:
+        data_value = _resolve_empirical_value(empirical_targets, data_key)
+        model_value = _resolve_model_vs_data_method_value(method_stats, model_key)
+        data_text = f"{data_value:.4f}" if data_value is not None else "---"
+        model_text = f"{model_value:.4f}" if model_value is not None else "---"
+        latex_code += f"{row_label} & {data_text} & {model_text} \\\\\n"
+
+    model_source_text = (
+        f" The model column reports moments from the {selected_method} solution."
+        if selected_method is not None
+        else ""
+    )
+    latex_code += (
+        r"\bottomrule" + "\n"
+        r"\end{tabular}" + "\n"
+        r"\begin{minipage}{0.92\textwidth}" + "\n"
+        r"\vspace{0.5em}" + "\n"
+        r"\footnotesize" + "\n"
+        r"\textit{Notes:} The table reports the two moments targeted in calibration. "
+        r"$\omega_j^I$ are investment-expenditure shares and $\omega_j^{VA}$ are value-added shares."
+        + model_source_text
+        + "\n"
+        r"\end{minipage}" + "\n"
+        r"\end{table}" + "\n"
+    )
+
+    if save_path:
+        save_dir = os.path.dirname(save_path)
+        ext = os.path.splitext(os.path.basename(save_path))[1] or ".tex"
+        filename = f"targeted_moments_{analysis_name}{ext}" if analysis_name else f"targeted_moments{ext}"
+        final_save_path = os.path.join(save_dir, filename)
+        with open(final_save_path, "w") as f:
+            f.write(latex_code)
+        _print_saved_file(final_save_path)
+
+    print("\n[2] TARGETED MOMENTS")
+    if analysis_name:
+        print(f"Analysis: {analysis_name}")
+    for _, model_key, data_key, console_label in _TARGETED_MOMENT_ROWS:
+        data_value = _resolve_empirical_value(empirical_targets, data_key)
+        model_value = _resolve_model_vs_data_method_value(method_stats, model_key)
+        data_text = f"{data_value:.4f}" if data_value is not None else "---"
+        model_text = f"{model_value:.4f}" if model_value is not None else "---"
+        print(f"{console_label}: Data {data_text}; Model {model_text}")
+
     return latex_code
 
 

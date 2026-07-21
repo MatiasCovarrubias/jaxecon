@@ -157,6 +157,7 @@ from DEQN.analysis.tables import (  # noqa: E402
     create_calibration_table,
     create_descriptive_stats_table,
     create_stochastic_ss_aggregates_table,
+    create_targeted_moments_table,
     create_welfare_table,
 )
 from DEQN.analysis.welfare import get_welfare_fn  # noqa: E402
@@ -218,7 +219,7 @@ config = {
     "gir_n_draws": 1000,
     "gir_trajectory_length": 100,
     "shock_size": 0.2,
-    "gir_seed": 42,
+    "gir_seed": 0,
     # IR selection:
     # - False: stochastic-steady-state impulse response
     # - True: generalized impulse response averaged over ergodic draws
@@ -766,6 +767,13 @@ def main():
             analysis_name=config["analysis_name"],
             note_context=output_note_context,
         )
+        if filtered_calibration_method_stats:
+            create_targeted_moments_table(
+                empirical_targets=calibration_emp,
+                method_model_stats=filtered_calibration_method_stats,
+                save_path=os.path.join(analysis_dir, "targeted_moments.tex"),
+                analysis_name=config["analysis_name"],
+            )
     else:
         print(
             "  ⚠ Calibration table skipped: no empirical targets in ModelData (EmpiricalTargets / calibration.empirical_targets)."

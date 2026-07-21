@@ -133,6 +133,7 @@ For the current April pipeline, the intended MATLAB/Python comparison convention
 - `ergodic_price_aggregation = true` means the fixed price vector is always taken from a long ergodic DEQN reference sample. If `long_simulation = false`, Python still runs that auxiliary ergodic reference and re-aggregates the shorter common-shock reporting sample under the ergodic price vector rather than using the short window itself as the price source.
 - Sectoral comovement uses current-price consumption `P_j C_j`, investment `P^k_j I_j`, and value added `P_j Q_j - P^m_j M_j` in both MATLAB and Python.
 - Sectoral value-added volatility continues to use deterministic fixed prices: `VA_j = \bar P_j Q_j - \bar P^m_j M_j`. Both value-added series are floored at `1e-4` of steady-state sectoral VA before taking logs.
+- The primary Domar-volatility statistic uses fixed prices and steady-state gross-output quantity weights, matching the historical calibration-table convention. Current-price Domar statistics are reported separately.
 - Volatility calculations are matched to MATLAB's default `std` normalization, so Python uses the sample standard deviation (`N-1`) rather than NumPy's population default.
 
 ## Main Python files

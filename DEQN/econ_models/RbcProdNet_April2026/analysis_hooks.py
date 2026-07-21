@@ -625,6 +625,10 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
         "1. Untargeted Model vs. Data Moments",
         [os.path.join(analysis_dir, f"calibration_table_{analysis_name}.tex")],
     )
+    add_table_section(
+        "2. Targeted Moments",
+        [os.path.join(analysis_dir, f"targeted_moments_{analysis_name}.tex")],
+    )
 
     aggregate_ir_figures = []
     aggregate_variable_captions = {

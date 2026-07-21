@@ -79,6 +79,7 @@ def _build_analysis_latex_sections(*, config_dict, analysis_dir, simulation_dir,
     analysis_name = config_dict.get("analysis_name") or "analysis"
     section_specs = [
         ("Model vs. Data Moments", [os.path.join(analysis_dir, f"calibration_table_{analysis_name}.tex")]),
+        ("Targeted Moments", [os.path.join(analysis_dir, f"targeted_moments_{analysis_name}.tex")]),
         ("Aggregate Stochastic Steady State", [os.path.join(analysis_dir, f"stochastic_ss_aggregates_{analysis_name}.tex")]),
         ("Descriptive Statistics", [os.path.join(simulation_dir, f"descriptive_stats_{analysis_name}.tex")]),
         ("Welfare Cost of Business Cycles", [os.path.join(analysis_dir, f"welfare_{analysis_name}.tex")]),

@@ -21,6 +21,10 @@ from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import (
     plot_ergodic_histograms,
     plot_sectoral_diagnostic_bar,
     plot_upstreamness,
+    _sectoral_levels_from_logdev,
+    _sectoral_share_change,
+    _sectoral_share_weights,
+    _sectoral_variable_info,
     _write_figure_note_tex,
 )
 from DEQN.econ_models.RbcProdNet_April2026.plots import (
@@ -97,238 +101,224 @@ def _nanmean_or_none(values: Any) -> Optional[float]:
     return float(np.mean(finite))
 
 
-CIR_MEASURE_DESCRIPTIONS = {
-    "Nonlin. ampl. (-)": r"$100\times(GIR_{MIT}(-)/GIR_{1or}(-)-1)$",
-    "Nonlin. ampl. (+)": r"$100\times(GIR_{MIT}(+)/GIR_{1or}(+)-1)$",
-    "MIT asym.": r"$100\times(1-|GIR_{MIT}(-)|/|GIR_{MIT}(+)|)$",
-    "Opt. atten. (-)": r"$100\times(1-GIR_{GS}(-)/GIR_{MIT}(-))$",
-    "Opt. atten. (+)": r"$100\times(1-GIR_{GS}(+)/GIR_{MIT}(+))$",
-    "Global asym.": r"$100\times(1-|GIR_{GS}(-)/GIR_{GS}(+)|)$",
-    "corr(opt. atten., U_M)": r"corr(Opt. atten.(-), U\_M)",
-    "corr(global asym., U_M)": r"corr(Global asym., U\_M)",
-    "corr(nonlin. ampl., U_M)": r"corr(Nonlin. ampl.(-), U\_M)",
-    "corr(opt. atten., U_I)": r"corr(Opt. atten.(-), U\_I)",
-    "corr(global asym., U_I)": r"corr(Global asym., U\_I)",
-    "corr(nonlin. ampl., U_I)": r"corr(Nonlin. ampl.(-), U\_I)",
-    "corr(opt. atten., sigA)": "corr(Opt. atten.(-), sigA)",
-    "corr(global asym., sigA)": "corr(Global asym., sigA)",
-    "corr(nonlin. ampl., sigA)": "corr(Nonlin. ampl.(-), sigA)",
-    "corr(MIT asym., sigA)": "corr(MIT asym., sigA)",
-}
-
-CIR_TABLE_MEASURE_LABELS = {
-    "Nonlin. ampl. (-)": "Nonlin. ampl. (-)",
-    "Nonlin. ampl. (+)": "Nonlin. ampl. (+)",
-    "MIT asym.": "MIT asym.",
-    "Opt. atten. (-)": "Attenuation (-)",
-    "Opt. atten. (+)": "Attenuation (+)",
-    "Global asym.": "Global asym.",
-    "corr(opt. atten., U_M)": "corr(Attenuation, U_M)",
-    "corr(global asym., U_M)": "corr(global asym., U_M)",
-    "corr(nonlin. ampl., U_M)": "corr(nonlin. ampl., U_M)",
-    "corr(opt. atten., U_I)": "corr(Attenuation, U_I)",
-    "corr(global asym., U_I)": "corr(global asym., U_I)",
-    "corr(nonlin. ampl., U_I)": "corr(nonlin. ampl., U_I)",
-    "corr(opt. atten., sigA)": "corr(Attenuation, sigA)",
-    "corr(global asym., sigA)": "corr(global asym., sigA)",
-    "corr(nonlin. ampl., sigA)": "corr(nonlin. ampl., sigA)",
-    "corr(MIT asym., sigA)": "corr(MIT asym., sigA)",
-}
-
-CIR_MEASURE_NOTE_DESCRIPTIONS = {
-    "Nonlin. ampl. (-)": (
-        "100 times the negative-shock MIT CIR divided by the negative-shock first-order CIR, minus 100"
-    ),
-    "Nonlin. ampl. (+)": (
-        "100 times the positive-shock MIT CIR divided by the positive-shock first-order CIR, minus 100"
-    ),
-    "MIT asym.": (
-        "100 times one minus the absolute negative-shock MIT CIR divided by the absolute positive-shock MIT CIR"
-    ),
-    "Opt. atten. (-)": (
-        "100 times one minus the negative-shock global-solution CIR divided by the negative-shock MIT CIR"
-    ),
-    "Opt. atten. (+)": (
-        "100 times one minus the positive-shock global-solution CIR divided by the positive-shock MIT CIR"
-    ),
-    "Global asym.": (
-        "100 times one minus the absolute negative-shock global-solution CIR divided by the absolute "
-        "positive-shock global-solution CIR"
-    ),
-    "corr(opt. atten., U_M)": "the Pearson correlation between negative-shock optimal attenuation and IO upstreamness",
-    "corr(global asym., U_M)": "the Pearson correlation between global asymmetry and IO upstreamness",
-    "corr(nonlin. ampl., U_M)": (
-        "the Pearson correlation between negative-shock nonlinear amplification and IO upstreamness"
-    ),
-    "corr(opt. atten., U_I)": (
-        "the Pearson correlation between negative-shock optimal attenuation and investment upstreamness"
-    ),
-    "corr(global asym., U_I)": "the Pearson correlation between global asymmetry and investment upstreamness",
-    "corr(nonlin. ampl., U_I)": (
-        "the Pearson correlation between negative-shock nonlinear amplification and investment upstreamness"
-    ),
-    "corr(opt. atten., sigA)": (
-        "the Pearson correlation between negative-shock optimal attenuation and sectoral TFP shock volatility"
-    ),
-    "corr(global asym., sigA)": (
-        "the Pearson correlation between global asymmetry and sectoral TFP shock volatility"
-    ),
-    "corr(nonlin. ampl., sigA)": (
-        "the Pearson correlation between negative-shock nonlinear amplification and sectoral TFP shock volatility"
-    ),
-    "corr(MIT asym., sigA)": (
-        "the Pearson correlation between MIT-shock asymmetry and sectoral TFP shock volatility"
-    ),
-}
-
-CIR_TABLE_PANELS = [
-    (
-        "MIT shock vs 1st-order approx.",
-        ["Nonlin. ampl. (-)", "Nonlin. ampl. (+)", "MIT asym."],
-    ),
-    (
-        "Global solution vs MIT shock",
-        ["Opt. atten. (-)", "Opt. atten. (+)", "Global asym."],
-    ),
-    (
-        "Sectoral correlations",
-        [
-            "corr(opt. atten., U_M)",
-            "corr(global asym., U_M)",
-            "corr(nonlin. ampl., U_M)",
-            "corr(opt. atten., U_I)",
-            "corr(global asym., U_I)",
-            "corr(nonlin. ampl., U_I)",
-            "corr(opt. atten., sigA)",
-            "corr(global asym., sigA)",
-            "corr(nonlin. ampl., sigA)",
-            "corr(MIT asym., sigA)",
-        ],
-    ),
-]
-
-CIR_SECTOR_VALUE_MEASURES = [
-    "Nonlin. ampl. (-)",
-    "Nonlin. ampl. (+)",
-    "MIT asym.",
-    "Opt. atten. (-)",
-    "Opt. atten. (+)",
-    "Global asym.",
-]
-
-CIR_FIGURE_SPECS = [
+# Mean CIR rows: levels first, then correlations grouped by covariate.
+_CIR_MEAN_MEASURES = [
     {
-        "title": "Nonlinear amplification, negative shocks",
-        "measures": ["Nonlin. ampl. (-)"],
+        "key": "Nonlin. ampl. (-)",
+        "label": "Nonlin. ampl. (-)",
+        "formula": r"$100\times(GIR_{MIT}(-)/GIR_{1or}(-)-1)$",
+        "note": "100 times the negative-shock MIT CIR divided by the negative-shock first-order CIR, minus 100",
+        "panel": "A. MIT shock vs 1st-order approx.",
+        "figure_title": "Nonlinear amplification, negative shocks",
         "filename_stem": "cir_nonlin_ampl_negative",
         "ylabel": "Percent difference",
         "scale": 100.0,
     },
     {
-        "title": "Nonlinear amplification, positive shocks",
-        "measures": ["Nonlin. ampl. (+)"],
+        "key": "Nonlin. ampl. (+)",
+        "label": "Nonlin. ampl. (+)",
+        "formula": r"$100\times(GIR_{MIT}(+)/GIR_{1or}(+)-1)$",
+        "note": "100 times the positive-shock MIT CIR divided by the positive-shock first-order CIR, minus 100",
+        "panel": "A. MIT shock vs 1st-order approx.",
+        "figure_title": "Nonlinear amplification, positive shocks",
         "filename_stem": "cir_nonlin_ampl_positive",
         "ylabel": "Percent difference",
         "scale": 100.0,
     },
     {
-        "title": "MIT shock asymmetry, negative vs positive shocks",
-        "measures": ["MIT asym."],
+        "key": "MIT asym.",
+        "label": "MIT asym.",
+        "formula": r"$100\times(1-|GIR_{MIT}(-)|/|GIR_{MIT}(+)|)$",
+        "note": (
+            "100 times one minus the absolute negative-shock MIT CIR divided by the absolute positive-shock MIT CIR"
+        ),
+        "panel": "A. MIT shock vs 1st-order approx.",
+        "figure_title": "MIT shock asymmetry, negative vs positive shocks",
         "filename_stem": "cir_mit_asymmetry",
         "ylabel": "Percent difference",
         "scale": 100.0,
     },
     {
-        "title": "Optimal attenuation, negative shocks",
-        "measures": ["Opt. atten. (-)"],
+        "key": "Opt. atten. (-)",
+        "label": "Attenuation (-)",
+        "formula": r"$100\times(1-GIR_{GS}(-)/GIR_{MIT}(-))$",
+        "note": "100 times one minus the negative-shock global-solution CIR divided by the negative-shock MIT CIR",
+        "panel": "B. Global solution vs MIT shock",
+        "figure_title": "Optimal attenuation, negative shocks",
         "filename_stem": "cir_opt_atten_negative",
         "ylabel": "Percent difference",
         "scale": 100.0,
     },
     {
-        "title": "Optimal attenuation, positive shocks",
-        "measures": ["Opt. atten. (+)"],
+        "key": "Opt. atten. (+)",
+        "label": "Attenuation (+)",
+        "formula": r"$100\times(1-GIR_{GS}(+)/GIR_{MIT}(+))$",
+        "note": "100 times one minus the positive-shock global-solution CIR divided by the positive-shock MIT CIR",
+        "panel": "B. Global solution vs MIT shock",
+        "figure_title": "Optimal attenuation, positive shocks",
         "filename_stem": "cir_opt_atten_positive",
         "ylabel": "Percent difference",
         "scale": 100.0,
     },
     {
-        "title": "Global asymmetry, negative vs positive shocks",
-        "measures": ["Global asym."],
+        "key": "Global asym.",
+        "label": "Global asym.",
+        "formula": r"$100\times(1-|GIR_{GS}(-)/GIR_{GS}(+)|)$",
+        "note": (
+            "100 times one minus the absolute negative-shock global-solution CIR divided by the absolute "
+            "positive-shock global-solution CIR"
+        ),
+        "panel": "B. Global solution vs MIT shock",
+        "figure_title": "Global asymmetry, negative vs positive shocks",
         "filename_stem": "cir_global_asymmetry",
         "ylabel": "Percent difference",
         "scale": 100.0,
     },
+]
+
+# Within each covariate panel, keep this outcome order.
+_CIR_CORR_OUTCOMES = [
     {
-        "title": "Correlation: optimal attenuation for negative shocks and U_M",
-        "measures": ["corr(opt. atten., U_M)"],
-        "filename_stem": "cir_corr_opt_atten_U_M",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "outcome_key": "Nonlin. ampl. (-)",
+        "short": "nonlin. ampl. (-)",
+        "label_stem": "Nonlin. ampl. (-)",
+        "note_stem": "negative-shock nonlinear amplification",
+        "filename_stem": "nonlin_ampl_neg",
+        "title_stem": "nonlinear amplification for negative shocks",
     },
     {
-        "title": "Correlation: global asymmetry and U_M",
-        "measures": ["corr(global asym., U_M)"],
-        "filename_stem": "cir_corr_global_asym_U_M",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "outcome_key": "Nonlin. ampl. (+)",
+        "short": "nonlin. ampl. (+)",
+        "label_stem": "Nonlin. ampl. (+)",
+        "note_stem": "positive-shock nonlinear amplification",
+        "filename_stem": "nonlin_ampl_pos",
+        "title_stem": "nonlinear amplification for positive shocks",
     },
     {
-        "title": "Correlation: nonlinear amplification for negative shocks and U_M",
-        "measures": ["corr(nonlin. ampl., U_M)"],
-        "filename_stem": "cir_corr_nonlin_ampl_U_M",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "outcome_key": "Opt. atten. (-)",
+        "short": "opt. atten. (-)",
+        "label_stem": "Attenuation (-)",
+        "note_stem": "negative-shock optimal attenuation",
+        "filename_stem": "opt_atten_neg",
+        "title_stem": "optimal attenuation for negative shocks",
     },
     {
-        "title": "Correlation: optimal attenuation for negative shocks and U_I",
-        "measures": ["corr(opt. atten., U_I)"],
-        "filename_stem": "cir_corr_opt_atten_U_I",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "outcome_key": "Opt. atten. (+)",
+        "short": "opt. atten. (+)",
+        "label_stem": "Attenuation (+)",
+        "note_stem": "positive-shock optimal attenuation",
+        "filename_stem": "opt_atten_pos",
+        "title_stem": "optimal attenuation for positive shocks",
     },
     {
-        "title": "Correlation: global asymmetry and U_I",
-        "measures": ["corr(global asym., U_I)"],
-        "filename_stem": "cir_corr_global_asym_U_I",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "outcome_key": "MIT asym.",
+        "short": "MIT asym.",
+        "label_stem": "MIT asym.",
+        "note_stem": "MIT-shock asymmetry",
+        "filename_stem": "mit_asym",
+        "title_stem": "MIT shock asymmetry",
     },
     {
-        "title": "Correlation: nonlinear amplification for negative shocks and U_I",
-        "measures": ["corr(nonlin. ampl., U_I)"],
-        "filename_stem": "cir_corr_nonlin_ampl_U_I",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "outcome_key": "Global asym.",
+        "short": "global asym.",
+        "label_stem": "Global asym.",
+        "note_stem": "global asymmetry",
+        "filename_stem": "global_asym",
+        "title_stem": "global asymmetry",
+    },
+]
+
+_CIR_CORR_COVARIATES = [
+    {
+        "key": "U_M",
+        "symbol": "U_M",
+        "latex_symbol": r"U\_M",
+        "name": "IO upstreamness",
+        "panel": "C. Correlations with IO upstreamness (U_M)",
     },
     {
-        "title": "Correlation: optimal attenuation for negative shocks and sigA",
-        "measures": ["corr(opt. atten., sigA)"],
-        "filename_stem": "cir_corr_opt_atten_sigA",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "key": "U_I",
+        "symbol": "U_I",
+        "latex_symbol": r"U\_I",
+        "name": "investment upstreamness",
+        "panel": "D. Correlations with investment upstreamness (U_I)",
     },
     {
-        "title": "Correlation: global asymmetry and sigA",
-        "measures": ["corr(global asym., sigA)"],
-        "filename_stem": "cir_corr_global_asym_sigA",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "key": "sigA",
+        "symbol": "sigA",
+        "latex_symbol": "sigA",
+        "name": "sectoral TFP shock volatility",
+        "panel": "E. Correlations with shock volatility (sigA)",
     },
     {
-        "title": "Correlation: nonlinear amplification for negative shocks and sigA",
-        "measures": ["corr(nonlin. ampl., sigA)"],
-        "filename_stem": "cir_corr_nonlin_ampl_sigA",
-        "ylabel": "Correlation",
-        "scale": 1.0,
+        "key": "rho",
+        "symbol": "rho",
+        "latex_symbol": r"$\rho$",
+        "name": "sectoral TFP persistence",
+        "panel": "F. Correlations with shock persistence (rho)",
     },
+]
+
+
+def _cir_corr_measure_key(outcome_short: str, covariate_symbol: str) -> str:
+    return f"corr({outcome_short}, {covariate_symbol})"
+
+
+def _build_cir_correlation_measures() -> list[dict[str, Any]]:
+    measures = []
+    for covariate in _CIR_CORR_COVARIATES:
+        for outcome in _CIR_CORR_OUTCOMES:
+            measure_key = _cir_corr_measure_key(outcome["short"], covariate["symbol"])
+            measures.append(
+                {
+                    "key": measure_key,
+                    "label": f"corr({outcome['label_stem']}, {covariate['symbol']})",
+                    "formula": f"corr({outcome['label_stem']}, {covariate['latex_symbol']})",
+                    "note": f"the correlation between {outcome['note_stem']} and {covariate['name']}",
+                    "panel": covariate["panel"],
+                    "figure_title": f"Correlation: {outcome['title_stem']} and {covariate['symbol']}",
+                    "filename_stem": f"cir_corr_{outcome['filename_stem']}_{covariate['key']}",
+                    "ylabel": "Correlation",
+                    "scale": 1.0,
+                    "outcome_key": outcome["outcome_key"],
+                    "covariate_key": covariate["key"],
+                }
+            )
+    return measures
+
+
+_CIR_CORR_MEASURES = _build_cir_correlation_measures()
+_CIR_ALL_MEASURES = _CIR_MEAN_MEASURES + _CIR_CORR_MEASURES
+
+CIR_MEASURE_DESCRIPTIONS = {measure["key"]: measure["formula"] for measure in _CIR_ALL_MEASURES}
+CIR_TABLE_MEASURE_LABELS = {measure["key"]: measure["label"] for measure in _CIR_ALL_MEASURES}
+CIR_MEASURE_NOTE_DESCRIPTIONS = {measure["key"]: measure["note"] for measure in _CIR_ALL_MEASURES}
+
+_CIR_PANEL_ORDER = [
+    "A. MIT shock vs 1st-order approx.",
+    "B. Global solution vs MIT shock",
+    "C. Correlations with IO upstreamness (U_M)",
+    "D. Correlations with investment upstreamness (U_I)",
+    "E. Correlations with shock volatility (sigA)",
+    "F. Correlations with shock persistence (rho)",
+]
+
+CIR_TABLE_PANELS = [
+    (panel_title, [measure["key"] for measure in _CIR_ALL_MEASURES if measure["panel"] == panel_title])
+    for panel_title in _CIR_PANEL_ORDER
+]
+
+CIR_SECTOR_VALUE_MEASURES = [measure["key"] for measure in _CIR_MEAN_MEASURES]
+
+CIR_FIGURE_SPECS = [
     {
-        "title": "Correlation: MIT shock asymmetry and sigA",
-        "measures": ["corr(MIT asym., sigA)"],
-        "filename_stem": "cir_corr_mit_asym_sigA",
-        "ylabel": "Correlation",
-        "scale": 1.0,
-    },
+        "title": measure["figure_title"],
+        "measures": [measure["key"]],
+        "filename_stem": measure["filename_stem"],
+        "ylabel": measure["ylabel"],
+        "scale": measure["scale"],
+    }
+    for measure in _CIR_ALL_MEASURES
 ]
 
 
@@ -360,6 +350,23 @@ def _sectoral_shock_volatility(value: Any, n_sectors: Optional[int] = None) -> O
         arr = arr.ravel()
     if n_sectors is not None and arr.size == n_sectors * n_sectors:
         arr = np.sqrt(np.maximum(np.diag(arr.reshape(n_sectors, n_sectors)), 0.0))
+    if n_sectors is not None and arr.size != n_sectors:
+        return None
+    return arr if np.isfinite(arr).any() else None
+
+
+def _sectoral_shock_persistence(value: Any, n_sectors: Optional[int] = None) -> Optional[np.ndarray]:
+    if value is None:
+        return None
+    try:
+        arr = np.asarray(value, dtype=float).squeeze()
+    except (TypeError, ValueError):
+        return None
+    if arr.size == 0:
+        return None
+    arr = arr.ravel()
+    if n_sectors is not None and arr.size == 1:
+        arr = np.full(n_sectors, float(arr[0]), dtype=float)
     if n_sectors is not None and arr.size != n_sectors:
         return None
     return arr if np.isfinite(arr).any() else None
@@ -796,6 +803,10 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     add_table_section(
         "2D. CIR Analysis",
         [os.path.join(ir_tables_dir, f"cir_analysis_{analysis_name}.tex")],
+    )
+    add_table_section(
+        "2D2. CIR Cross-Sector Regressions",
+        [os.path.join(ir_tables_dir, f"cir_regressions_{analysis_name}.tex")],
     )
     cir_figures_dir = os.path.join(irs_dir, "IR_CIR")
     add_figure_section(
@@ -1307,6 +1318,9 @@ def _build_upstreamness_data(model_data, model_upstreamness, *, n_sectors: Optio
     shock_volatility = _sectoral_shock_volatility(parameters.get("parSigma_A"), n_sectors)
     if shock_volatility is not None:
         result["shock_volatility"] = shock_volatility
+    shock_persistence = _sectoral_shock_persistence(parameters.get("parrho"), n_sectors)
+    if shock_persistence is not None:
+        result["shock_persistence"] = shock_persistence
 
     return result
 
@@ -1435,6 +1449,15 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
         shock_volatility = _sectoral_shock_volatility(upstreamness_data.get("shock_volatility"), n_sectors)
         if shock_volatility is None and matlab_breakdown_row.get("shock_volatility") is not None:
             shock_volatility = _sectoral_shock_volatility(matlab_breakdown_row["shock_volatility"], n_sectors)
+        shock_persistence = _sectoral_shock_persistence(upstreamness_data.get("shock_persistence"), n_sectors)
+        if shock_persistence is None and matlab_breakdown_row.get("shock_persistence") is not None:
+            shock_persistence = _sectoral_shock_persistence(matlab_breakdown_row["shock_persistence"], n_sectors)
+        covariate_vectors = {
+            "U_M": upstreamness_data.get("U_M"),
+            "U_I": upstreamness_data.get("U_I"),
+            "sigA": shock_volatility,
+            "rho": shock_persistence,
+        }
         pos_key = build_shock_key("pos", shock_size)
         neg_key = build_shock_key("neg", shock_size)
         global_pos = []
@@ -1501,35 +1524,30 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
         fo_neg_arr = np.asarray([np.nan if v is None else v for v in fo_neg], dtype=float)
 
         with np.errstate(divide="ignore", invalid="ignore"):
-            attenuation_neg = 1.0 - _signed_ratio(global_neg_arr, pf_neg_arr)
-            attenuation_pos = 1.0 - _signed_ratio(global_pos_arr, pf_pos_arr)
-            global_asymmetry = 1.0 - _magnitude_ratio(global_neg_arr, global_pos_arr)
-            matlab_amp_neg = _signed_ratio(pf_neg_arr, fo_neg_arr) - 1.0
-            matlab_amp_pos = _signed_ratio(pf_pos_arr, fo_pos_arr) - 1.0
-            matlab_pf_asymmetry = 1.0 - _magnitude_ratio(pf_neg_arr, pf_pos_arr)
+            outcome_vectors = {
+                "Opt. atten. (-)": 1.0 - _signed_ratio(global_neg_arr, pf_neg_arr),
+                "Opt. atten. (+)": 1.0 - _signed_ratio(global_pos_arr, pf_pos_arr),
+                "Global asym.": 1.0 - _magnitude_ratio(global_neg_arr, global_pos_arr),
+                "Nonlin. ampl. (-)": _signed_ratio(pf_neg_arr, fo_neg_arr) - 1.0,
+                "Nonlin. ampl. (+)": _signed_ratio(pf_pos_arr, fo_pos_arr) - 1.0,
+                "MIT asym.": 1.0 - _magnitude_ratio(pf_neg_arr, pf_pos_arr),
+            }
+
+        values = {
+            measure_key: _nanmean_or_none(outcome_vector)
+            for measure_key, outcome_vector in outcome_vectors.items()
+        }
+        for corr_measure in _CIR_CORR_MEASURES:
+            values[corr_measure["key"]] = _safe_corr(
+                outcome_vectors.get(corr_measure["outcome_key"]),
+                covariate_vectors.get(corr_measure["covariate_key"]),
+            )
 
         rows.append(
             {
                 "shock_size": shock_size,
                 "horizon_periods": sorted(set(horizon_periods)),
-                "values": {
-                    "Opt. atten. (-)": _nanmean_or_none(attenuation_neg),
-                    "Opt. atten. (+)": _nanmean_or_none(attenuation_pos),
-                    "Global asym.": _nanmean_or_none(global_asymmetry),
-                    "Nonlin. ampl. (-)": _nanmean_or_none(matlab_amp_neg),
-                    "Nonlin. ampl. (+)": _nanmean_or_none(matlab_amp_pos),
-                    "MIT asym.": _nanmean_or_none(matlab_pf_asymmetry),
-                    "corr(opt. atten., U_M)": _safe_corr(attenuation_neg, upstreamness_data.get("U_M")),
-                    "corr(global asym., U_M)": _safe_corr(global_asymmetry, upstreamness_data.get("U_M")),
-                    "corr(nonlin. ampl., U_M)": _safe_corr(matlab_amp_neg, upstreamness_data.get("U_M")),
-                    "corr(opt. atten., U_I)": _safe_corr(attenuation_neg, upstreamness_data.get("U_I")),
-                    "corr(global asym., U_I)": _safe_corr(global_asymmetry, upstreamness_data.get("U_I")),
-                    "corr(nonlin. ampl., U_I)": _safe_corr(matlab_amp_neg, upstreamness_data.get("U_I")),
-                    "corr(opt. atten., sigA)": _safe_corr(attenuation_neg, shock_volatility),
-                    "corr(global asym., sigA)": _safe_corr(global_asymmetry, shock_volatility),
-                    "corr(nonlin. ampl., sigA)": _safe_corr(matlab_amp_neg, shock_volatility),
-                    "corr(MIT asym., sigA)": _safe_corr(matlab_pf_asymmetry, shock_volatility),
-                },
+                "values": values,
             }
         )
     return rows
@@ -1769,7 +1787,10 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
             r"and $GIR_{1or}$ is the 1st-order approximation CIR; + and - denote positive and negative shocks. "
             "Opt. atten., nonlin. ampl., asym., and corr denote optimal attenuation, nonlinear amplification, "
             "asymmetry, and correlation. "
-            r"$U_M$ and $U_I$ are IO and investment upstreamness, and sigA is sectoral shock volatility. "
+            r"$U_M$ and $U_I$ are IO and investment upstreamness, sigA is sectoral shock volatility, "
+            r"and $\rho$ is sectoral TFP persistence. "
+            "Panels A--B report cross-sector means; panels C--F report cross-sector correlations for the same "
+            "outcome ordering within each covariate. "
             "Amplification, attenuation, and asymmetry rows are reported in percent, while correlation rows are "
             "unitless. Missing benchmark CIR or diagnostic fields are left blank.\n"
             "\\end{minipage}\n"
@@ -1821,7 +1842,431 @@ def _print_cir_analysis_table(rows) -> None:
     print("  " + "-" * total_width, flush=True)
 
 
-def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postprocess_context):
+_CIR_REGRESSION_COVARIATES = [
+    {"key": "U_M", "label": r"$U_M$", "source": "U_M"},
+    {"key": "sigA", "label": "sigA", "source": "shock_volatility"},
+    {"key": "rho", "label": r"$\rho$", "source": "shock_persistence"},
+]
+
+_CIR_REGRESSION_OUTCOME_PANELS = [
+    {
+        "panel_title": "Panel A. Dependent variable: Nonlinear amplification (-)",
+        "measure": "Nonlin. ampl. (-)",
+        "kind": "cir",
+    },
+    {
+        "panel_title": "Panel B. Dependent variable: Optimal attenuation (-)",
+        "measure": "Opt. atten. (-)",
+        "kind": "cir",
+    },
+]
+
+
+def _significance_stars(p_value: Optional[float]) -> str:
+    if p_value is None or not np.isfinite(p_value):
+        return ""
+    if p_value < 0.01:
+        return "***"
+    if p_value < 0.05:
+        return "**"
+    if p_value < 0.1:
+        return "*"
+    return ""
+
+
+def _ols_hc1(y_values: Any, x_columns: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Cross-section OLS with HC1 robust standard errors."""
+    from scipy import stats
+
+    try:
+        y = np.asarray(y_values, dtype=float).ravel()
+        named_cols = []
+        for name, values in x_columns.items():
+            col = np.asarray(values, dtype=float).ravel()
+            if col.shape != y.shape:
+                return None
+            named_cols.append((name, col))
+    except (TypeError, ValueError):
+        return None
+    if not named_cols:
+        return None
+
+    x_stack = np.column_stack([col for _, col in named_cols])
+    mask = np.isfinite(y) & np.all(np.isfinite(x_stack), axis=1)
+    y = y[mask]
+    x_stack = x_stack[mask]
+    n_obs, n_vars = x_stack.shape
+    if n_obs <= n_vars:
+        return None
+
+    # Drop zero-variance covariates (e.g. common rho); keep at least the constant if present.
+    keep = []
+    for idx, (name, _) in enumerate(named_cols):
+        col = x_stack[:, idx]
+        if name == "Constant" or float(np.nanstd(col)) > 1e-12:
+            keep.append(idx)
+    if not keep:
+        return None
+    names = [named_cols[idx][0] for idx in keep]
+    x_stack = x_stack[:, keep]
+    n_obs, n_vars = x_stack.shape
+    if n_obs <= n_vars:
+        return None
+
+    xtx_inv = np.linalg.pinv(x_stack.T @ x_stack)
+    beta = xtx_inv @ (x_stack.T @ y)
+    resid = y - x_stack @ beta
+    meat = x_stack.T @ ((resid * resid)[:, None] * x_stack)
+    cov = (n_obs / max(n_obs - n_vars, 1)) * (xtx_inv @ meat @ xtx_inv)
+    se = np.sqrt(np.maximum(np.diag(cov), 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t_stats = np.where(se > 0, beta / se, np.nan)
+    p_values = 2.0 * stats.t.sf(np.abs(t_stats), df=max(n_obs - n_vars, 1))
+    ss_res = float(np.sum(resid * resid))
+    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+    r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    return {
+        "n_obs": int(n_obs),
+        "r_squared": float(r_squared),
+        "coefficients": {
+            name: {
+                "coef": float(beta[idx]),
+                "se": float(se[idx]),
+                "p_value": float(p_values[idx]) if np.isfinite(p_values[idx]) else None,
+            }
+            for idx, name in enumerate(names)
+        },
+        "dropped_covariates": [named_cols[idx][0] for idx in range(len(named_cols)) if idx not in keep],
+    }
+
+
+def _ergodic_capital_share_change_pp(*, raw_simulation_data, econ_model) -> Optional[np.ndarray]:
+    if not raw_simulation_data:
+        return None
+    ergodic_data = {
+        label: sim_data
+        for label, sim_data in raw_simulation_data.items()
+        if sim_data.get("simulation_kind", "ergodic") == "ergodic"
+    }
+    if not ergodic_data:
+        ergodic_data = raw_simulation_data
+    try:
+        experiment_name = next(iter(ergodic_data))
+        sim_data = ergodic_data[experiment_name]
+        n_sectors = econ_model.n_sectors
+        variable_info = _sectoral_variable_info("K", n_sectors)
+        logdev_values = np.asarray(sim_data["simul_obs"], dtype=float)[:, :n_sectors]
+        ss_log_values = np.asarray(econ_model.state_ss, dtype=float)[:n_sectors]
+        current_levels = _sectoral_levels_from_logdev(logdev_values, ss_log_values)
+        ss_levels = np.exp(ss_log_values)
+        weights, _ = _sectoral_share_weights(econ_model.policies_ss, variable_info, n_sectors)
+        share_changes = _sectoral_share_change(current_levels, ss_levels, weights)
+    except Exception:
+        return None
+    if share_changes is None or not np.isfinite(share_changes).any():
+        return None
+    return np.asarray(share_changes, dtype=float) * 100.0
+
+
+def _sector_measure_vector(sector_rows, *, measure: str, shock_size: float, n_sectors: int) -> np.ndarray:
+    values = np.full(n_sectors, np.nan, dtype=float)
+    for row in sector_rows:
+        if row.get("measure") != measure:
+            continue
+        size = _as_float(row.get("shock_size"))
+        if size is None or abs(size - float(shock_size)) > 1e-8:
+            continue
+        sector_idx = int(row["sector_idx"])
+        if 0 <= sector_idx < n_sectors:
+            values[sector_idx] = _as_float(row.get("value_percent"))
+    return values
+
+
+def _regression_design_matrix(upstreamness_data: Dict[str, Any], n_sectors: int) -> Dict[str, np.ndarray]:
+    columns = {"Constant": np.ones(n_sectors, dtype=float)}
+    for covariate in _CIR_REGRESSION_COVARIATES:
+        source = covariate["source"]
+        if source == "shock_volatility":
+            values = _sectoral_shock_volatility(upstreamness_data.get(source), n_sectors)
+        elif source == "shock_persistence":
+            values = _sectoral_shock_persistence(upstreamness_data.get(source), n_sectors)
+        else:
+            raw = upstreamness_data.get(source)
+            values = None if raw is None else np.asarray(raw, dtype=float).ravel()
+            if values is not None and values.size != n_sectors:
+                values = None
+        if values is not None:
+            columns[covariate["key"]] = np.asarray(values, dtype=float).ravel()
+    return columns
+
+
+def _build_cir_regression_results(
+    *,
+    sector_rows,
+    shock_sizes,
+    upstreamness_data,
+    capital_share_change_pp,
+    n_sectors: int,
+) -> Dict[str, Any]:
+    x_columns = _regression_design_matrix(upstreamness_data, n_sectors)
+    panels = []
+    for panel_spec in _CIR_REGRESSION_OUTCOME_PANELS:
+        columns = []
+        for shock_size in shock_sizes:
+            y = _sector_measure_vector(
+                sector_rows,
+                measure=panel_spec["measure"],
+                shock_size=shock_size,
+                n_sectors=n_sectors,
+            )
+            fit = _ols_hc1(y, x_columns)
+            columns.append({"shock_size": float(shock_size), "fit": fit})
+        panels.append({**panel_spec, "columns": columns})
+
+    capital_fit = None
+    if capital_share_change_pp is not None:
+        capital_fit = _ols_hc1(capital_share_change_pp, x_columns)
+    panels.append(
+        {
+            "panel_title": "Panel C. Dependent variable: Ergodic capital share change",
+            "measure": "Capital share change",
+            "kind": "capital",
+            "columns": [{"shock_size": None, "fit": capital_fit}],
+        }
+    )
+    return {
+        "shock_sizes": [float(size) for size in shock_sizes],
+        "covariate_keys": [cov["key"] for cov in _CIR_REGRESSION_COVARIATES if cov["key"] in x_columns],
+        "panels": panels,
+    }
+
+
+def _format_regression_coef(fit: Optional[Dict[str, Any]], covariate_key: str) -> str:
+    if not fit:
+        return ""
+    entry = fit.get("coefficients", {}).get(covariate_key)
+    if not entry:
+        return ""
+    stars = _significance_stars(entry.get("p_value"))
+    coef = f"{entry['coef']:.3f}"
+    return coef if not stars else f"{coef}$^{{{stars}}}$"
+
+
+def _format_regression_se(fit: Optional[Dict[str, Any]], covariate_key: str) -> str:
+    if not fit:
+        return ""
+    entry = fit.get("coefficients", {}).get(covariate_key)
+    if not entry:
+        return ""
+    return f"({entry['se']:.3f})"
+
+
+def _write_cir_regression_table(*, results: Dict[str, Any], save_path: str, analysis_name: str) -> None:
+    shock_sizes = results.get("shock_sizes") or []
+    panels = results.get("panels") or []
+    if not panels:
+        return
+
+    cir_panels = [panel for panel in panels if panel.get("kind") == "cir"]
+    capital_panels = [panel for panel in panels if panel.get("kind") == "capital"]
+    used_covariates = {
+        name
+        for panel in panels
+        for column in panel.get("columns", [])
+        for name in ((column.get("fit") or {}).get("coefficients") or {})
+    }
+    display_rows = [
+        (cov["key"], cov["label"])
+        for cov in _CIR_REGRESSION_COVARIATES
+        if cov["key"] in used_covariates
+    ]
+    if "Constant" in used_covariates:
+        display_rows.append(("Constant", "Constant"))
+
+    with open(save_path, "w") as table_file:
+        table_file.write("\\begin{table}[htbp]\n\\centering\n")
+        table_file.write(
+            "\\caption{Cross-sector regressions of CIR measures and capital reallocation}\n"
+        )
+        table_file.write(f"\\label{{tab:cir_regressions_{_latex_label_token(analysis_name)}}}\n")
+        table_file.write("\\scriptsize\n\\setlength{\\tabcolsep}{3pt}\n")
+
+        if cir_panels and shock_sizes:
+            n_shock = len(shock_sizes)
+            table_file.write("\\resizebox{\\textwidth}{!}{%\n")
+            table_file.write("\\begin{tabular}{l" + "c" * n_shock + "}\n\\hline\n")
+            table_file.write(
+                " & \\multicolumn{"
+                + str(n_shock)
+                + "}{c}{Shock size} \\\\\n\\cline{2-"
+                + str(n_shock + 1)
+                + "}\n"
+            )
+            table_file.write(
+                " & " + " & ".join(f"{size:g}\\%" for size in shock_sizes) + " \\\\\n\\hline\n"
+            )
+            for panel in cir_panels:
+                table_file.write(
+                    f"\\multicolumn{{{n_shock + 1}}}{{l}}{{\\textit{{{_latex_escape(panel['panel_title'])}}}}} \\\\\n"
+                )
+                fits = [column.get("fit") for column in panel.get("columns", [])]
+                for cov_key, cov_label in display_rows:
+                    coef_cells = [_format_regression_coef(fit, cov_key) for fit in fits]
+                    se_cells = [_format_regression_se(fit, cov_key) for fit in fits]
+                    table_file.write(cov_label + " & " + " & ".join(coef_cells) + " \\\\\n")
+                    table_file.write(" & " + " & ".join(se_cells) + " \\\\\n")
+                n_cells = ["" if fit is None else str(fit["n_obs"]) for fit in fits]
+                r2_cells = [
+                    "" if fit is None or not np.isfinite(fit["r_squared"]) else f"{fit['r_squared']:.3f}"
+                    for fit in fits
+                ]
+                table_file.write("Observations & " + " & ".join(n_cells) + " \\\\\n")
+                table_file.write("$R^{2}$ & " + " & ".join(r2_cells) + " \\\\\n")
+                table_file.write("\\hline\n")
+            table_file.write("\\end{tabular}\n}\n")
+
+        if capital_panels:
+            table_file.write("\\vspace{0.6em}\n")
+            table_file.write("\\begin{tabular}{lc}\n\\hline\n")
+            for panel in capital_panels:
+                table_file.write(
+                    f"\\multicolumn{{2}}{{l}}{{\\textit{{{_latex_escape(panel['panel_title'])}}}}} \\\\\n"
+                )
+                fit = panel.get("columns", [{}])[0].get("fit")
+                for cov_key, cov_label in display_rows:
+                    table_file.write(
+                        cov_label
+                        + " & "
+                        + _format_regression_coef(fit, cov_key)
+                        + " \\\\\n"
+                    )
+                    table_file.write(" & " + _format_regression_se(fit, cov_key) + " \\\\\n")
+                n_cell = "" if fit is None else str(fit["n_obs"])
+                r2_cell = (
+                    ""
+                    if fit is None or not np.isfinite(fit["r_squared"])
+                    else f"{fit['r_squared']:.3f}"
+                )
+                table_file.write(f"Observations & {n_cell} \\\\\n")
+                table_file.write(f"$R^{{2}}$ & {r2_cell} \\\\\n")
+            table_file.write("\\hline\n\\end{tabular}\n")
+
+        dropped = sorted(
+            {
+                name
+                for panel in panels
+                for column in panel.get("columns", [])
+                for name in ((column.get("fit") or {}).get("dropped_covariates") or [])
+                if name != "Constant"
+            }
+        )
+        dropped_note = ""
+        if dropped:
+            dropped_note = (
+                " Covariates without cross-sector variation are omitted ("
+                + ", ".join(dropped)
+                + ")."
+            )
+        table_file.write(
+            "\\begin{minipage}{0.92\\textwidth}\n\\footnotesize\n"
+            "\\textit{Notes:} Each column is a cross-sector OLS regression with HC1 robust standard errors "
+            "in parentheses. Panels A--B use sector-level CIR outcomes for negative TFP shocks at the "
+            "indicated size; the dependent variables are in percent. Panel C uses the ergodic-mean sectoral "
+            "capital composition share relative to the deterministic steady state, also in percent, and does "
+            "not vary with shock size. Covariates are IO upstreamness $U_M$, sectoral TFP shock volatility "
+            r"sigA, and sectoral TFP persistence $\rho$. "
+            "Stars denote $p<0.10$, $p<0.05$, and $p<0.01$."
+            + dropped_note
+            + "\n\\end{minipage}\n"
+        )
+        table_file.write("\\end{table}\n")
+
+
+def _print_cir_regression_table(results: Dict[str, Any]) -> None:
+    print("\n  CIR / CAPITAL CROSS-SECTOR REGRESSIONS", flush=True)
+    for panel in results.get("panels", []):
+        print(f"  {panel['panel_title']}", flush=True)
+        for column in panel.get("columns", []):
+            fit = column.get("fit")
+            size = column.get("shock_size")
+            size_label = "capital" if size is None else f"{size:g}%"
+            if not fit:
+                print(f"    {size_label}: unavailable", flush=True)
+                continue
+            coef_bits = []
+            for cov in _CIR_REGRESSION_COVARIATES + [{"key": "Constant"}]:
+                entry = fit["coefficients"].get(cov["key"])
+                if not entry:
+                    continue
+                coef_bits.append(
+                    f"{cov['key']}={entry['coef']:.3f}{_significance_stars(entry.get('p_value'))}"
+                )
+            print(
+                f"    {size_label}: "
+                + ", ".join(coef_bits)
+                + f"; N={fit['n_obs']}, R2={fit['r_squared']:.3f}",
+                flush=True,
+            )
+
+
+def _write_cir_regression_csv(*, results: Dict[str, Any], save_path: str, analysis_name: str) -> None:
+    fieldnames = [
+        "analysis_name",
+        "panel",
+        "measure",
+        "kind",
+        "shock_size",
+        "covariate",
+        "coefficient",
+        "std_error",
+        "p_value",
+        "n_obs",
+        "r_squared",
+    ]
+    rows = []
+    for panel in results.get("panels", []):
+        for column in panel.get("columns", []):
+            fit = column.get("fit")
+            if not fit:
+                continue
+            for cov_key, entry in fit["coefficients"].items():
+                rows.append(
+                    {
+                        "analysis_name": analysis_name,
+                        "panel": panel.get("panel_title", ""),
+                        "measure": panel.get("measure", ""),
+                        "kind": panel.get("kind", ""),
+                        "shock_size": "" if column.get("shock_size") is None else column["shock_size"],
+                        "covariate": cov_key,
+                        "coefficient": entry["coef"],
+                        "std_error": entry["se"],
+                        "p_value": entry.get("p_value"),
+                        "n_obs": fit["n_obs"],
+                        "r_squared": fit["r_squared"],
+                    }
+                )
+    if not rows:
+        return
+    with open(save_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            csv_row = dict(row)
+            for key in ("coefficient", "std_error", "p_value", "r_squared"):
+                csv_row[key] = _format_csv_float(row.get(key))
+            writer.writerow(csv_row)
+    print(f"  Saved CIR regression artifact: {os.path.basename(save_path)}", flush=True)
+
+
+def render_cir_analysis_outputs(
+    *,
+    config,
+    irs_dir,
+    econ_model,
+    gir_data,
+    postprocess_context,
+    raw_simulation_data=None,
+):
     ir_render_context = postprocess_context.get("ir_render_context") if postprocess_context else None
     if not ir_render_context:
         return
@@ -1857,6 +2302,32 @@ def render_cir_analysis_outputs(*, config, irs_dir, econ_model, gir_data, postpr
         rows=sector_rows,
         save_path=os.path.join(ir_tables_dir, f"cir_sector_values_{config['analysis_name']}.csv"),
     )
+
+    capital_share_change_pp = _ergodic_capital_share_change_pp(
+        raw_simulation_data=raw_simulation_data,
+        econ_model=econ_model,
+    )
+    regression_results = _build_cir_regression_results(
+        sector_rows=sector_rows,
+        shock_sizes=[row["shock_size"] for row in rows],
+        upstreamness_data=postprocess_context.get("upstreamness_data", {}),
+        capital_share_change_pp=capital_share_change_pp,
+        n_sectors=econ_model.n_sectors,
+    )
+    regression_path = os.path.join(ir_tables_dir, f"cir_regressions_{config['analysis_name']}.tex")
+    _write_cir_regression_table(
+        results=regression_results,
+        save_path=regression_path,
+        analysis_name=config["analysis_name"],
+    )
+    _write_cir_regression_csv(
+        results=regression_results,
+        save_path=os.path.join(ir_tables_dir, f"cir_regressions_{config['analysis_name']}.csv"),
+        analysis_name=config["analysis_name"],
+    )
+    _print_cir_regression_table(regression_results)
+    print(f"  Saved CIR regression table: {os.path.basename(regression_path)}", flush=True)
+
     cir_figures_dir = os.path.join(irs_dir, "IR_CIR")
     print("  CIR shock-size profile figures", flush=True)
     plot_cir_shock_size_profiles(
@@ -2029,6 +2500,10 @@ def prepare_postprocess_analysis(
         econ_model.upstreamness(),
         n_sectors=n_sectors,
     )
+    if upstreamness_data.get("shock_persistence") is None:
+        shock_persistence = _sectoral_shock_persistence(getattr(econ_model, "rho", None), n_sectors)
+        if shock_persistence is not None:
+            upstreamness_data["shock_persistence"] = shock_persistence
     matlab_irf_sector_breakdown_rows = _extract_matlab_irf_breakdown_rows(model_data)
     ergodic_experiment_labels = [
         label for label, sim_data in raw_simulation_data.items() if sim_data.get("simulation_kind", "ergodic") == "ergodic"

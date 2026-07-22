@@ -800,6 +800,7 @@ def main():
             econ_model=econ_model,
             gir_data=display_gir_data,
             postprocess_context=display_postprocess_context,
+            raw_simulation_data=raw_simulation_data,
         )
 
     # ═══════════════════════════════════════════════════════════════════════════

@@ -518,7 +518,7 @@ def _build_sectoral_distribution_note(
     upstreamness_text = ""
     if include_upstreamness:
         upstreamness_text = (
-            " The textbox reports Pearson correlations across sectors with IO and investment upstreamness; "
+            " The textbox reports correlations across sectors with IO and investment upstreamness; "
             "one, two, and three stars denote p-values below 0.10, 0.05, and 0.01."
         )
 
@@ -551,7 +551,7 @@ def _build_sectoral_composition_note(
     upstreamness_text = ""
     if include_upstreamness:
         upstreamness_text = (
-            " The textbox reports Pearson correlations across sectors with IO and investment upstreamness; "
+            " The textbox reports correlations across sectors with IO and investment upstreamness; "
             "one, two, and three stars denote p-values below 0.10, 0.05, and 0.01."
         )
 
@@ -2125,13 +2125,13 @@ def plot_sectoral_variable_stochss(
         corr_I, p_I = stats.pearsonr(values, U_I)
         sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
         sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-        corr_text = f"Pearson ρ: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
+        corr_text = f"corr: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
             corr_text,
             transform=ax.transAxes,
-            fontsize=SMALL_SIZE + 1,
+            fontsize=LARGE_SIZE + 4,
             verticalalignment="top",
             horizontalalignment="right",
             linespacing=1.2,
@@ -2243,13 +2243,13 @@ def plot_sectoral_variable_composition_stochss(
         corr_I, p_I = stats.pearsonr(values, U_I)
         sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
         sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-        corr_text = f"Pearson ρ: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
+        corr_text = f"corr: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
             corr_text,
             transform=ax.transAxes,
-            fontsize=SMALL_SIZE + 1,
+            fontsize=LARGE_SIZE + 4,
             verticalalignment="top",
             horizontalalignment="right",
             linespacing=1.2,
@@ -2394,13 +2394,13 @@ def plot_sectoral_variable_ergodic(
         corr_I, p_I = stats.pearsonr(values, U_I)
         sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
         sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-        corr_text = f"Pearson ρ: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
+        corr_text = f"corr: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
             corr_text,
             transform=ax.transAxes,
-            fontsize=SMALL_SIZE + 1,
+            fontsize=LARGE_SIZE + 4,
             verticalalignment="top",
             horizontalalignment="right",
             linespacing=1.2,
@@ -2508,13 +2508,13 @@ def plot_sectoral_variable_composition_ergodic(
         corr_I, p_I = stats.pearsonr(values, U_I)
         sig_M = "***" if p_M < 0.01 else "**" if p_M < 0.05 else "*" if p_M < 0.1 else ""
         sig_I = "***" if p_I < 0.01 else "**" if p_I < 0.05 else "*" if p_I < 0.1 else ""
-        corr_text = f"Pearson ρ: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
+        corr_text = f"corr: U_M={corr_M:.2f}{sig_M}, U_I={corr_I:.2f}{sig_I}"
         ax.text(
             0.98,
             0.98,
             corr_text,
             transform=ax.transAxes,
-            fontsize=SMALL_SIZE + 1,
+            fontsize=LARGE_SIZE + 4,
             verticalalignment="top",
             horizontalalignment="right",
             linespacing=1.2,

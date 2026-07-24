@@ -24,7 +24,7 @@ colors = sns.color_palette(palette, 10)
 SMALL_SIZE = 12
 MEDIUM_SIZE = 14
 LARGE_SIZE = 16
-HISTOGRAM_LEGEND_SIZE = 40
+HISTOGRAM_LEGEND_SIZE = 20
 DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
 
 # Set font family and sizes globally

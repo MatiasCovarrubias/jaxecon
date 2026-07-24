@@ -1844,6 +1844,7 @@ def _print_cir_analysis_table(rows) -> None:
 
 _CIR_REGRESSION_COVARIATES = [
     {"key": "U_M", "label": r"$U_M$", "source": "U_M"},
+    {"key": "U_I", "label": r"$U_I$", "source": "U_I"},
     {"key": "sigA", "label": "sigA", "source": "shock_volatility"},
     {"key": "rho", "label": r"$\rho$", "source": "shock_persistence"},
 ]
@@ -2173,8 +2174,8 @@ def _write_cir_regression_table(*, results: Dict[str, Any], save_path: str, anal
             "in parentheses. Panels A--B use sector-level CIR outcomes for negative TFP shocks at the "
             "indicated size; the dependent variables are in percent. Panel C uses the ergodic-mean sectoral "
             "capital composition share relative to the deterministic steady state, also in percent, and does "
-            "not vary with shock size. Covariates are IO upstreamness $U_M$, sectoral TFP shock volatility "
-            r"sigA, and sectoral TFP persistence $\rho$. "
+            "not vary with shock size. Covariates are IO upstreamness $U_M$, investment upstreamness $U_I$, "
+            r"sectoral TFP shock volatility sigA, and sectoral TFP persistence $\rho$. "
             "Stars denote $p<0.10$, $p<0.05$, and $p<0.01$."
             + dropped_note
             + "\n\\end{minipage}\n"

@@ -24,6 +24,7 @@ colors = sns.color_palette(palette, 10)
 SMALL_SIZE = 12
 MEDIUM_SIZE = 14
 LARGE_SIZE = 16
+HISTOGRAM_LEGEND_SIZE = 40
 DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
 
 # Set font family and sizes globally
@@ -769,7 +770,12 @@ def plot_ergodic_histograms(
         ax.set_ylabel("Frequency", fontweight="bold", fontsize=MEDIUM_SIZE)
 
         # Legend
-        ax.legend(frameon=True, framealpha=0.9, loc="upper right", fontsize=SMALL_SIZE)
+        ax.legend(
+            frameon=True,
+            framealpha=0.9,
+            loc="upper right",
+            prop={"size": HISTOGRAM_LEGEND_SIZE, "weight": "bold"},
+        )
 
         # Grid
         ax.grid(True, alpha=0.3)

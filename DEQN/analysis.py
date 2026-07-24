@@ -175,10 +175,10 @@ config = {
     # Key configuration - Edit these first
     "model_dir": "RbcProdNet_April2026",
     "exact_cobb_douglas": False,
-    "analysis_name": "finercal",
+    "analysis_name": "baseline_newmetrics",
     # MATLAB data files (relative to model_dir)
     # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
-    "model_data_file": "ModelData_finercal.mat",
+    "model_data_file": "ModelData_newmetrics.mat",
     "model_data_irs_file": "ModelData_IRs_finercal.mat",
     "model_data_simulation_file": "ModelData_simulation_finercal.mat",  # Set to None to skip MATLAB simulation comparison
     # Aggregation convention

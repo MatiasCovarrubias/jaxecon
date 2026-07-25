@@ -190,13 +190,13 @@ config: dict[str, Any] = {
         },
     ],
     "notes_tex": (
-        "Mean and standard deviation of consumption are computed from the long nonlinear "
-        "simulation and reported as percent log differences from the deterministic steady state. "
+        "Mean and standard deviation of consumption are moments of the ergodic distribution and "
+        "are reported as percent log differences from the deterministic steady state. "
         "The welfare cost is the consumption-equivalent cost of business cycles, in percent. "
-        "Capital reallocation is the sum of the absolute sectoral capital-composition changes "
-        "shown in the ergodic-mean figure. Each sectoral change is the percent change in its "
+        "Capital reallocation is the sum of the absolute sectoral capital-share changes defined "
+        "as in Figure \\ref{fig:cap_share_ergodic}. Each sectoral change is the percent change in its "
         "ergodic-mean capital share relative to its deterministic-steady-state share. "
-        "``Homogeneous shocks'' sets sectoral shock volatilities to a common value."
+        "``Homogeneous shocks'' sets sectoral shock volatilities and persistence parameters to common values."
     ),
 }
 
@@ -512,12 +512,13 @@ def _write_latex_table(path: Path, rows: list[dict[str, Any]], config: dict[str,
 
     notes = config.get(
         "notes_tex",
-        "Mean and standard deviation of consumption are computed from the long nonlinear "
-        "simulation and reported as percent log differences from the deterministic steady state. "
+        "Mean and standard deviation of consumption are moments of the ergodic distribution and "
+        "are reported as percent log differences from the deterministic steady state. "
         "The welfare cost is the consumption-equivalent cost of business cycles, in percent. "
-        "Capital reallocation is the sum of the absolute sectoral capital-composition changes "
-        "shown in the ergodic-mean figure. Each sectoral change is the percent change in its "
-        "ergodic-mean capital share relative to its deterministic-steady-state share.",
+        "Capital reallocation is the sum of the absolute sectoral capital-share changes defined "
+        "as in Figure \\ref{fig:cap_share_ergodic}. Each sectoral change is the percent change in its "
+        "ergodic-mean capital share relative to its deterministic-steady-state share. "
+        "``Homogeneous shocks'' sets sectoral shock volatilities and persistence parameters to common values.",
     )
     lines.extend(
         [

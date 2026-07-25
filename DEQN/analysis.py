@@ -983,6 +983,8 @@ def main():
             econ_model=econ_model,
             raw_simulation_data=display_raw_simulation_data,
             postprocess_context=display_postprocess_context,
+            stochastic_ss_states=display_stochastic_ss_states,
+            stochastic_ss_policies=display_stochastic_ss_policies,
         )
 
     # Model-specific plots

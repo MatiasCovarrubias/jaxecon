@@ -476,7 +476,7 @@ def _build_ir_note(
     elif len(described_benchmarks) == 1:
         benchmark_text = f"The dashed line reports the {described_benchmarks[0]}."
     else:
-        benchmark_text = f"The dashed lines report {_join_text_list(described_benchmarks)}."
+        benchmark_text = f"The dashed and dash-dotted lines report {_join_text_list(described_benchmarks)}."
     if not is_aggregate and "_client" in variable_to_plot:
         benchmark_text += (
             " Client-sector variables report the petroleum client sector linked to the shocked sector in the "
@@ -538,28 +538,41 @@ def _build_sectoral_composition_note(
     weight_label: str,
     include_upstreamness: bool,
 ) -> str:
+    del include_upstreamness
+    share_label = {
+        "Capital": "capital",
+        "Labor": "labor",
+        "Value Added": "value-added",
+        "Intermediates": "intermediate-input",
+        "Gross Output": "gross-output",
+    }.get(variable_title, variable_title.lower())
+    aggregate_label = {
+        "Capital": "capital",
+        "Labor": "labor",
+        "Value Added": "value added",
+        "Intermediates": "intermediate inputs",
+        "Gross Output": "gross output",
+    }.get(variable_title, variable_title.lower())
     if source_kind == "stochss":
         source_text = (
-            "The stochastic steady state is the common endpoint of zero-shock paths initialized with draws from "
-            "the ergodic distribution."
+            "The stochastic steady state (SSS) is the steady state reached under the global policy functions when "
+            "the planner anticipates risk but current and future innovations are zero. "
+            f"The figure reports changes in sectoral {share_label} shares at the SSS relative to the deterministic "
+            "steady state (DSS)."
         )
+        current_share_label = f"SSS {share_label}"
     else:
         source_text = (
-            "The figure reports the ergodic mean from the long nonlinear simulation, using the time average of "
-            "sectoral quantities in levels."
+            f"The figure reports changes in ergodic-mean sectoral {share_label} shares relative to the deterministic "
+            "steady state (DSS)."
         )
-
-    upstreamness_text = ""
-    if include_upstreamness:
-        upstreamness_text = (
-            " The textbox reports correlations across sectors with IO and investment upstreamness; "
-            "one, two, and three stars denote p-values below 0.10, 0.05, and 0.01."
-        )
+        current_share_label = f"ergodic-mean {share_label}"
 
     return (
-        f"{source_text} Each bar is 100 times the ratio of the sector's {variable_title.lower()} share to its "
-        f"deterministic-steady-state share, minus 100. Shares use {weight_label}. Positive values indicate a larger "
-        f"share of aggregate {variable_title.lower()}.{upstreamness_text}"
+        f"{source_text} Each bar is 100 times the difference between the ratio of the sector's "
+        f"{current_share_label} share to its DSS share and one. Shares are computed using {weight_label}. "
+        f"Positive values indicate that a sector accounts for a larger share of aggregate {aggregate_label} "
+        "than at the DSS."
     )
 
 

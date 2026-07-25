@@ -11,7 +11,6 @@ from DEQN.econ_models.RbcProdNet_April2026.aggregation import (
     compute_ergodic_prices_from_simulation,
     compute_model_moments_with_consistent_aggregation,
     create_theoretical_descriptive_stats,
-    get_loglinear_distribution_params,
     process_simulation_with_consistent_aggregation,
     reaggregate_aggregates,
 )
@@ -25,6 +24,7 @@ from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import (
     _sectoral_share_change,
     _sectoral_share_weights,
     _sectoral_variable_info,
+    _single_experiment_name,
     _write_figure_note_tex,
 )
 from DEQN.econ_models.RbcProdNet_April2026.plots import (
@@ -437,7 +437,6 @@ DEFAULT_AGGREGATE_IR_LABELS = [
 
 AGGREGATE_HISTOGRAM_BENCHMARKS = [
     ("Log-Linear", "1st Order Approximation"),
-    ("MITShocks", "MIT shocks"),
 ]
 
 CORE_SECTORAL_IR_LABELS = [
@@ -702,16 +701,15 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     def _build_grouped_aggregate_ir_note(*, sector_label, variable_names):
         displayed_labels = [_aggregate_note_label(variable_name) for variable_name in variable_names]
         shock_text = (
-            f"The panels show responses to the largest analyzed negative TFP shock in {sector_label} "
-            f"({largest_ir_shock} percent). "
+            f"The panels show aggregate {join_labels(displayed_labels)} responses to a negative "
+            f"{format_percent_list([largest_ir_shock])} percent TFP shock in {sector_label}. "
         )
         return (
             f"{shock_text}"
-            f"The panels report aggregate {join_labels(displayed_labels)}. "
             f"{deqn_ir_note}"
             f"The horizontal axis reports periods 0 through {ir_max_periods - 1} after impact. "
             "The vertical axis reports 100 times the log deviation from the deterministic steady state. "
-            "Dashed lines report comparison IRs from the "
+            "Dashed and dash-dotted lines report comparison IRs under the "
             f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
             "steady state."
         )
@@ -740,7 +738,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                         f"{deqn_ir_note}"
                         f"The horizontal axis reports periods 0 through {ir_max_periods - 1} after impact. "
                         "The vertical axis reports 100 times the log deviation from the deterministic steady state. "
-                        "Dashed lines report comparison IRs from the "
+                        "Dashed and dash-dotted lines report comparison IRs under the "
                         f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
                         "steady state."
                     ),
@@ -1032,7 +1030,8 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
 
             if subfigures and largest_sectoral_shock is not None:
                 shock_text = (
-                    f"The panels plot responses to a negative {largest_sectoral_shock} percent TFP shock in "
+                    f"The panels show responses to a negative "
+                    f"{format_percent_list([largest_sectoral_shock])} percent TFP shock in "
                     f"{sector_label}."
                 )
                 vertical_axis_text = (
@@ -1049,7 +1048,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
                             f"{deqn_ir_note}"
                             f"The horizontal axis reports periods 0 through {ir_max_periods - 1} after impact. "
                             f"{vertical_axis_text}"
-                            "Dashed lines report comparison IRs from the "
+                            "Dashed and dash-dotted lines report comparison IRs under the "
                             f"{sectoral_benchmark_labels}; these comparison IRs are anchored at the deterministic "
                             "steady state."
                         ),
@@ -2539,13 +2538,6 @@ def prepare_postprocess_analysis(
         reference_experiment_label=reference_experiment_label,
         matlab_common_shock_schedule=matlab_common_shock_schedule,
     )
-    if isinstance(theo_stats, dict):
-        loglinear_hist_params = get_loglinear_distribution_params(theo_stats)
-        if loglinear_hist_params:
-            aggregate_histogram_context["theoretical_distribution_params"] = {
-                "1st Order Approximation": loglinear_hist_params
-            }
-
     return {
         "analysis_variables_data": analysis_variables_data,
         "calibration_method_stats": calibration_method_stats,
@@ -2638,89 +2630,14 @@ def _build_aggregate_histogram_context(
     return context
 
 
-def _format_histogram_count(value):
-    if value is None:
-        return None
-    return f"{int(value):,}"
-
-
-def _common_shock_window_text(histogram_context):
-    burn_in = _format_histogram_count(histogram_context.get("common_shock_burn_in"))
-    active_periods = _format_histogram_count(histogram_context.get("common_shock_active_periods"))
-    burn_out = _format_histogram_count(histogram_context.get("common_shock_burn_out"))
-    total_periods = _format_histogram_count(histogram_context.get("common_shock_total_periods"))
-    if burn_in and active_periods and burn_out and total_periods:
-        return (
-            "the common-shock window "
-            f"({burn_in} burn-in, {active_periods} active, {burn_out} burn-out; {total_periods} total)"
-        )
-    return "the common-shock window"
-
-
 def _build_aggregate_histogram_note(histogram_context):
-    comparison_labels = histogram_context.get("benchmark_labels", [])
-    if not comparison_labels:
-        comparison_text = "the comparison methods"
-    elif len(comparison_labels) == 1:
-        comparison_text = comparison_labels[0]
-    elif len(comparison_labels) == 2:
-        comparison_text = f"{comparison_labels[0]} and {comparison_labels[1]}"
-    else:
-        comparison_text = ", ".join(comparison_labels[:-1]) + f", and {comparison_labels[-1]}"
-    base_text = (
-        "The horizontal axis spans -7.5 to 7.5 percent log deviations from the deterministic steady state in "
-        "20 bins of width 0.75 percentage points. For simulated series, the vertical axis is the fraction of "
-        "observations in each bin, and lines connect those frequencies at the bin centers. "
-        f"The solid colored line reports the global solution; dashed gray lines report {comparison_text}. "
-    )
-    if histogram_context.get("theoretical_distribution_params"):
-        comparison_source_text = (
-            "The 1st Order Approximation curve is the Gaussian density implied by its theoretical mean and "
-            "standard deviation, multiplied by the 0.75-point bin width. "
-            f"The MIT-shock distribution uses {_common_shock_window_text(histogram_context)}."
-        )
-    else:
-        comparison_source_text = (
-            f"The comparison distributions use {_common_shock_window_text(histogram_context)}."
-        )
-    if histogram_context.get("mode") == "long_ergodic":
-        periods_per_episode = _format_histogram_count(histogram_context.get("periods_per_episode"))
-        burn_in = _format_histogram_count(histogram_context.get("burn_in"))
-        kept_periods_per_seed = _format_histogram_count(histogram_context.get("kept_periods_per_seed"))
-        active_observations = _format_histogram_count(histogram_context.get("active_observations"))
-        n_simul_seeds = _format_histogram_count(histogram_context.get("n_simul_seeds"))
-        reference_prefix = ""
-        if histogram_context.get("uses_auxiliary_ergodic_reference"):
-            reference_prefix = (
-                "The global-solution distribution uses the auxiliary long ergodic sample that supplies the "
-                "fixed-price aggregation weights. "
-            )
-        if periods_per_episode and burn_in and kept_periods_per_seed and active_observations and n_simul_seeds:
-            nonlinear_text = (
-                "The global-solution histogram uses the long simulation, pooling "
-                f"{n_simul_seeds} simulated paths with different seeds. Each path has {periods_per_episode} periods; "
-                f"after dropping {burn_in} burn-in periods, {kept_periods_per_seed} observations per seed are retained "
-                f"({active_observations} total). "
-            )
-        else:
-            nonlinear_text = (
-                "The global-solution histogram uses the retained long simulation sample. "
-            )
-        return (
-            base_text
-            + reference_prefix
-            + nonlinear_text
-            + comparison_source_text
-        )
+    del histogram_context
     return (
-        base_text
-        + "The global-solution histogram is computed from the common-shock sample, with "
-        f"{histogram_context.get('burn_in', 0)} burn-in periods, "
-        f"{histogram_context.get('active_periods', 0)} active-shock periods, and "
-        f"{histogram_context.get('burn_out', 0)} burn-out periods "
-        f"({histogram_context.get('total_periods', 0)} total). "
-        f"The reported nonlinear sample contains {histogram_context.get('active_periods', 0)} observations. "
-        + comparison_source_text
+        "The panels show the ergodic distributions of aggregate variables as percent log deviations from the "
+        "deterministic steady state (DSS). The global solution and first-order approximation are simulated using "
+        "the same structure and identical shock realizations. The solid blue lines report the global solution, "
+        "the dashed black lines report the first-order approximation, and the vertical dashed lines mark the DSS. "
+        "The vertical axis reports the fraction of observations in each bin."
     )
 
 
@@ -2837,7 +2754,6 @@ def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_varia
     if not reference_experiment_label:
         return
     histogram_context = postprocess_context.get("aggregate_histogram_context") or {}
-    histogram_theoretical_params = histogram_context.get("theoretical_distribution_params")
 
     selected_methods = [("__reference__", "Global solution"), *AGGREGATE_HISTOGRAM_BENCHMARKS]
     ordered_histogram_data = {}
@@ -2849,9 +2765,6 @@ def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_varia
         else:
             series = analysis_variables_data.get(source_label)
         if series is None:
-            if histogram_theoretical_params and display_label in histogram_theoretical_params:
-                ordered_histogram_data[display_label] = {}
-                continue
             missing_methods.append(reference_experiment_label if source_label == "__reference__" else source_label)
             continue
         filtered_series = {
@@ -2871,12 +2784,12 @@ def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_varia
             flush=True,
         )
 
-    print("  Aggregate histograms: Global solution vs 1st-order and MIT benchmarks", flush=True)
+    print("  Aggregate histograms: Global solution vs 1st-order approximation", flush=True)
     plot_ergodic_histograms(
         analysis_variables_data=ordered_histogram_data,
         save_dir=simulation_dir,
         analysis_name=config["analysis_name"],
-        theo_dist_params=histogram_theoretical_params,
+        theo_dist_params=None,
         benchmark_order=[display_label for _, display_label in AGGREGATE_HISTOGRAM_BENCHMARKS],
     )
     if histogram_context.get("note_anchor_path"):
@@ -2974,7 +2887,98 @@ def render_sectoral_ir_outputs(*, config, irs_dir, econ_model, gir_data, postpro
             )
 
 
-def render_ergodic_sectoral_outputs(*, config, simulation_dir, econ_model, raw_simulation_data, postprocess_context):
+def _write_sectoral_allocation_comparison(
+    *,
+    config,
+    simulation_dir,
+    econ_model,
+    ergodic_raw_simulation_data,
+    stochastic_ss_states,
+    stochastic_ss_policies,
+):
+    if not ergodic_raw_simulation_data or not stochastic_ss_policies:
+        return
+
+    ergodic_name = _single_experiment_name(
+        ergodic_raw_simulation_data,
+        "_write_sectoral_allocation_comparison",
+    )
+    stochss_name = _single_experiment_name(
+        stochastic_ss_policies,
+        "_write_sectoral_allocation_comparison",
+    )
+    rows = []
+    n_sectors = econ_model.n_sectors
+
+    for variable_name in ["K", "L", "Y", "M", "Q"]:
+        variable_info = _sectoral_variable_info(variable_name, n_sectors)
+        idx_start = variable_info["index_start"]
+        idx_end = idx_start + n_sectors
+
+        if variable_info["source"] == "state":
+            ergodic_logdev = ergodic_raw_simulation_data[ergodic_name]["simul_obs"][:, idx_start:idx_end]
+            stochss_logdev = stochastic_ss_states[stochss_name][idx_start:idx_end]
+            ss_log_values = econ_model.state_ss[idx_start:idx_end]
+        else:
+            ergodic_logdev = ergodic_raw_simulation_data[ergodic_name]["simul_policies"][:, idx_start:idx_end]
+            stochss_logdev = stochastic_ss_policies[stochss_name][idx_start:idx_end]
+            ss_log_values = econ_model.policies_ss[idx_start:idx_end]
+
+        ss_levels = np.exp(np.asarray(ss_log_values, dtype=float))
+        weights, _ = _sectoral_share_weights(econ_model.policies_ss, variable_info, n_sectors)
+        ergodic_changes = _sectoral_share_change(
+            _sectoral_levels_from_logdev(ergodic_logdev, ss_log_values),
+            ss_levels,
+            weights,
+        )
+        stochss_changes = _sectoral_share_change(
+            _sectoral_levels_from_logdev(stochss_logdev, ss_log_values),
+            ss_levels,
+            weights,
+        )
+        correlation = _safe_corr(ergodic_changes, stochss_changes)
+
+        for sector_idx, sector_label in enumerate(econ_model.labels):
+            rows.append(
+                {
+                    "variable": variable_name,
+                    "sector_index": sector_idx,
+                    "sector": sector_label,
+                    "ergodic_excess_allocation_percent": ergodic_changes[sector_idx] * 100.0,
+                    "stochastic_ss_excess_allocation_percent": stochss_changes[sector_idx] * 100.0,
+                    "cross_sector_correlation": correlation,
+                }
+            )
+
+    output_path = os.path.join(
+        simulation_dir,
+        f"sectoral_allocation_comparison_{config['analysis_name']}.csv",
+    )
+    fieldnames = [
+        "variable",
+        "sector_index",
+        "sector",
+        "ergodic_excess_allocation_percent",
+        "stochastic_ss_excess_allocation_percent",
+        "cross_sector_correlation",
+    ]
+    with open(output_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Saved: {output_path}", flush=True)
+
+
+def render_ergodic_sectoral_outputs(
+    *,
+    config,
+    simulation_dir,
+    econ_model,
+    raw_simulation_data,
+    postprocess_context,
+    stochastic_ss_states=None,
+    stochastic_ss_policies=None,
+):
     if not raw_simulation_data:
         return
 
@@ -2986,6 +2990,15 @@ def render_ergodic_sectoral_outputs(*, config, simulation_dir, econ_model, raw_s
     }
     if not ergodic_raw_simulation_data:
         return
+
+    _write_sectoral_allocation_comparison(
+        config=config,
+        simulation_dir=simulation_dir,
+        econ_model=econ_model,
+        ergodic_raw_simulation_data=ergodic_raw_simulation_data,
+        stochastic_ss_states=stochastic_ss_states or {},
+        stochastic_ss_policies=stochastic_ss_policies or {},
+    )
 
     for var_name in ["K", "L", "Y", "M", "Q"]:
         try:
@@ -3086,6 +3099,8 @@ def postprocess_analysis(
         econ_model=econ_model,
         raw_simulation_data=raw_simulation_data,
         postprocess_context=postprocess_context,
+        stochastic_ss_states=stochastic_ss_states,
+        stochastic_ss_policies=stochastic_ss_policies,
     )
 
     return prepared

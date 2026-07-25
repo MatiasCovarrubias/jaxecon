@@ -90,9 +90,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- Generated notes use publication-facing IR, distribution, and sectoral-share definitions.
 - CIR regressions include both IO and investment upstreamness.
 - Aggregate histogram legends are enlarged for the two-column paper layout.
-- CIR regressions table: shock-size columns for ampl/atten, separate capital panel.
 
 ## Current defaults and compatibility
 

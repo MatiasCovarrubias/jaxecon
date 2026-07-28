@@ -603,13 +603,32 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
     sectoral_irs_dir = os.path.join(irs_dir, "IR_sectoral")
     ir_tables_dir = os.path.join(irs_dir, "IR_tables")
     sections = []
+    run_impulse_responses = bool(config.get("run_impulse_responses", True))
+    run_stochastic_ss = bool(config.get("run_stochastic_ss", True))
+    run_welfare = bool(config.get("run_welfare", True))
+
+    def section_is_enabled(title):
+        title_lower = title.lower()
+        if ("impulse response" in title_lower or "cir " in title_lower) and not run_impulse_responses:
+            return False
+        if "stochastic steady state" in title_lower and not run_stochastic_ss:
+            return False
+        if "ergodic mean sectoral" in title_lower and not run_stochastic_ss:
+            return False
+        if "welfare" in title_lower and not run_welfare:
+            return False
+        return True
 
     def add_table_section(title, tex_paths):
+        if not section_is_enabled(title):
+            return
         existing_paths = [path for path in tex_paths if os.path.exists(path)]
         if existing_paths:
             sections.append({"title": title, "tables": existing_paths, "figures": []})
 
     def add_figure_section(title, figure_paths):
+        if not section_is_enabled(title):
+            return
         existing_figures = []
         for figure in figure_paths:
             figure_path = figure["path"] if isinstance(figure, dict) else figure
@@ -619,6 +638,8 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
             sections.append({"title": title, "tables": [], "figures": existing_figures})
 
     def add_grouped_figure_section(title, figure_groups):
+        if not section_is_enabled(title):
+            return
         existing_groups = []
         for figure_group in figure_groups:
             subfigures = existing_subfigures(figure_group.get("subfigures", []))
@@ -636,6 +657,8 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
             sections.append({"title": title, "tables": [], "figures": existing_groups})
 
     def add_nested_grouped_figure_section(title, figure_specs):
+        if not section_is_enabled(title):
+            return
         existing_figures = []
         for figure_spec in figure_specs:
             subfigure_groups = existing_subfigure_groups(figure_spec.get("subfigure_groups", []))
@@ -672,7 +695,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
         "Agg. Capital": "capital",
         "Intratemporal Utility": "intratemporal utility",
     }
-    ir_shock_sizes = list(config.get("ir_shock_sizes", []))
+    ir_shock_sizes = list(config.get("ir_shock_sizes") or [])
     largest_ir_shock = max(ir_shock_sizes) if ir_shock_sizes else None
     ir_max_periods = int(config.get("ir_max_periods", 80))
     aggregate_benchmark_labels = describe_ir_benchmark_methods(config)
@@ -914,49 +937,42 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
         ],
     )
 
-    histogram_variable_groups = [
-        (
-            "Expenditure Aggregates",
-            [
-                ("Agg. Consumption", "Consumption"),
-                ("Agg. Investment", "Investment"),
-                ("Agg. GDP", "GDP"),
-            ],
-        ),
-        (
-            "Inputs and Utility",
-            [
-                ("Agg. Capital", "Capital"),
-                ("Agg. Labor", "Labor"),
-                ("Intratemporal Utility", "Utility"),
-            ],
-        ),
+    histogram_variables = [
+        ("Agg. Consumption", "Consumption", "fig:histogram_c_agg"),
+        ("Agg. GDP", "GDP", "fig:histogram_y_agg"),
+        ("Agg. Capital", "Capital", "fig:histogram_k_agg"),
+        ("Agg. Investment", "Investment", "fig:histogram_i_agg"),
     ]
 
     def _histogram_filename(variable_name):
         return variable_name.replace(" ", "_").replace(".", "").replace("/", "_")
 
     histogram_group_note_path = os.path.join(simulation_dir, f"aggregate_histograms_{analysis_name}_note.tex")
-    aggregate_histogram_figures = []
-    for _, variable_specs in histogram_variable_groups:
-        for variable_name, variable_caption in variable_specs:
-            aggregate_histogram_figures.append(
-                build_simple_figure_spec(
-                    analysis_named_path(
-                        simulation_dir,
-                        f"Histogram_{_histogram_filename(variable_name)}",
-                        analysis_name,
-                        ".png",
-                    ),
-                    f"Aggregate {caption_label(variable_caption)} distribution: Global Solution, 1st Order Approximation, and MIT shocks.",
-                    note_text=(
-                        f"The figure compares the distribution of aggregate {caption_label(variable_caption)} across "
-                        "the global solution, the 1st-order approximation, and MIT shocks."
-                    ),
-                    note_path=histogram_group_note_path,
-                )
-            )
-    add_figure_section("6. Aggregate Distribution Histograms", aggregate_histogram_figures)
+    aggregate_histogram_subfigures = [
+        {
+            "path": analysis_named_path(
+                simulation_dir,
+                f"Histogram_{_histogram_filename(variable_name)}",
+                analysis_name,
+                ".png",
+            ),
+            "caption": variable_caption,
+            "label": variable_label,
+        }
+        for variable_name, variable_caption, variable_label in histogram_variables
+    ]
+    add_grouped_figure_section(
+        "6. Aggregate Distribution Histograms",
+        [
+            {
+                "caption": "Ergodic distributions",
+                "label": "fig:histograms_selected",
+                "subfigures": aggregate_histogram_subfigures,
+                "subfigure_width": "0.44\\textwidth",
+                "note_path": histogram_group_note_path,
+            }
+        ],
+    )
 
     add_table_section(
         "7. Welfare Cost of Business Cycles",
@@ -1240,9 +1256,6 @@ def _resolve_reference_experiment_label(config, raw_simulation_data) -> str:
 
 
 def discover_ir_shock_sizes(*, config, model_dir, irs_path):
-    if not irs_path:
-        return None
-
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
     matlab_ir_data = load_matlab_irs(
         matlab_ir_dir=matlab_ir_dir,
@@ -2519,17 +2532,19 @@ def prepare_postprocess_analysis(
             ergodic_experiment_labels = [base_reference_label]
     elif not ergodic_experiment_labels and reference_experiment_label in raw_simulation_data:
         ergodic_experiment_labels = [reference_experiment_label]
-    ir_render_context = _build_ir_render_context(
-        config=config,
-        model_dir=model_dir,
-        irs_path=irs_path,
-        policies_ss=policies_ss,
-        state_ss=state_ss,
-        P_ergodic=P_ergodic,
-        Pk_ergodic=Pk_ergodic,
-        econ_model=econ_model,
-        n_sectors=n_sectors,
-    )
+    ir_render_context = None
+    if bool(config.get("run_impulse_responses", True)):
+        ir_render_context = _build_ir_render_context(
+            config=config,
+            model_dir=model_dir,
+            irs_path=irs_path,
+            policies_ss=policies_ss,
+            state_ss=state_ss,
+            P_ergodic=P_ergodic,
+            Pk_ergodic=Pk_ergodic,
+            econ_model=econ_model,
+            n_sectors=n_sectors,
+        )
     aggregate_histogram_context = _build_aggregate_histogram_context(
         config=config,
         simulation_dir=simulation_dir,
@@ -2542,7 +2557,7 @@ def prepare_postprocess_analysis(
         "analysis_variables_data": analysis_variables_data,
         "calibration_method_stats": calibration_method_stats,
         "theoretical_stats": theoretical_stats,
-        "matlab_ir_data": ir_render_context["matlab_ir_data"],
+        "matlab_ir_data": ir_render_context["matlab_ir_data"] if ir_render_context else None,
         "upstreamness_data": upstreamness_data,
         "stochastic_ss_data": stochastic_ss_data,
         "postprocess_context": {
@@ -2631,14 +2646,78 @@ def _build_aggregate_histogram_context(
 
 
 def _build_aggregate_histogram_note(histogram_context):
-    del histogram_context
+    if histogram_context.get("mode") == "common_shock":
+        sample_description = (
+            "The global solution replays the exact shock sequence and reporting dates stored in the MATLAB "
+            "simulation file, so its observations are aligned with the benchmark simulation. "
+        )
+    else:
+        sample_description = (
+            "The global solution uses the retained observations from the long random-shock DEQN simulation; "
+            "benchmark curves use the corresponding simulation samples loaded from MATLAB. "
+        )
     return (
         "The panels show the ergodic distributions of aggregate variables as percent log deviations from the "
-        "deterministic steady state (DSS). The global solution and first-order approximation are simulated using "
-        "the same structure and identical shock realizations. The solid blue lines report the global solution, "
+        f"deterministic steady state (DSS). {sample_description}"
+        "The solid blue lines report the global solution, "
         "the dashed black lines report the first-order approximation, and the vertical dashed lines mark the DSS. "
         "The vertical axis reports the fraction of observations in each bin."
     )
+
+
+def _write_aggregate_histogram_figure_tex(*, simulation_dir, analysis_name, note_path):
+    figure_specs = [
+        ("Agg_Consumption", "Consumption", "fig:histogram_c_agg"),
+        ("Agg_GDP", "GDP", "fig:histogram_y_agg"),
+        ("Agg_Capital", "Capital", "fig:histogram_k_agg"),
+        ("Agg_Investment", "Investment", "fig:histogram_i_agg"),
+    ]
+    missing_files = [
+        f"Histogram_{filename_variable}_{analysis_name}.png"
+        for filename_variable, _, _ in figure_specs
+        if not os.path.exists(os.path.join(simulation_dir, f"Histogram_{filename_variable}_{analysis_name}.png"))
+    ]
+    if missing_files:
+        print(
+            "  Aggregate histogram LaTeX figure skipped; missing panels: " + ", ".join(missing_files),
+            flush=True,
+        )
+        return None
+
+    lines = [
+        r"\begin{figure}[H]",
+        r"\caption{Ergodic distributions}",
+        r"\label{fig:histograms_selected}",
+        r"\centering",
+    ]
+    for index, (filename_variable, caption, label) in enumerate(figure_specs):
+        filename = f"Histogram_{filename_variable}_{analysis_name}.png"
+        lines.extend(
+            [
+                r"\begin{subfigure}[b]{0.44\linewidth}",
+                r"    \centering",
+                rf"    \includegraphics[width=\linewidth]{{simulation/{filename}}}",
+                rf"    \caption{{{caption}}}",
+                rf"    \label{{{label}}}",
+                r"\end{subfigure}",
+            ]
+        )
+        if index in {0, 2}:
+            lines.append(r"\hfill")
+        elif index == 1:
+            lines.append("")
+    lines.extend(
+        [
+            rf"\input{{simulation/{os.path.basename(note_path)}}}",
+            r"\end{figure}",
+        ]
+    )
+
+    output_path = os.path.join(simulation_dir, f"aggregate_histograms_{analysis_name}.tex")
+    with open(output_path, "w", encoding="utf-8") as output_file:
+        output_file.write("\n".join(lines) + "\n")
+    print(f"Saved: {output_path}")
+    return output_path
 
 
 def render_aggregate_ir_outputs(*, config, irs_dir, econ_model, gir_data, postprocess_context):
@@ -2791,11 +2870,17 @@ def render_aggregate_histogram_outputs(*, config, simulation_dir, analysis_varia
         analysis_name=config["analysis_name"],
         theo_dist_params=None,
         benchmark_order=[display_label for _, display_label in AGGREGATE_HISTOGRAM_BENCHMARKS],
+        legend_variables={"Agg. Consumption"},
     )
     if histogram_context.get("note_anchor_path"):
-        _write_figure_note_tex(
+        note_path = _write_figure_note_tex(
             histogram_context["note_anchor_path"],
             _build_aggregate_histogram_note(histogram_context),
+        )
+        _write_aggregate_histogram_figure_tex(
+            simulation_dir=simulation_dir,
+            analysis_name=config["analysis_name"],
+            note_path=note_path,
         )
 
 

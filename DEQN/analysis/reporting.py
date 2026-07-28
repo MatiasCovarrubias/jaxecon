@@ -269,6 +269,7 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                 subfigure_count=len(subfigures),
                 is_first_figure=is_first_figure,
             )
+            width = figure_path.get("subfigure_width", width)
             for idx, subfigure in enumerate(subfigures):
                 lines.extend(
                     [
@@ -276,15 +277,19 @@ def _write_analysis_results_latex(*, config_dict, analysis_dir, simulation_dir, 
                         r"\centering",
                         rf"\includegraphics[width=\linewidth,height={height_name},keepaspectratio]{{{latex_relative_path(subfigure['path'], analysis_dir)}}}",
                         rf"\caption{{{escape_latex(subfigure.get('caption', ''))}}}",
-                        r"\end{subfigure}",
                     ]
                 )
+                if subfigure.get("label"):
+                    lines.append(rf"\label{{{subfigure['label']}}}")
+                lines.append(r"\end{subfigure}")
                 if len(subfigures) > 1 and idx % 2 == 0 and idx != len(subfigures) - 1:
                     lines.append(column_separator or r"\hfill")
                 elif idx != len(subfigures) - 1:
                     lines.append(r"\par\medskip")
 
             lines.append(rf"\caption{{{escape_latex(figure_path.get('caption', ''))}}}")
+            if figure_path.get("label"):
+                lines.append(rf"\label{{{figure_path['label']}}}")
             note_path = figure_path.get("note_path")
             note_text = figure_path.get("note_text")
             if note_path and os.path.exists(note_path):

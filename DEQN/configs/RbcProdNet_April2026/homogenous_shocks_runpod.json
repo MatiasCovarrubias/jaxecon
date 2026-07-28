@@ -46,7 +46,7 @@
     "model_data_file": "ModelData_homogenous_shocks.mat",
     "model_data_irs_file": "ModelData_IRs_homogenous_shocks.mat",
     "model_data_simulation_file": "ModelData_simulation_homogenous_shocks.mat",
-    "experiment_to_analyze": {
+    "experiments_to_analyze": {
       "homogenous_shocks": "homogenous_shocks"
     },
     "ir_experiment_to_analyze": "homogenous_shocks_IR",

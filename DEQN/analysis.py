@@ -20,6 +20,97 @@ Usage:
 import os
 import sys
 import importlib
+import math
+
+# ============================================================================
+# CONFIGURATION — edit this block before running in Colab
+# ============================================================================
+
+config = {
+    # Core selection
+    "model_dir": "RbcProdNet_April2026",
+    "exact_cobb_douglas": False,
+    "analysis_name": "baseline_newmetrics",
+    # A checkpoint name string is the simplest form. Use {"label": "checkpoint"}
+    # only when the displayed label should differ from the checkpoint directory.
+    "experiments_to_analyze": "finercal_July",
+    # Optional checkpoint used only for DEQN IR/GIR trajectories.
+    # Leave as "" or None to use the normal experiment checkpoint.
+    "ir_experiment_to_analyze": "finercal_July_IR",
+    # Expensive analysis modules. The nonlinear simulation and descriptive
+    # outputs still run because they supply the shared analysis sample.
+    "run_stochastic_ss": True,
+    "run_impulse_responses": True,
+    "run_welfare": True,
+    # MATLAB data files (relative to model_dir).
+    # Set to None to use the standard filename or skip an optional comparison.
+    "model_data_file": "ModelData_newmetrics.mat",
+    "model_data_irs_file": "ModelData_IRs_finercal.mat",
+    "model_data_simulation_file": "ModelData_simulation_finercal.mat",
+    # Aggregation convention
+    # False: use aggregate endogenous policy variables directly.
+    # True: re-aggregate with fixed prices from a long ergodic DEQN sample.
+    "ergodic_price_aggregation": False,
+    # Main nonlinear simulation sample
+    # False: replay the exact shock sequence saved by MATLAB, so DEQN and the
+    # benchmark methods are compared over the same realizations and dates.
+    # True: simulate a long DEQN sample from fresh random shock draws.
+    "long_simulation": True,
+    "init_range": 6,
+    "periods_per_epis": 64000,
+    "burn_in_periods": 3200,
+    "simul_vol_scale": 1,
+    "simul_seed": 0,
+    "n_simul_seeds": 16,
+    # Welfare
+    "welfare_n_trajects": 16000,
+    "welfare_traject_length": 200,
+    "welfare_seed": 0,
+    # Stochastic steady state
+    "n_draws": 2000,
+    "time_to_converge": 500,
+    "seed": 0,
+    # Impulse responses
+    "gir_n_draws": 1000,
+    "gir_trajectory_length": 100,
+    "gir_seed": 0,
+    # False: responses start from the stochastic steady state.
+    # True: generalized responses average over simulated starting points.
+    # A stochastic-steady-state IR automatically enables run_stochastic_ss.
+    "use_gir": True,
+    # Shock sizes are discovered from model_data_irs_file. If that file is
+    # unavailable, provide percentages explicitly, for example [5, 10, 20].
+    "ir_shock_sizes": None,
+    "show_ir_plots": False,
+    "ir_benchmark_methods": ["PerfectForesight", "FirstOrder"],
+    # Sector indices are zero-based. A sector-j IR shocks its TFP state.
+    "ir_sectors_to_plot": list(range(37)),
+    "sectoral_ir_variables_to_plot": [
+        "Cj",
+        "Pj",
+        "Ioutj",
+        "Moutj",
+        "Lj",
+        "Ij",
+        "Mj",
+        "Yj",
+        "Qj",
+        "Kj",
+        "Cj_client",
+        "Pj_client",
+        "Ioutj_client",
+        "Moutj_client",
+        "Lj_client",
+        "Ij_client",
+        "Mj_client",
+        "Yj_client",
+        "Qj_client",
+        "Pmj_client",
+        "gammaij_client",
+    ],
+    "ir_max_periods": 20,
+    "double_precision": True,
+}
 
 # ============================================================================
 # ENVIRONMENT DETECTION AND SETUP
@@ -165,105 +256,6 @@ from DEQN.training.checkpoints import load_experiment_data  # noqa: E402
 
 jax_config.update("jax_debug_nans", True)
 
-
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-# Configuration dictionary
-config = {
-    # Key configuration - Edit these first
-    "model_dir": "RbcProdNet_April2026",
-    "exact_cobb_douglas": False,
-    "analysis_name": "baseline_newmetrics",
-    # MATLAB data files (relative to model_dir)
-    # Set to None to use defaults: "ModelData.mat", "ModelData_IRs.mat", "ModelData_simulation.mat"
-    "model_data_file": "ModelData_newmetrics.mat",
-    "model_data_irs_file": "ModelData_IRs_finercal.mat",
-    "model_data_simulation_file": "ModelData_simulation_finercal.mat",  # Set to None to skip MATLAB simulation comparison
-    # Aggregation convention
-    # False (default): use aggregate endogenous policy variables directly from the model / Dynare objects.
-    # True: re-aggregate using fixed ergodic-mean prices computed from a long ergodic reference run.
-    #       When long_simulation=False, Python also runs that ergodic reference alongside the
-    #       primary common-shock sample so the fixed-price workflow stays anchored to ergodic data.
-    "ergodic_price_aggregation": False,
-    # Single experiment to analyze. The legacy experiments_to_analyze key is still accepted below.
-    "experiment_to_analyze": None,
-    # Optional experiment checkpoint used only for DEQN IR/GIR trajectories.
-    # Leave as "" or None to use the normal experiment checkpoint.
-    "ir_experiment_to_analyze": "finercal_July_IR",
-    # Legacy single-entry format
-    "experiments_to_analyze": {
-        # "benchmark": "GO_shocks_newWDS_v2",
-        "benchmark": "finercal_July",
-    },
-    # Simulation configuration
-    # False: use the common-shock simulation as the main nonlinear reporting sample.
-    # True (current default): use the long ergodic simulation as the main nonlinear reporting sample.
-    "long_simulation": True,
-    "init_range": 6,
-    "periods_per_epis": 64000,
-    "burn_in_periods": 3200,
-    "simul_vol_scale": 1,
-    "simul_seed": 0,
-    "n_simul_seeds": 16,
-    # Welfare configuration
-    "welfare_n_trajects": 16000,
-    "welfare_traject_length": 200,
-    "welfare_seed": 0,
-    # Stochastic steady state configuration
-    "n_draws": 2000,
-    "time_to_converge": 500,
-    "seed": 0,
-    # GIR configuration
-    "gir_n_draws": 1000,
-    "gir_trajectory_length": 100,
-    "shock_size": 0.2,
-    "gir_seed": 0,
-    # IR selection:
-    # - False: stochastic-steady-state impulse response
-    # - True: generalized impulse response averaged over ergodic draws
-    "use_gir": True,
-    # Save IR figures but do not display every figure inline by default.
-    "show_ir_plots": False,
-    # MATLAB benchmark overlays used in IR figures.
-    # Override with any subset/order of ["PerfectForesight", "FirstOrder", "SecondOrder"].
-    "ir_benchmark_methods": ["PerfectForesight", "FirstOrder"],
-    # Combined IR analysis configuration
-    # Sectors to analyze: specify sector indices (0-based).
-    # GIRs shock the TFP/productivity state (state index = n_sectors + sector_idx).
-    # For example, sector 0 TFP is at state index 37 (for n_sectors=37).
-    "ir_sectors_to_plot": list(range(37)),
-    "sectoral_ir_variables_to_plot": [
-        "Cj",
-        "Pj",
-        "Ioutj",
-        "Moutj",
-        "Lj",
-        "Ij",
-        "Mj",
-        "Yj",
-        "Qj",
-        "Kj",
-        "Cj_client",
-        "Pj_client",
-        "Ioutj_client",
-        "Moutj_client",
-        "Lj_client",
-        "Ij_client",
-        "Mj_client",
-        "Yj_client",
-        "Qj_client",
-        "Pmj_client",
-        "gammaij_client",
-    ],
-    "ir_max_periods": 20,
-    # Shock sizes are discovered from the MATLAB IR objects.
-    # Aggregate tables use all supported aggregates and all available simulations by default.
-    # JAX configuration
-    "double_precision": True,
-}
-
 # ============================================================================
 # DYNAMIC IMPORTS (based on model_dir from config)
 # ============================================================================
@@ -287,28 +279,56 @@ except ModuleNotFoundError as exc:
 MODEL_SPECIFIC_PLOTS = getattr(plots_module, "MODEL_SPECIFIC_PLOTS", []) if plots_module is not None else []
 
 
-def _resolve_single_experiment(experiments_to_analyze):
-    if len(experiments_to_analyze) != 1:
-        raise ValueError(
-            "DEQN.analysis now runs exactly one experiment. "
-            "Run each experiment separately with a distinct analysis_name, then use DEQN.comparative_analysis "
-            "to compare saved single-experiment analyses."
-        )
-    return next(iter(experiments_to_analyze))
-
-
 def _resolve_experiment_config(config_dict):
-    single_experiment = config_dict.get("experiment_to_analyze")
-    legacy_experiments = config_dict.get("experiments_to_analyze")
-    if single_experiment is not None:
-        if not isinstance(single_experiment, dict) or len(single_experiment) != 1:
-            raise ValueError("config['experiment_to_analyze'] must be a single-entry dictionary.")
-        if legacy_experiments and legacy_experiments != single_experiment:
-            print("  Using config['experiment_to_analyze']; ignoring legacy config['experiments_to_analyze'].")
-        return cast("dict[str, str]", single_experiment)
-    if not isinstance(legacy_experiments, dict):
-        raise ValueError("config['experiments_to_analyze'] must be a single-entry dictionary.")
-    return cast("dict[str, str]", legacy_experiments)
+    experiments = config_dict.get("experiments_to_analyze")
+    if isinstance(experiments, str) and experiments:
+        return {experiments: experiments}
+    if not isinstance(experiments, dict) or len(experiments) != 1:
+        raise ValueError(
+            "config['experiments_to_analyze'] must be a checkpoint-name string "
+            "or a single-entry {label: checkpoint} dictionary."
+        )
+    return cast("dict[str, str]", experiments)
+
+
+def _validate_ir_shock_sizes(shock_sizes):
+    if isinstance(shock_sizes, (str, bytes)) or not isinstance(shock_sizes, (list, tuple)):
+        raise ValueError("config['ir_shock_sizes'] must be a list of percentages.")
+
+    normalized = []
+    for raw_size in shock_sizes:
+        if isinstance(raw_size, bool):
+            raise ValueError("IR shock sizes must be numeric percentages.")
+        try:
+            size = float(raw_size)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("IR shock sizes must be numeric percentages.") from exc
+        if not math.isfinite(size) or not 0 < size < 100:
+            raise ValueError(f"IR shock sizes must be finite percentages strictly between 0 and 100; got {raw_size}.")
+        if size not in normalized:
+            normalized.append(size)
+
+    if not normalized:
+        raise ValueError("config['ir_shock_sizes'] must contain at least one percentage.")
+    return [int(size) if size.is_integer() else size for size in normalized]
+
+
+def _resolve_analysis_modules(config_dict):
+    run_impulse_responses = bool(config_dict.get("run_impulse_responses", True))
+    run_stochastic_ss = bool(config_dict.get("run_stochastic_ss", True))
+    if run_impulse_responses and not bool(config_dict.get("use_gir", True)) and not run_stochastic_ss:
+        run_stochastic_ss = True
+        print("  Enabling stochastic steady state because use_gir=False requires it.")
+
+    resolved = {
+        "run_stochastic_ss": run_stochastic_ss,
+        "run_impulse_responses": run_impulse_responses,
+        "run_welfare": bool(config_dict.get("run_welfare", True)),
+    }
+    config_dict.update(resolved)
+    enabled = [name.removeprefix("run_") for name, is_enabled in resolved.items() if is_enabled]
+    print(f"  Enabled analysis modules: {', '.join(enabled) if enabled else 'none'}")
+    return resolved
 
 
 # ============================================================================
@@ -330,6 +350,7 @@ def main():
     analysis_dir = os.path.join(model_dir, "analysis", config["analysis_name"])
     simulation_dir = os.path.join(analysis_dir, "simulation")
     irs_dir = os.path.join(analysis_dir, "IRs")
+    modules = _resolve_analysis_modules(config)
 
     os.makedirs(analysis_dir, exist_ok=True)
     os.makedirs(simulation_dir, exist_ok=True)
@@ -345,13 +366,17 @@ def main():
         label="ModelData",
         required=True,
     )
-    model_data_irs_file, irs_path = _resolve_data_file(
-        model_dir,
-        config.get("model_data_irs_file"),
-        ["ModelData_IRs.mat"],
-        label="IR benchmark",
-        required=False,
-    )
+    if modules["run_impulse_responses"]:
+        model_data_irs_file, irs_path = _resolve_data_file(
+            model_dir,
+            config.get("model_data_irs_file"),
+            ["ModelData_IRs.mat"],
+            label="IR benchmark",
+            required=False,
+        )
+    else:
+        model_data_irs_file = config.get("model_data_irs_file")
+        irs_path = None
     model_data_simulation_file, simul_path = _resolve_data_file(
         model_dir,
         config.get("model_data_simulation_file"),
@@ -363,7 +388,6 @@ def main():
     config["model_data_file"] = model_data_file
     config["model_data_irs_file"] = model_data_irs_file
     config["model_data_simulation_file"] = model_data_simulation_file
-    _write_analysis_config(config, analysis_dir)
 
     print(f"  Loading ModelData from: {model_data_file}")
     model_data = sio.loadmat(model_path, simplify_cells=True)
@@ -425,9 +449,9 @@ def main():
             matlab_simulation_block, ["MITShocks", "MITShock"], expected_n_vars, precision
         )
 
-    if irs_path:
+    if modules["run_impulse_responses"] and irs_path:
         print(f"  Found IRs file: {model_data_irs_file}")
-    elif config.get("model_data_irs_file"):
+    elif modules["run_impulse_responses"] and config.get("model_data_irs_file"):
         print(f"  ⚠ IRs file not found: {config['model_data_irs_file']} (will try legacy format)")
 
     # Create economic model
@@ -441,7 +465,11 @@ def main():
     )
     shock_dimension = get_shock_dimension(econ_model, analysis_hooks)
 
-    if analysis_hooks is not None and hasattr(analysis_hooks, "discover_ir_shock_sizes"):
+    if (
+        modules["run_impulse_responses"]
+        and analysis_hooks is not None
+        and hasattr(analysis_hooks, "discover_ir_shock_sizes")
+    ):
         discovered_ir_shock_sizes = analysis_hooks.discover_ir_shock_sizes(
             config=config,
             model_dir=model_dir,
@@ -453,6 +481,15 @@ def main():
                 "  Using IR shock sizes discovered from MATLAB objects for DEQN IR computation: "
                 f"{config['ir_shock_sizes']}"
             )
+        elif not config.get("ir_shock_sizes"):
+            raise ValueError(
+                "Impulse responses are enabled, but no shock sizes were found in model_data_irs_file. "
+                "Set config['ir_shock_sizes'] to an explicit percentage list when benchmark IR objects "
+                "are unavailable."
+            )
+    if modules["run_impulse_responses"] and config.get("ir_shock_sizes") is not None:
+        config["ir_shock_sizes"] = _validate_ir_shock_sizes(config["ir_shock_sizes"])
+    _write_analysis_config(config, analysis_dir)
 
     if matlab_simulation_block is not None:
         matlab_common_shock_schedule = _extract_matlab_common_shock_schedule(
@@ -471,7 +508,7 @@ def main():
 
     # Load experiment data
     experiments_to_analyze = _resolve_experiment_config(config)
-    experiment_label = _resolve_single_experiment(experiments_to_analyze)
+    experiment_label = next(iter(experiments_to_analyze))
     experiments_data = load_experiment_data(
         experiments_to_analyze,
         save_dir,
@@ -480,7 +517,7 @@ def main():
     exp_data = experiments_data[experiment_label]
     ir_experiment_name = config.get("ir_experiment_to_analyze")
     ir_exp_data = None
-    if ir_experiment_name:
+    if modules["run_impulse_responses"] and ir_experiment_name:
         ir_experiments_data = load_experiment_data(
             {"ir": ir_experiment_name},
             save_dir,
@@ -488,7 +525,7 @@ def main():
         )
         ir_exp_data = ir_experiments_data["ir"]
         print(f"  IR trajectories will use experiment checkpoint: {ir_experiment_name}")
-    else:
+    elif modules["run_impulse_responses"]:
         print("  IR trajectories will use the normal experiment checkpoint.")
 
     nn_config_base = {
@@ -508,10 +545,20 @@ def main():
     welfare_ss = econ_model.utility_ss / (1 - econ_model.beta)
 
     # Create analysis functions
-    welfare_fn = jax.jit(get_welfare_fn(econ_model, config))
-    stoch_ss_fn = jax.jit(create_stochss_fn(econ_model, config, analysis_hooks=analysis_hooks))
-    stoch_ss_loss_fn = create_stochss_loss_fn(econ_model, mc_draws=32)
-    gir_fn = jax.jit(create_GIR_fn(econ_model, config, analysis_hooks=analysis_hooks))
+    welfare_fn = jax.jit(get_welfare_fn(econ_model, config)) if modules["run_welfare"] else None
+    stoch_ss_fn = (
+        jax.jit(create_stochss_fn(econ_model, config, analysis_hooks=analysis_hooks))
+        if modules["run_stochastic_ss"]
+        else None
+    )
+    stoch_ss_loss_fn = (
+        create_stochss_loss_fn(econ_model, mc_draws=32) if modules["run_stochastic_ss"] else None
+    )
+    gir_fn = (
+        jax.jit(create_GIR_fn(econ_model, config, analysis_hooks=analysis_hooks))
+        if modules["run_impulse_responses"]
+        else None
+    )
     nonlinear_simulation_runners = _create_nonlinear_simulation_runners(
         econ_model=econ_model,
         config_dict=config,
@@ -534,7 +581,7 @@ def main():
     # SIMULATION & WELFARE RESULTS
     # ═══════════════════════════════════════════════════════════════════════════
     print("\n" + "═" * 72)
-    print("  SIMULATION & WELFARE RESULTS")
+    print("  SIMULATION & WELFARE RESULTS" if modules["run_welfare"] else "  SIMULATION RESULTS")
     print("═" * 72)
     print(f"  Analysis: {config['analysis_name']}")
     print(f"  Model: {config['model_dir']}")
@@ -574,7 +621,7 @@ def main():
     nonlinear_method_labels.extend(experiment_results.nonlinear_method_labels)
 
     long_loglinear_welfare_cost = None
-    if bool(config.get("long_simulation", False)):
+    if modules["run_welfare"] and bool(config.get("long_simulation", False)):
         print("  Computing matched long ergodic welfare sample for FirstOrder.", flush=True)
         long_loglinear_welfare_cost = _welfare_cost_from_loglinear_long_simulation(
             method_name="FirstOrder",
@@ -598,22 +645,23 @@ def main():
         "PerfectForesight": dynare_pf_artifact["active_simul"] if model_data_simulation_file is not None else None,
         "MITShocks": dynare_mit_artifact["active_simul"] if model_data_simulation_file is not None else None,
     }
-    for method_name, simul_data in dynare_welfare_inputs.items():
-        if method_name == "FirstOrder" and long_loglinear_welfare_cost is not None:
-            continue
-        welfare_cost = _welfare_cost_from_dynare_simul(
-            simul_data,
-            method_name,
-            state_ss,
-            policies_ss,
-            econ_model,
-            welfare_fn,
-            welfare_ss,
-            config,
-        )
-        if welfare_cost is not None:
-            welfare_costs[method_name] = welfare_cost
-            print(f"    Welfare cost ({method_name}): {float(welfare_cost):.4f}%")
+    if modules["run_welfare"]:
+        for method_name, simul_data in dynare_welfare_inputs.items():
+            if method_name == "FirstOrder" and long_loglinear_welfare_cost is not None:
+                continue
+            welfare_cost = _welfare_cost_from_dynare_simul(
+                simul_data,
+                method_name,
+                state_ss,
+                policies_ss,
+                econ_model,
+                welfare_fn,
+                welfare_ss,
+                config,
+            )
+            if welfare_cost is not None:
+                welfare_costs[method_name] = welfare_cost
+                print(f"    Welfare cost ({method_name}): {float(welfare_cost):.4f}%")
 
     theoretical_stats = {}
     matlab_ir_data = None
@@ -782,10 +830,16 @@ def main():
     # ═══════════════════════════════════════════════════════════════════════════
     # AGGREGATE IMPULSE RESPONSES
     # ═══════════════════════════════════════════════════════════════════════════
-    print("\n" + "═" * 72)
-    print("  AGGREGATE IMPULSE RESPONSES")
-    print("═" * 72, flush=True)
-    if analysis_hooks is not None and hasattr(analysis_hooks, "render_aggregate_ir_outputs") and postprocess_context:
+    if modules["run_impulse_responses"]:
+        print("\n" + "═" * 72)
+        print("  AGGREGATE IMPULSE RESPONSES")
+        print("═" * 72, flush=True)
+    if (
+        modules["run_impulse_responses"]
+        and analysis_hooks is not None
+        and hasattr(analysis_hooks, "render_aggregate_ir_outputs")
+        and postprocess_context
+    ):
         analysis_hooks.render_aggregate_ir_outputs(
             config=config,
             irs_dir=irs_dir,
@@ -793,7 +847,12 @@ def main():
             gir_data=display_gir_data,
             postprocess_context=display_postprocess_context,
         )
-    if analysis_hooks is not None and hasattr(analysis_hooks, "render_cir_analysis_outputs") and postprocess_context:
+    if (
+        modules["run_impulse_responses"]
+        and analysis_hooks is not None
+        and hasattr(analysis_hooks, "render_cir_analysis_outputs")
+        and postprocess_context
+    ):
         analysis_hooks.render_cir_analysis_outputs(
             config=config,
             irs_dir=irs_dir,
@@ -806,11 +865,13 @@ def main():
     # ═══════════════════════════════════════════════════════════════════════════
     # SECTORAL VARIABLES IN STOCHASTIC SS
     # ═══════════════════════════════════════════════════════════════════════════
-    print("\n" + "═" * 72)
-    print("  SECTORAL VARIABLES IN STOCHASTIC SS")
-    print("═" * 72, flush=True)
+    if modules["run_stochastic_ss"]:
+        print("\n" + "═" * 72)
+        print("  SECTORAL VARIABLES IN STOCHASTIC SS")
+        print("═" * 72, flush=True)
     if (
-        analysis_hooks is not None
+        modules["run_stochastic_ss"]
+        and analysis_hooks is not None
         and hasattr(analysis_hooks, "render_sectoral_stochss_outputs")
         and postprocess_context
     ):
@@ -844,15 +905,16 @@ def main():
     # ═══════════════════════════════════════════════════════════════════════════
     # AGGREGATE STOCHASTIC STEADY STATE
     # ═══════════════════════════════════════════════════════════════════════════
-    print("\n" + "═" * 72)
-    print("  AGGREGATE STOCHASTIC STEADY STATE")
-    print("═" * 72, flush=True)
-    create_stochastic_ss_aggregates_table(
-        stochastic_ss_data=display_stochastic_ss_data,
-        save_path=os.path.join(analysis_dir, "stochastic_ss_aggregates_table.tex"),
-        analysis_name=config["analysis_name"],
-        methods_to_include=display_stochss_methods_to_include,
-    )
+    if modules["run_stochastic_ss"]:
+        print("\n" + "═" * 72)
+        print("  AGGREGATE STOCHASTIC STEADY STATE")
+        print("═" * 72, flush=True)
+        create_stochastic_ss_aggregates_table(
+            stochastic_ss_data=display_stochastic_ss_data,
+            save_path=os.path.join(analysis_dir, "stochastic_ss_aggregates_table.tex"),
+            analysis_name=config["analysis_name"],
+            methods_to_include=display_stochss_methods_to_include,
+        )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # DESCRIPTIVE STATISTICS
@@ -947,23 +1009,30 @@ def main():
     # ═══════════════════════════════════════════════════════════════════════════
     # WELFARE COSTS
     # ═══════════════════════════════════════════════════════════════════════════
-    print("\n" + "═" * 72)
-    print("  WELFARE COSTS")
-    print("═" * 72, flush=True)
-    create_welfare_table(
-        welfare_data=display_welfare_costs,
-        save_path=os.path.join(analysis_dir, "welfare_table.tex"),
-        analysis_name=config["analysis_name"],
-        note_context=output_note_context,
-    )
+    if modules["run_welfare"]:
+        print("\n" + "═" * 72)
+        print("  WELFARE COSTS")
+        print("═" * 72, flush=True)
+        create_welfare_table(
+            welfare_data=display_welfare_costs,
+            save_path=os.path.join(analysis_dir, "welfare_table.tex"),
+            analysis_name=config["analysis_name"],
+            note_context=output_note_context,
+        )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # SECTORAL IMPULSE RESPONSES
     # ═══════════════════════════════════════════════════════════════════════════
-    print("\n" + "═" * 72)
-    print("  SECTORAL IMPULSE RESPONSES")
-    print("═" * 72, flush=True)
-    if analysis_hooks is not None and hasattr(analysis_hooks, "render_sectoral_ir_outputs") and postprocess_context:
+    if modules["run_impulse_responses"]:
+        print("\n" + "═" * 72)
+        print("  SECTORAL IMPULSE RESPONSES")
+        print("═" * 72, flush=True)
+    if (
+        modules["run_impulse_responses"]
+        and analysis_hooks is not None
+        and hasattr(analysis_hooks, "render_sectoral_ir_outputs")
+        and postprocess_context
+    ):
         analysis_hooks.render_sectoral_ir_outputs(
             config=config,
             irs_dir=irs_dir,
@@ -973,7 +1042,8 @@ def main():
         )
 
     if (
-        analysis_hooks is not None
+        modules["run_stochastic_ss"]
+        and analysis_hooks is not None
         and hasattr(analysis_hooks, "render_ergodic_sectoral_outputs")
         and postprocess_context
     ):

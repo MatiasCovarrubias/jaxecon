@@ -207,6 +207,9 @@ def _run_experiment_analysis(
     config_dict,
     analysis_hooks,
 ):
+    run_welfare = bool(config_dict.get("run_welfare", True))
+    run_stochastic_ss = bool(config_dict.get("run_stochastic_ss", True))
+    run_impulse_responses = bool(config_dict.get("run_impulse_responses", True))
     experiment_config = exp_data["config"]
     experiment_name = exp_data["results"]["exper_name"]
 
@@ -262,15 +265,17 @@ def _run_experiment_analysis(
         stochss_source_results=None,
         stochss_analysis_context=None,
     ):
-        welfare_cost_ce = _compute_welfare_cost_from_sample(
-            econ_model=econ_model,
-            welfare_fn=welfare_fn,
-            welfare_ss=welfare_ss,
-            policies_logdev=sample_results["simul_policies"],
-            config_dict=config_dict,
-        )
-        welfare_costs[label] = welfare_cost_ce
-        print(f"    {label}: welfare cost (CE) {welfare_cost_ce:.4f}%")
+        welfare_cost_ce = None
+        if run_welfare:
+            welfare_cost_ce = _compute_welfare_cost_from_sample(
+                econ_model=econ_model,
+                welfare_fn=welfare_fn,
+                welfare_ss=welfare_ss,
+                policies_logdev=sample_results["simul_policies"],
+                config_dict=config_dict,
+            )
+            welfare_costs[label] = welfare_cost_ce
+            print(f"    {label}: welfare cost (CE) {welfare_cost_ce:.4f}%")
 
         raw_entry = dict(sample_results)
         raw_entry["analysis_context"] = analysis_context_for_reporting
@@ -278,27 +283,28 @@ def _run_experiment_analysis(
         analysis_variables[label] = sample_results["simul_analysis_variables"]
         method_labels.append(label)
 
-        if stochss_source_results is None:
-            stochss_source_results = sample_results
-        if stochss_analysis_context is None:
-            stochss_analysis_context = analysis_context_for_reporting
-        stochss_results = _compute_stochastic_ss_from_sample(
-            sample_label=label,
-            simul_obs=stochss_source_results["simul_obs"],
-            train_state=train_state,
-            stoch_ss_fn=stoch_ss_fn,
-            stoch_ss_loss_fn=stoch_ss_loss_fn,
-            analysis_context=stochss_analysis_context,
-            econ_model=econ_model,
-            analysis_hooks=analysis_hooks,
-            config_dict=config_dict,
-            required=required_stochss,
-        )
-        if stochss_results is not None:
-            stochastic_ss_states[label] = stochss_results["stochastic_ss_state"]
-            stochastic_ss_policies[label] = stochss_results["stochastic_ss_policy"]
-            stochastic_ss_data[label] = stochss_results["stochastic_ss_data"]
-            stochastic_ss_loss[label] = stochss_results["stochastic_ss_loss"]
+        if run_stochastic_ss:
+            if stochss_source_results is None:
+                stochss_source_results = sample_results
+            if stochss_analysis_context is None:
+                stochss_analysis_context = analysis_context_for_reporting
+            stochss_results = _compute_stochastic_ss_from_sample(
+                sample_label=label,
+                simul_obs=stochss_source_results["simul_obs"],
+                train_state=train_state,
+                stoch_ss_fn=stoch_ss_fn,
+                stoch_ss_loss_fn=stoch_ss_loss_fn,
+                analysis_context=stochss_analysis_context,
+                econ_model=econ_model,
+                analysis_hooks=analysis_hooks,
+                config_dict=config_dict,
+                required=required_stochss,
+            )
+            if stochss_results is not None:
+                stochastic_ss_states[label] = stochss_results["stochastic_ss_state"]
+                stochastic_ss_policies[label] = stochss_results["stochastic_ss_policy"]
+                stochastic_ss_data[label] = stochss_results["stochastic_ss_data"]
+                stochastic_ss_loss[label] = stochss_results["stochastic_ss_loss"]
         return welfare_cost_ce
 
     def store_counterfactual_welfare(
@@ -342,7 +348,7 @@ def _run_experiment_analysis(
         stochss_source_results=stochss_and_gir_source_results,
         stochss_analysis_context=stochss_and_gir_source_results["analysis_context"],
     )
-    if analysis_hooks is not None and hasattr(analysis_hooks, "compute_welfare_outputs"):
+    if run_welfare and analysis_hooks is not None and hasattr(analysis_hooks, "compute_welfare_outputs"):
         extra_welfare_costs = analysis_hooks.compute_welfare_outputs(
             experiment_label=experiment_label,
             selected_results=selected_results,
@@ -354,7 +360,7 @@ def _run_experiment_analysis(
         for label, welfare_cost_ce in (extra_welfare_costs or {}).items():
             welfare_costs[label] = welfare_cost_ce
             print(f"    {label}: welfare cost (CE) {welfare_cost_ce:.4f}%")
-    else:
+    elif run_welfare:
         store_counterfactual_welfare(
             f"{experiment_label} ({WELFARE_BOTH_RECENTERED_LABEL})",
             recenter_consumption=True,
@@ -365,12 +371,14 @@ def _run_experiment_analysis(
             fix_labor_at_dss=True,
         )
 
-    gir_results = gir_fn(
-        stochss_and_gir_source_results["simul_obs"],
-        gir_train_state,
-        stochss_and_gir_source_results["simul_policies"],
-        stochastic_ss_states[experiment_label],
-    )
+    gir_results = {}
+    if run_impulse_responses:
+        gir_results = gir_fn(
+            stochss_and_gir_source_results["simul_obs"],
+            gir_train_state,
+            stochss_and_gir_source_results["simul_policies"],
+            stochastic_ss_states.get(experiment_label),
+        )
 
     return {
         "raw_simulation_data": raw_simulation_data,

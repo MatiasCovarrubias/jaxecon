@@ -24,7 +24,9 @@ colors = sns.color_palette(palette, 10)
 SMALL_SIZE = 12
 MEDIUM_SIZE = 14
 LARGE_SIZE = 16
-HISTOGRAM_LEGEND_SIZE = 20
+HISTOGRAM_LEGEND_SIZE = 14
+HISTOGRAM_AXIS_LABEL_SIZE = 17
+HISTOGRAM_TICK_LABEL_SIZE = 14
 DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
 
 # Set font family and sizes globally
@@ -152,7 +154,7 @@ def _resolve_ir_benchmark_methods(
     return resolved_methods or list(DEFAULT_IR_BENCHMARK_METHODS)
 
 
-def _write_figure_note_tex(figure_path: str, note_text: str) -> None:
+def _write_figure_note_tex(figure_path: str, note_text: str) -> str:
     note_path = os.path.splitext(figure_path)[0] + "_note.tex"
     note_tex = (
         r"\begin{minipage}{0.92\textwidth}" + "\n"
@@ -165,6 +167,7 @@ def _write_figure_note_tex(figure_path: str, note_text: str) -> None:
     )
     with open(note_path, "w") as note_file:
         note_file.write(note_tex)
+    return note_path
 
 
 def _print_saved_file(path: str, indent: str = "    ") -> None:
@@ -631,12 +634,13 @@ def _single_experiment_name(data: Dict[str, Any], context: str) -> str:
 
 def plot_ergodic_histograms(
     analysis_variables_data: Dict[str, Any],
-    figsize: Tuple[float, float] = (15, 10),
+    figsize: Tuple[float, float] = (5.4, 3.8),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
     theo_dist_params: Optional[Dict[str, Dict[str, float]]] = None,
     benchmark_order: Optional[list[str]] = None,
+    legend_variables: Optional[set[str]] = None,
 ):
     """
     Create publication-quality histograms of ergodic distributions for analysis variables.
@@ -662,6 +666,9 @@ def plot_ergodic_histograms(
     benchmark_order : list[str], optional
         Ordered benchmark labels that should use the same benchmark styling
         convention as the aggregate IR figures.
+    legend_variables : set[str], optional
+        Variable labels whose panels should display the shared method legend.
+        If omitted, every panel displays a legend.
 
     Returns:
     --------
@@ -776,25 +783,25 @@ def plot_ergodic_histograms(
 
         # Styling
         ax.set_xlabel(
-            f"{var_label} (% deviations from deterministic SS)",
+            "Percent log deviation from DSS",
             fontweight="bold",
-            fontsize=MEDIUM_SIZE,
+            fontsize=HISTOGRAM_AXIS_LABEL_SIZE,
         )
-        ax.set_ylabel("Frequency", fontweight="bold", fontsize=MEDIUM_SIZE)
+        ax.set_ylabel("Frequency", fontweight="bold", fontsize=HISTOGRAM_AXIS_LABEL_SIZE)
 
-        # Legend
-        ax.legend(
-            frameon=True,
-            framealpha=0.9,
-            loc="upper right",
-            prop={"size": HISTOGRAM_LEGEND_SIZE, "weight": "bold"},
-        )
+        if legend_variables is None or var_label in legend_variables:
+            ax.legend(
+                frameon=True,
+                framealpha=0.9,
+                loc="upper right",
+                prop={"size": HISTOGRAM_LEGEND_SIZE, "weight": "bold"},
+            )
 
         # Grid
         ax.grid(True, alpha=0.3)
 
         # Apply consistent styling
-        ax.tick_params(axis="both", which="major", labelsize=SMALL_SIZE)
+        ax.tick_params(axis="both", which="major", labelsize=HISTOGRAM_TICK_LABEL_SIZE)
         ax.set_xlim(*bin_range)
 
         # Adjust layout

@@ -51,7 +51,7 @@
     "model_data_file": "ModelData_CDdefault.mat",
     "model_data_irs_file": "ModelData_IRs_CDdefault.mat",
     "model_data_simulation_file": "ModelData_simulation_CDdefault.mat",
-    "experiment_to_analyze": {
+    "experiments_to_analyze": {
       "CDdefault": "CDdefault"
     },
     "ir_experiment_to_analyze": "CD_IR",

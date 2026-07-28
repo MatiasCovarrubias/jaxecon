@@ -47,7 +47,7 @@
     "model_data_file": "ModelData_highsigmam.mat",
     "model_data_irs_file": "ModelData_IRs_highsigmam.mat",
     "model_data_simulation_file": "ModelData_simulation_highsigmam.mat",
-    "experiment_to_analyze": {
+    "experiments_to_analyze": {
       "highsigmam_smoke": "highsigmam_smoke"
     },
     "ir_experiment_to_analyze": "highsigmam_smoke_IR",

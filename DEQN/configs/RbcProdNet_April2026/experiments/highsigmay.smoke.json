@@ -31,7 +31,7 @@
   },
   "analysis": {
     "analysis_name": "highsigmay_smoke",
-    "experiment_to_analyze": {
+    "experiments_to_analyze": {
       "highsigmay_smoke": "highsigmay_smoke"
     },
     "ir_experiment_to_analyze": "highsigmay_smoke_IR",

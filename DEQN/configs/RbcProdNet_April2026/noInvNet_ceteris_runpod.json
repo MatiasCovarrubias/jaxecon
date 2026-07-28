@@ -46,7 +46,7 @@
     "model_data_file": "ModelData_noInvNet_ceteris.mat",
     "model_data_irs_file": "ModelData_IRs_noInvNet_ceteris.mat",
     "model_data_simulation_file": "ModelData_simulation_noInvNet_ceteris.mat",
-    "experiment_to_analyze": {
+    "experiments_to_analyze": {
       "noInvNet_ceteris": "noInvNet_ceteris"
     },
     "ir_experiment_to_analyze": "noInvNet_ceteris_IR",

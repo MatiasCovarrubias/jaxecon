@@ -90,7 +90,7 @@ def main() -> None:
             "exact_cobb_douglas": train_module.config.get("exact_cobb_douglas", False),
             "analysis_name": experiment_name,
             "model_data_file": train_module.config.get("model_data_file"),
-            "experiment_to_analyze": {experiment_name: experiment_name},
+            "experiments_to_analyze": experiment_name,
         }
 
     analysis_config_path = _write_temp_analysis_config(analysis_overrides)

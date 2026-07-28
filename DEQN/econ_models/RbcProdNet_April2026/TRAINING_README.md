@@ -488,4 +488,4 @@ When enabled, IR fine-tuning also produces:
 <model_dir>/experiments/<exper_name>_IR/
 ```
 
-Analysis consumes that experiment folder through its own `experiment_to_analyze` or legacy `experiments_to_analyze` config.
+Analysis consumes that experiment folder through its `experiments_to_analyze` config.

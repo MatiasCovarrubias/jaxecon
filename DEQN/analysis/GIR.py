@@ -401,7 +401,7 @@ def create_GIR_fn(econ_model, config, simul_policies=None, analysis_hooks=None):
         states_to_shock = get_states_to_shock(config=config, econ_model=econ_model, analysis_hooks=analysis_hooks)
 
         # Get shock sizes from config (as percentages, e.g., [5, 10, 20])
-        ir_shock_sizes = config.get("ir_shock_sizes", [5, 10, 20])
+        ir_shock_sizes = config.get("ir_shock_sizes") or [5, 10, 20]
 
         # `use_gir` is the current selector between GIR and stochastic-SS IRs.
         # Fall back to the legacy `ir_methods`/`ir_method` config only when needed.

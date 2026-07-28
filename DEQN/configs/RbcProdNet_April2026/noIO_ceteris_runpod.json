@@ -46,7 +46,7 @@
     "model_data_file": "ModelData_noIO_ceteris.mat",
     "model_data_irs_file": "ModelData_IRs_noIO_ceteris.mat",
     "model_data_simulation_file": "ModelData_simulation_noIO_ceteris.mat",
-    "experiment_to_analyze": {
+    "experiments_to_analyze": {
       "noIO_ceteris": "noIO_ceteris"
     },
     "ir_experiment_to_analyze": "noIO_ceteris_IR",

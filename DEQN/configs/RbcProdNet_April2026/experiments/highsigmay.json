@@ -12,7 +12,7 @@
     "model_data_file": "ModelData_highsigmay.mat",
     "model_data_irs_file": "ModelData_IRs_highsigmay.mat",
     "model_data_simulation_file": "ModelData_simulation_highsigmay.mat",
-    "experiment_to_analyze": {
+    "experiments_to_analyze": {
       "highsigmay": "highsigmay"
     },
     "ir_experiment_to_analyze": "highsigmay_IR"

@@ -11,8 +11,13 @@ WELFARE_OUTPUT_ORDER = [
 
 
 def build_output_display_label_map(config_dict: dict[str, Any]) -> dict[str, str]:
-    experiment_config = config_dict.get("experiment_to_analyze") or config_dict.get("experiments_to_analyze") or {}
-    experiment_labels = list(experiment_config.keys())
+    experiment_config = config_dict.get("experiments_to_analyze")
+    if isinstance(experiment_config, str):
+        experiment_labels = [experiment_config]
+    elif isinstance(experiment_config, dict):
+        experiment_labels = list(experiment_config.keys())
+    else:
+        experiment_labels = []
     if len(experiment_labels) != 1:
         return {}
 

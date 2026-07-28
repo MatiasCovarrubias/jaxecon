@@ -228,9 +228,10 @@ from DEQN.analysis.single_experiment import (  # noqa: E402
     _create_nonlinear_simulation_runners,
     _run_experiment_analysis,
 )
+from DEQN.analysis.simul_analysis import simulate_loglinear_ergodic_analysis  # noqa: E402
 from DEQN.analysis.welfare_outputs import (  # noqa: E402
+    _compute_welfare_cost_from_utilities,
     _welfare_cost_from_dynare_simul,
-    _welfare_cost_from_loglinear_long_simulation,
 )
 from DEQN.analysis.model_hooks import (  # noqa: E402
     apply_model_config_defaults,
@@ -621,20 +622,29 @@ def main():
     nonlinear_method_labels.extend(experiment_results.nonlinear_method_labels)
 
     long_loglinear_welfare_cost = None
-    if modules["run_welfare"] and bool(config.get("long_simulation", False)):
-        print("  Computing matched long ergodic welfare sample for FirstOrder.", flush=True)
-        long_loglinear_welfare_cost = _welfare_cost_from_loglinear_long_simulation(
-            method_name="FirstOrder",
+    if bool(config.get("long_simulation", False)):
+        print("  Computing matched long ergodic FirstOrder simulation.", flush=True)
+        long_firstorder_analysis, long_firstorder_utilities = simulate_loglinear_ergodic_analysis(
             state_transition_matrix=A_matrix,
             state_shock_matrix=B_matrix,
             policy_state_matrix=C_matrix,
             policy_shock_matrix=D_matrix,
             econ_model=econ_model,
-            welfare_fn=welfare_fn,
-            welfare_ss=welfare_ss,
-            config_dict=config,
+            analysis_config=config,
+            analysis_context=experiment_results.raw_simulation_data[experiment_label]["analysis_context"],
+            analysis_hooks=analysis_hooks,
+            include_utilities=modules["run_welfare"],
         )
-        if long_loglinear_welfare_cost is not None:
+        analysis_variables_data["Log-Linear"] = long_firstorder_analysis
+        if modules["run_welfare"] and long_firstorder_utilities is not None:
+            method_seed = sum(ord(char) for char in "FirstOrder")
+            long_loglinear_welfare_cost = _compute_welfare_cost_from_utilities(
+                econ_model=econ_model,
+                welfare_fn=welfare_fn,
+                welfare_ss=welfare_ss,
+                utilities=long_firstorder_utilities,
+                rng_key=jax.random.PRNGKey(config["welfare_seed"] + method_seed),
+            )
             welfare_costs["FirstOrder"] = long_loglinear_welfare_cost
             print(f"    Welfare cost (FirstOrder, long ergodic): {float(long_loglinear_welfare_cost):.4f}%")
 

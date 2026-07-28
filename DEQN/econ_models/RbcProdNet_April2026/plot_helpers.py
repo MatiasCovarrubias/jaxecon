@@ -24,9 +24,9 @@ colors = sns.color_palette(palette, 10)
 SMALL_SIZE = 12
 MEDIUM_SIZE = 14
 LARGE_SIZE = 16
-HISTOGRAM_LEGEND_SIZE = 14
-HISTOGRAM_AXIS_LABEL_SIZE = 17
-HISTOGRAM_TICK_LABEL_SIZE = 14
+HISTOGRAM_LEGEND_SIZE = 20
+HISTOGRAM_AXIS_LABEL_SIZE = 20
+HISTOGRAM_TICK_LABEL_SIZE = 16
 DEFAULT_IR_BENCHMARK_METHODS = ["PerfectForesight", "FirstOrder"]
 
 # Set font family and sizes globally
@@ -634,7 +634,7 @@ def _single_experiment_name(data: Dict[str, Any], context: str) -> str:
 
 def plot_ergodic_histograms(
     analysis_variables_data: Dict[str, Any],
-    figsize: Tuple[float, float] = (5.4, 3.8),
+    figsize: Tuple[float, float] = (15, 10),
     save_dir: Optional[str] = None,
     analysis_name: Optional[str] = None,
     display_dpi: int = 100,
@@ -783,7 +783,7 @@ def plot_ergodic_histograms(
 
         # Styling
         ax.set_xlabel(
-            "Percent log deviation from DSS",
+            f"{var_label} (% deviations from deterministic SS)",
             fontweight="bold",
             fontsize=HISTOGRAM_AXIS_LABEL_SIZE,
         )

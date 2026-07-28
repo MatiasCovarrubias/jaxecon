@@ -6,26 +6,34 @@ import jax.numpy as jnp
 import numpy as np
 
 from DEQN.analysis.shock_keys import build_shock_key
+from DEQN.analysis.welfare_outputs import (
+    WELFARE_BOTH_RECENTERED_LABEL,
+    WELFARE_L_FIXED_AT_DSS_LABEL,
+    _compute_counterfactual_welfare_cost_from_sample,
+)
 from DEQN.econ_models.RbcProdNet_April2026.aggregation import (
-    compute_model_moments_from_dynare_simulation,
     compute_ergodic_prices_from_simulation,
+    compute_model_moments_from_dynare_simulation,
     compute_model_moments_with_consistent_aggregation,
     create_theoretical_descriptive_stats,
     process_simulation_with_consistent_aggregation,
     reaggregate_aggregates,
 )
-from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import get_available_shock_sizes, load_matlab_irs
+from DEQN.econ_models.RbcProdNet_April2026.matlab_irs import (
+    get_available_shock_sizes,
+    load_matlab_irs,
+)
 from DEQN.econ_models.RbcProdNet_April2026.plot_helpers import (
-    plot_cir_shock_size_profiles,
-    plot_ergodic_histograms,
-    plot_sectoral_diagnostic_bar,
-    plot_upstreamness,
     _sectoral_levels_from_logdev,
     _sectoral_share_change,
     _sectoral_share_weights,
     _sectoral_variable_info,
     _single_experiment_name,
     _write_figure_note_tex,
+    plot_cir_shock_size_profiles,
+    plot_ergodic_histograms,
+    plot_sectoral_diagnostic_bar,
+    plot_upstreamness,
 )
 from DEQN.econ_models.RbcProdNet_April2026.plots import (
     plot_sector_ir_by_shock_size,
@@ -33,11 +41,6 @@ from DEQN.econ_models.RbcProdNet_April2026.plots import (
     plot_sectoral_variable_composition_stochss,
     plot_sectoral_variable_ergodic,
     plot_sectoral_variable_stochss,
-)
-from DEQN.analysis.welfare_outputs import (
-    WELFARE_BOTH_RECENTERED_LABEL,
-    WELFARE_L_FIXED_AT_DSS_LABEL,
-    _compute_counterfactual_welfare_cost_from_sample,
 )
 
 
@@ -420,6 +423,7 @@ def _as_dict_list(value: Any) -> list[Dict[str, Any]]:
         return [item for item in coerced if isinstance(item, dict)]
     return []
 
+
 DEFAULT_ANALYSIS_CONFIG = {
     "ergodic_price_aggregation": False,
 }
@@ -557,7 +561,9 @@ def compute_analysis_variables(econ_model, state_logdev, policy_logdev, analysis
     return econ_model.get_aggregates(policy_logdev)
 
 
-def compute_welfare_outputs(*, experiment_label, selected_results, econ_model, welfare_fn, welfare_ss, config) -> Dict[str, Any]:
+def compute_welfare_outputs(
+    *, experiment_label, selected_results, econ_model, welfare_fn, welfare_ss, config
+) -> Dict[str, Any]:
     welfare_outputs = {}
     welfare_specs = [
         (
@@ -736,6 +742,7 @@ def get_report_sections(*, config, analysis_dir, simulation_dir, irs_dir, econ_m
             f"{aggregate_benchmark_labels}; these comparison IRs are anchored at the deterministic "
             "steady state."
         )
+
     for sector_idx in config.get("ir_sectors_to_plot", []):
         if not ir_shock_sizes:
             continue
@@ -1270,7 +1277,9 @@ def discover_ir_shock_sizes(*, config, model_dir, irs_path):
     return shock_sizes
 
 
-def _build_ir_render_context(*, config, model_dir, irs_path, policies_ss, state_ss, P_ergodic, Pk_ergodic, econ_model, n_sectors):
+def _build_ir_render_context(
+    *, config, model_dir, irs_path, policies_ss, state_ss, P_ergodic, Pk_ergodic, econ_model, n_sectors
+):
     matlab_ir_dir = os.path.join(model_dir, "MATLAB", "IRs")
     matlab_ir_data = load_matlab_irs(
         matlab_ir_dir=matlab_ir_dir,
@@ -1357,8 +1366,7 @@ def _get_gir_state_name_for_sector(gir_data, sector_idx, n_sectors):
         return None
     if len(gir_data) != 1:
         raise ValueError(
-            "CIR analysis expects exactly one nonlinear experiment in gir_data; "
-            f"got {list(gir_data.keys())}."
+            "CIR analysis expects exactly one nonlinear experiment in gir_data; " f"got {list(gir_data.keys())}."
         )
     first_exp_data = next(iter(gir_data.values()), {})
     for state_name, state_data in first_exp_data.items():
@@ -1447,8 +1455,7 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
         return None
     if len(gir_data) != 1:
         raise ValueError(
-            "CIR analysis expects exactly one nonlinear experiment in gir_data; "
-            f"got {list(gir_data.keys())}."
+            "CIR analysis expects exactly one nonlinear experiment in gir_data; " f"got {list(gir_data.keys())}."
         )
     experiment_name = next(iter(gir_data))
     max_periods = int(config.get("ir_max_periods", 80))
@@ -1546,8 +1553,7 @@ def _build_cir_analysis_table(*, config, gir_data, matlab_ir_data, upstreamness_
             }
 
         values = {
-            measure_key: _nanmean_or_none(outcome_vector)
-            for measure_key, outcome_vector in outcome_vectors.items()
+            measure_key: _nanmean_or_none(outcome_vector) for measure_key, outcome_vector in outcome_vectors.items()
         }
         for corr_measure in _CIR_CORR_MEASURES:
             values[corr_measure["key"]] = _safe_corr(
@@ -1605,8 +1611,7 @@ def _build_cir_profile_note(figure_spec, *, n_sectors: int, rows) -> str:
     )
     return (
         f"The horizontal axis reports TFP shock size in percent. Each point reports {'; '.join(descriptions)} "
-        f"across {n_sectors} shocked sectors. {unit_text}"
-        + _format_cir_horizon_note(rows)
+        f"across {n_sectors} shocked sectors. {unit_text}" + _format_cir_horizon_note(rows)
     )
 
 
@@ -1774,9 +1779,7 @@ def _write_cir_analysis_table(*, rows, save_path, analysis_name, response_source
         headers = ["Metric", "Formula"] + [f"{row['shock_size']:g}%" for row in rows]
         table_file.write(" & ".join(_latex_escape(header) for header in headers) + " \\\\\n\\hline\n")
         for panel_title, measures in panel_rows:
-            table_file.write(
-                f"\\multicolumn{{{column_count}}}{{l}}{{\\textit{{{_latex_escape(panel_title)}}}}} \\\\\n"
-            )
+            table_file.write(f"\\multicolumn{{{column_count}}}{{l}}{{\\textit{{{_latex_escape(panel_title)}}}}} \\\\\n")
             for measure in measures:
                 description = CIR_MEASURE_DESCRIPTIONS.get(measure, "")
                 values = [_format_table_value(row["values"].get(measure), measure) for row in rows]
@@ -2088,19 +2091,13 @@ def _write_cir_regression_table(*, results: Dict[str, Any], save_path: str, anal
         for column in panel.get("columns", [])
         for name in ((column.get("fit") or {}).get("coefficients") or {})
     }
-    display_rows = [
-        (cov["key"], cov["label"])
-        for cov in _CIR_REGRESSION_COVARIATES
-        if cov["key"] in used_covariates
-    ]
+    display_rows = [(cov["key"], cov["label"]) for cov in _CIR_REGRESSION_COVARIATES if cov["key"] in used_covariates]
     if "Constant" in used_covariates:
         display_rows.append(("Constant", "Constant"))
 
     with open(save_path, "w") as table_file:
         table_file.write("\\begin{table}[htbp]\n\\centering\n")
-        table_file.write(
-            "\\caption{Cross-sector regressions of CIR measures and capital reallocation}\n"
-        )
+        table_file.write("\\caption{Cross-sector regressions of CIR measures and capital reallocation}\n")
         table_file.write(f"\\label{{tab:cir_regressions_{_latex_label_token(analysis_name)}}}\n")
         table_file.write("\\scriptsize\n\\setlength{\\tabcolsep}{3pt}\n")
 
@@ -2109,15 +2106,9 @@ def _write_cir_regression_table(*, results: Dict[str, Any], save_path: str, anal
             table_file.write("\\resizebox{\\textwidth}{!}{%\n")
             table_file.write("\\begin{tabular}{l" + "c" * n_shock + "}\n\\hline\n")
             table_file.write(
-                " & \\multicolumn{"
-                + str(n_shock)
-                + "}{c}{Shock size} \\\\\n\\cline{2-"
-                + str(n_shock + 1)
-                + "}\n"
+                " & \\multicolumn{" + str(n_shock) + "}{c}{Shock size} \\\\\n\\cline{2-" + str(n_shock + 1) + "}\n"
             )
-            table_file.write(
-                " & " + " & ".join(f"{size:g}\\%" for size in shock_sizes) + " \\\\\n\\hline\n"
-            )
+            table_file.write(" & " + " & ".join(f"{size:g}\\%" for size in shock_sizes) + " \\\\\n\\hline\n")
             for panel in cir_panels:
                 table_file.write(
                     f"\\multicolumn{{{n_shock + 1}}}{{l}}{{\\textit{{{_latex_escape(panel['panel_title'])}}}}} \\\\\n"
@@ -2142,24 +2133,13 @@ def _write_cir_regression_table(*, results: Dict[str, Any], save_path: str, anal
             table_file.write("\\vspace{0.6em}\n")
             table_file.write("\\begin{tabular}{lc}\n\\hline\n")
             for panel in capital_panels:
-                table_file.write(
-                    f"\\multicolumn{{2}}{{l}}{{\\textit{{{_latex_escape(panel['panel_title'])}}}}} \\\\\n"
-                )
+                table_file.write(f"\\multicolumn{{2}}{{l}}{{\\textit{{{_latex_escape(panel['panel_title'])}}}}} \\\\\n")
                 fit = panel.get("columns", [{}])[0].get("fit")
                 for cov_key, cov_label in display_rows:
-                    table_file.write(
-                        cov_label
-                        + " & "
-                        + _format_regression_coef(fit, cov_key)
-                        + " \\\\\n"
-                    )
+                    table_file.write(cov_label + " & " + _format_regression_coef(fit, cov_key) + " \\\\\n")
                     table_file.write(" & " + _format_regression_se(fit, cov_key) + " \\\\\n")
                 n_cell = "" if fit is None else str(fit["n_obs"])
-                r2_cell = (
-                    ""
-                    if fit is None or not np.isfinite(fit["r_squared"])
-                    else f"{fit['r_squared']:.3f}"
-                )
+                r2_cell = "" if fit is None or not np.isfinite(fit["r_squared"]) else f"{fit['r_squared']:.3f}"
                 table_file.write(f"Observations & {n_cell} \\\\\n")
                 table_file.write(f"$R^{{2}}$ & {r2_cell} \\\\\n")
             table_file.write("\\hline\n\\end{tabular}\n")
@@ -2175,11 +2155,7 @@ def _write_cir_regression_table(*, results: Dict[str, Any], save_path: str, anal
         )
         dropped_note = ""
         if dropped:
-            dropped_note = (
-                " Covariates without cross-sector variation are omitted ("
-                + ", ".join(dropped)
-                + ")."
-            )
+            dropped_note = " Covariates without cross-sector variation are omitted (" + ", ".join(dropped) + ")."
         table_file.write(
             "\\begin{minipage}{0.92\\textwidth}\n\\footnotesize\n"
             "\\textit{Notes:} Each column is a cross-sector OLS regression with HC1 robust standard errors "
@@ -2188,9 +2164,7 @@ def _write_cir_regression_table(*, results: Dict[str, Any], save_path: str, anal
             "capital composition share relative to the deterministic steady state, also in percent, and does "
             "not vary with shock size. Covariates are IO upstreamness $U_M$, investment upstreamness $U_I$, "
             r"sectoral TFP shock volatility sigA, and sectoral TFP persistence $\rho$. "
-            "Stars denote $p<0.10$, $p<0.05$, and $p<0.01$."
-            + dropped_note
-            + "\n\\end{minipage}\n"
+            "Stars denote $p<0.10$, $p<0.05$, and $p<0.01$." + dropped_note + "\n\\end{minipage}\n"
         )
         table_file.write("\\end{table}\n")
 
@@ -2211,13 +2185,9 @@ def _print_cir_regression_table(results: Dict[str, Any]) -> None:
                 entry = fit["coefficients"].get(cov["key"])
                 if not entry:
                     continue
-                coef_bits.append(
-                    f"{cov['key']}={entry['coef']:.3f}{_significance_stars(entry.get('p_value'))}"
-                )
+                coef_bits.append(f"{cov['key']}={entry['coef']:.3f}{_significance_stars(entry.get('p_value'))}")
             print(
-                f"    {size_label}: "
-                + ", ".join(coef_bits)
-                + f"; N={fit['n_obs']}, R2={fit['r_squared']:.3f}",
+                f"    {size_label}: " + ", ".join(coef_bits) + f"; N={fit['n_obs']}, R2={fit['r_squared']:.3f}",
                 flush=True,
             )
 
@@ -2421,7 +2391,9 @@ def prepare_postprocess_analysis(
         else:
             print("  TheoStats not usable for 1st Order Approx.; falling back to simulation moments.", flush=True)
 
-    if dynare_simul_1storder is not None:
+    if bool(config.get("long_simulation", False)) and "Log-Linear" in analysis_variables_data:
+        print("  Using matched long ergodic FirstOrder simulation for analysis outputs.")
+    elif dynare_simul_1storder is not None:
         firstorder_analysis_vars = process_simulation_with_consistent_aggregation(
             simul_data=dynare_simul_1storder,
             policies_ss=policies_ss,
@@ -2519,7 +2491,9 @@ def prepare_postprocess_analysis(
             upstreamness_data["shock_persistence"] = shock_persistence
     matlab_irf_sector_breakdown_rows = _extract_matlab_irf_breakdown_rows(model_data)
     ergodic_experiment_labels = [
-        label for label, sim_data in raw_simulation_data.items() if sim_data.get("simulation_kind", "ergodic") == "ergodic"
+        label
+        for label, sim_data in raw_simulation_data.items()
+        if sim_data.get("simulation_kind", "ergodic") == "ergodic"
     ]
     ergodic_labels_with_stochss = [label for label in ergodic_experiment_labels if label in stochastic_ss_policies]
     if ergodic_labels_with_stochss:
@@ -2648,13 +2622,13 @@ def _build_aggregate_histogram_context(
 def _build_aggregate_histogram_note(histogram_context):
     if histogram_context.get("mode") == "common_shock":
         sample_description = (
-            "The global solution replays the exact shock sequence and reporting dates stored in the MATLAB "
-            "simulation file, so its observations are aligned with the benchmark simulation. "
+            "The global solution and first-order approximation use the shock sequence and reporting dates stored "
+            "in the MATLAB simulation file. "
         )
     else:
         sample_description = (
-            "The global solution uses the retained observations from the long random-shock DEQN simulation; "
-            "benchmark curves use the corresponding simulation samples loaded from MATLAB. "
+            "The global solution and first-order approximation use matched long simulations with the same initial "
+            "states, random-shock realizations, burn-in, and retained periods. "
         )
     return (
         "The panels show the ergodic distributions of aggregate variables as percent log deviations from the "

@@ -170,6 +170,87 @@ def create_loglinear_episode_utility_fn(
     return sample_episode_utilities
 
 
+def simulate_loglinear_ergodic_analysis(
+    *,
+    econ_model,
+    analysis_config,
+    state_transition_matrix,
+    state_shock_matrix,
+    policy_state_matrix,
+    policy_shock_matrix,
+    analysis_context,
+    analysis_hooks=None,
+    include_utilities=False,
+):
+    """Run the matched long first-order simulation used by analysis outputs."""
+    A = jnp.asarray(state_transition_matrix)
+    B = jnp.asarray(state_shock_matrix)
+    C = jnp.asarray(policy_state_matrix)
+    D = jnp.asarray(policy_shock_matrix)
+
+    zero_state = jnp.zeros(A.shape[0], dtype=A.dtype)
+    zero_policy = jnp.zeros(C.shape[0], dtype=C.dtype)
+    first_analysis_vars = compute_analysis_variables(
+        econ_model=econ_model,
+        state_logdev=zero_state,
+        policy_logdev=zero_policy,
+        analysis_context=analysis_context,
+        analysis_hooks=analysis_hooks,
+    )
+    variable_labels = list(first_analysis_vars.keys())
+
+    def sample_episode(epis_rng):
+        initial_obs_normalized = econ_model.initial_state(epis_rng, analysis_config["init_range"])
+        initial_state_logdev = initial_obs_normalized * econ_model.state_sd
+        period_rngs = random.split(epis_rng, analysis_config["periods_per_epis"])
+
+        def period_step(previous_state_logdev, period_rng):
+            period_shock = analysis_config["simul_vol_scale"] * econ_model.sample_shock(period_rng)
+            policy_logdev = C @ previous_state_logdev + D @ period_shock
+            next_state_logdev = A @ previous_state_logdev + B @ period_shock
+            analysis_vars = compute_analysis_variables(
+                econ_model=econ_model,
+                state_logdev=next_state_logdev,
+                policy_logdev=policy_logdev,
+                analysis_context=analysis_context,
+                analysis_hooks=analysis_hooks,
+            )
+            analysis_values = jnp.array([analysis_vars[label] for label in variable_labels])
+            utility = (
+                econ_model.utility_from_policies(policy_logdev)
+                if include_utilities
+                else jnp.asarray(0.0, dtype=policy_logdev.dtype)
+            )
+            return next_state_logdev, (analysis_values, utility)
+
+        _, (episode_analysis, episode_utilities) = lax.scan(
+            period_step,
+            initial_state_logdev,
+            period_rngs,
+        )
+        return episode_analysis, episode_utilities
+
+    base_rng = random.PRNGKey(analysis_config["simul_seed"])
+    episode_rngs = random.split(base_rng, analysis_config["n_simul_seeds"])
+    analysis_multi, utilities_multi = jax.jit(jax.vmap(sample_episode))(episode_rngs)
+    burn_in = int(analysis_config["burn_in_periods"])
+    analysis_multi = analysis_multi[:, burn_in:, :]
+    utilities_multi = utilities_multi[:, burn_in:]
+
+    n_seeds, n_periods, n_variables = analysis_multi.shape
+    analysis_flat = analysis_multi.reshape(n_seeds * n_periods, n_variables)
+    utilities_flat = utilities_multi.reshape(n_seeds * n_periods) if include_utilities else None
+    analysis_variables = {
+        label: analysis_flat[:, index] for index, label in enumerate(variable_labels)
+    }
+    print(
+        "    Long ergodic FirstOrder simulation: "
+        f"{analysis_flat.shape[0]:,} obs ({n_seeds} seeds × {n_periods} periods)",
+        flush=True,
+    )
+    return analysis_variables, utilities_flat
+
+
 def simulate_ergodic_utilities(*, analysis_config, episode_utility_fn, label="Simulation"):
     """Run many ergodic episodes and flatten retained utility observations."""
     base_rng = random.PRNGKey(analysis_config["simul_seed"])

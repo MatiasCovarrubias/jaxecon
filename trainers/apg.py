@@ -33,4 +33,9 @@ def train_apg(model, config):
         return loss, grads
 
     n_steps = int(config["epochs"]) * int(config["steps_per_epoch"])
-    return sgd(step, params, rng, n_steps, config["learning_rate"])
+    params, metrics = sgd(step, params, rng, n_steps, config["learning_rate"])
+
+    def policy(state):
+        return policy_control(params, state, model, config["control_width"])
+
+    return metrics, policy

@@ -54,4 +54,9 @@ def train_deqn(model, config):
         return jax.value_and_grad(batch_loss)(current)
 
     n_steps = int(config["epochs"]) * int(config["steps_per_epoch"])
-    return sgd(step, params, rng, n_steps, config["learning_rate"])
+    params, metrics = sgd(step, params, rng, n_steps, config["learning_rate"])
+
+    def policy(state):
+        return policy_control(params, state, model, config["control_width"])
+
+    return metrics, policy

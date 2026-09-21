@@ -1,5 +1,7 @@
 """Dispatch a shared model to APG, DEQN, or time iteration."""
 
+from typing import Callable, NamedTuple
+
 from econ_models.check import check_algorithm
 
 from trainers.apg import train_apg
@@ -11,6 +13,16 @@ _TRAIN = {
     "deqn": train_deqn,
     "time_iteration": train_time_iteration,
 }
+
+
+class Solution(NamedTuple):
+    """Trained policy and the scalars reported by its trainer.
+
+    ``policy(state)`` maps one state to one control in the model's coordinates.
+    """
+
+    metrics: dict
+    policy: Callable
 
 
 def default_config():
@@ -36,7 +48,7 @@ def default_config():
 def train(model, algorithm, config=None):
     """Check ``model`` for ``algorithm``, then run that trainer.
 
-    ``config`` overrides :func:`default_config`. The result is a dict of floats.
+    ``config`` overrides :func:`default_config`.
     """
     if algorithm not in _TRAIN:
         raise ValueError(f"algorithm must be one of {tuple(_TRAIN)}")
@@ -44,4 +56,5 @@ def train(model, algorithm, config=None):
     if config:
         settings.update(config)
     check_algorithm(model, algorithm)
-    return _TRAIN[algorithm](model, settings)
+    metrics, policy = _TRAIN[algorithm](model, settings)
+    return Solution(metrics, policy)

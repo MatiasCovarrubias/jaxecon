@@ -44,4 +44,4 @@ def sgd(step, params, rng, n_steps, learning_rate):
     for _ in range(n_steps):
         rng, key = random.split(rng)
         params, loss, grad_norm = update(params, key)
-    return {"loss": float(loss), "grad_norm": float(grad_norm)}
+    return params, {"loss": float(loss), "grad_norm": float(grad_norm)}

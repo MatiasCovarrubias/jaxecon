@@ -58,7 +58,12 @@ def train_time_iteration(model, config):
     residual_norm = jax.jit(residual_norm)
     for _ in range(int(config["ti_iterations"])):
         control = update(control)
+
+    def policy(state):
+        saving_at_nodes = jax.vmap(lambda row: interp1d(state[0], logk_grid, row))(control[..., 0])
+        return interp1d(state[1], a_nodes, saving_at_nodes)[None]
+
     return {
         "residual_norm": float(residual_norm(control)),
         "iterations": float(config["ti_iterations"]),
-    }
+    }, policy

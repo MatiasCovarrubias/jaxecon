@@ -43,16 +43,22 @@ def train_time_iteration(model, config):
         updated = solve_all_points(residual_at, a_index, logk_grid, policy, int(config["newton_steps"]))
         return clamp(updated)
 
+    def residual_norm(policy):
+        def grid_residual(a_index, logk, saving_rate):
+            return point_residual(a_index, logk, saving_rate, policy)
+
+        rows = jax.vmap(
+            lambda i, saving_row: jax.vmap(lambda logk, saving_rate: grid_residual(i, logk, saving_rate))(
+                logk_grid, saving_row
+            )
+        )(jnp.arange(n_a), policy)
+        return jnp.max(jnp.abs(rows))
+
+    update = jax.jit(update)
+    residual_norm = jax.jit(residual_norm)
     for _ in range(int(config["ti_iterations"])):
         control = update(control)
-
-    def grid_residual(a_index, logk, saving_rate):
-        return point_residual(a_index, logk, saving_rate, control)
-
-    rows = jax.vmap(
-        lambda i, saving_row: jax.vmap(lambda logk, saving_rate: grid_residual(i, logk, saving_rate))(logk_grid, saving_row)
-    )(jnp.arange(n_a), control)
     return {
-        "residual_norm": float(jnp.max(jnp.abs(rows))),
+        "residual_norm": float(residual_norm(control)),
         "iterations": float(config["ti_iterations"]),
     }

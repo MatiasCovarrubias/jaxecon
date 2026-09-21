@@ -29,10 +29,19 @@ def policy_control(params, state, model, width):
 
 
 def sgd(step, params, rng, n_steps, learning_rate):
+    """Compiled gradient step, scanned from Python once per update."""
+    rate = jnp.asarray(learning_rate)
+
+    def update(current, key):
+        loss, grads = step(current, key)
+        leaves = jax.tree_util.tree_leaves(grads)
+        grad_norm = jnp.sqrt(sum(jnp.sum(leaf**2) for leaf in leaves))
+        updated = jax.tree_util.tree_map(lambda value, grad: value - rate * grad, current, grads)
+        return updated, loss, grad_norm
+
+    update = jax.jit(update)
     loss = grad_norm = None
     for _ in range(n_steps):
         rng, key = random.split(rng)
-        loss, grads = step(params, key)
-        grad_norm = jnp.sqrt(sum(jnp.sum(leaf**2) for leaf in jax.tree_util.tree_leaves(grads)))
-        params = jax.tree_util.tree_map(lambda value, grad: value - learning_rate * grad, params, grads)
+        params, loss, grad_norm = update(params, key)
     return {"loss": float(loss), "grad_norm": float(grad_norm)}

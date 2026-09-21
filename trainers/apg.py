@@ -1,41 +1,76 @@
-"""APG step: descend on the negative discounted return."""
+"""APG step: ascend the discounted return, plus a steady-saving tail.
+
+The tail is ``beta**T`` times ``tail_periods`` of utility at the steady saving
+rate, with shocks held at zero. It uses ``utility`` and ``transition``; the
+model does not grow an APG method.
+"""
 
 import jax
 from jax import numpy as jnp
-from jax import random
 
-from trainers.policy import init_policy, policy_control, sgd
+from trainers.evaluate import path
+from trainers.policy import adam, batch_draw, init_policy, policy_control, split_streams
+
+
+def steady_saving_tail(model, state, horizon):
+    """Discounted utility of ``horizon`` periods at the steady saving rate."""
+    horizon = int(horizon)
+    if horizon < 1:
+        raise ValueError("horizon must be positive")
+    control = model.control_ss
+    shock = jnp.zeros((1,), dtype=state.dtype)
+
+    def period(carry, _):
+        current, discount, value = carry
+        reward = model.utility(current, control)
+        nxt = model.transition(current, control, shock)
+        return (nxt, discount * model.discount_rate, value + discount * reward), None
+
+    init = (
+        state,
+        jnp.ones((), dtype=state.dtype),
+        jnp.zeros((), dtype=state.dtype),
+    )
+    (_, _, value), _ = jax.lax.scan(period, init, None, length=horizon)
+    return value
 
 
 def train_apg(model, config):
-    rng, init_rng = random.split(random.PRNGKey(config["seed"]))
-    params = init_policy(init_rng, model, config["hidden"])
+    streams = split_streams(config["seed"])
+    params = init_policy(streams["init"], model, config["hidden"])
     periods = int(config["periods"])
     episodes = int(config["episodes"])
+    antithetic = bool(config["antithetic"])
+    tail_periods = int(config["tail_periods"])
     discounts = model.discount_rate ** jnp.arange(periods, dtype=model.state_ss.dtype)
+    tail_discount = model.discount_rate ** periods
 
-    def episode_loss(current, key):
-        key, state_key = random.split(key)
-        state = model.initial_state(state_key)
-        shocks = jax.vmap(model.sample_shock)(random.split(key, periods))
+    def path_return(current, state, shocks):
+        final, _, rewards = path(model, lambda carry: policy_control(current, carry, model), state, shocks)
+        total = jnp.sum(discounts * rewards)
+        if tail_periods < 1:
+            return total
+        return total + tail_discount * steady_saving_tail(model, final, tail_periods)
 
-        def step(carry, shock):
-            control = policy_control(current, carry, model, config["control_width"])
-            reward = model.utility(carry, control)
-            return model.transition(carry, control, shock), reward
-
-        _, rewards = jax.lax.scan(step, state, shocks)
-        return -jnp.sum(discounts * rewards)
+    def episode_loss(current, state, shocks):
+        plus = path_return(current, state, shocks)
+        if not antithetic:
+            return -plus
+        return -0.5 * (plus + path_return(current, state, -shocks))
 
     def step(current, key):
-        keys = random.split(key, episodes)
-        loss, grads = jax.value_and_grad(lambda p: jnp.mean(jax.vmap(lambda k: episode_loss(p, k))(keys)))(current)
+        states, shocks = batch_draw(model, key, episodes, periods)
+        loss, grads = jax.value_and_grad(
+            lambda p: jnp.mean(jax.vmap(episode_loss, in_axes=(None, 0, 0))(p, states, shocks))
+        )(current)
         return loss, grads
 
     n_steps = int(config["epochs"]) * int(config["steps_per_epoch"])
-    params, metrics = sgd(step, params, rng, n_steps, config["learning_rate"])
+    params, metrics = adam(
+        step, params, streams["train"], n_steps, config["learning_rate"], config["cosine_alpha"]
+    )
 
     def policy(state):
-        return policy_control(params, state, model, config["control_width"])
+        return policy_control(params, state, model)
 
-    return metrics, policy
+    return metrics, policy, params

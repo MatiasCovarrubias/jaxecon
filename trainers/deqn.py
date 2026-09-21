@@ -1,4 +1,8 @@
-"""DEQN step: squared Euler residuals along simulated episodes."""
+"""Plain DEQN: step along the residual, not its square.
+
+The continuation is held fixed. The live control is the only path for the
+gradient, and the step follows the residual itself.
+"""
 
 import jax
 from jax import numpy as jnp
@@ -36,8 +40,8 @@ def train_deqn(model, config):
             return model.expectation(nxt, nxt_control)
 
         expectation = jax.lax.stop_gradient(jnp.mean(jax.vmap(realize)(shocks), axis=0))
-        residual = model.residuals(state, control, expectation)
-        return jnp.mean(residual**2)
+        residual = jax.lax.stop_gradient(model.residuals(state, control, expectation))
+        return jnp.sum(residual * control)
 
     def step(current, key):
         key, episode_key, loss_key = random.split(key, 3)

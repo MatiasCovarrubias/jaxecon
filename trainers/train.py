@@ -14,7 +14,7 @@ _TRAIN = {
 
 
 def default_config():
-    """Short settings used by the smoke script."""
+    """Small settings for a single update. The smoke script overrides them."""
     return {
         "seed": 0,
         "learning_rate": 1e-2,

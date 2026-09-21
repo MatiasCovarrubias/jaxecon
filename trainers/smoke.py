@@ -7,10 +7,16 @@ from trainers.train import train
 
 def main():
     model = StoneGearyRbc()
-    for algorithm in ("apg", "deqn", "time_iteration"):
-        result = train(model, algorithm)
+    neural = {"episodes": 8, "periods": 32, "epochs": 100, "steps_per_epoch": 1}
+    runs = (
+        ("apg", neural),
+        ("deqn", neural),
+        ("time_iteration", {"ti_iterations": 100}),
+    )
+    for algorithm, config in runs:
+        result = train(model, algorithm, config)
         metrics = ", ".join(f"{name}={value:.6g}" for name, value in result.items())
-        print(f"{algorithm}: {metrics}")
+        print(f"{algorithm}: {metrics}", flush=True)
 
 
 if __name__ == "__main__":

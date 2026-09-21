@@ -8,6 +8,7 @@ from .epoch_train import create_epoch_train_fn
 from .eval import ConvergenceMetrics, create_convergence_eval_fn, create_eval_fn
 from .loss import create_episode_loss_fn
 from .simulation import create_episode_simul_fn, Transition
+from .welfare import WelfareRollout, create_welfare_fn
 
 __all__ = [
     "create_epoch_train_fn",
@@ -15,8 +16,10 @@ __all__ = [
     "create_eval_fn",
     "create_episode_loss_fn",
     "create_episode_simul_fn",
+    "create_welfare_fn",
     "ConvergenceMetrics",
     "Transition",
+    "WelfareRollout",
 ]
 
 

@@ -5,6 +5,22 @@ import jax
 from jax import numpy as jnp
 
 
+class PolicyNet(nn.Module):
+    features: Sequence[int]
+    n_out: int
+    precision: jnp.dtype = jnp.float32
+    output_bias_init: float | None = None
+
+    @nn.compact
+    def __call__(self, x):
+        for feat in self.features:
+            x = nn.relu(nn.Dense(feat, param_dtype=self.precision)(x))
+        bias_init = nn.initializers.zeros
+        if self.output_bias_init is not None:
+            bias_init = nn.initializers.constant(self.output_bias_init)
+        return nn.Dense(self.n_out, bias_init=bias_init, param_dtype=self.precision)(x)
+
+
 class NeuralNet(nn.Module):
     features: Sequence[int]
     precision: jnp.dtype  # Default precision

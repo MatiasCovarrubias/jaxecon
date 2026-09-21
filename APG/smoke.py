@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small APG smoke check for the two-sector RBC environment."""
+"""Small APG smoke check for the shared RBC environment."""
 
 import os
 import sys
@@ -16,27 +16,35 @@ from flax.training import train_state
 
 from APG.algorithm import create_epoch_train_fn, create_eval_fn
 from APG.environments import RbcMultiSector
-from APG.neural_nets import ActorCritic
+from APG.neural_nets import ActorCritic, PolicyNet
 
 
-def main():
+def run_smoke(use_terminal_value):
     config = {
         "seed": 0,
-        "n_sectors": 2,
+        "n_sectors": 1,
         "steps_per_epoch": 1,
         "epis_per_step": 2,
         "periods_per_epis": 2,
         "eval_n_epis": 2,
         "eval_periods_per_epis": 2,
+        "use_terminal_value": use_terminal_value,
         "gae_lambda": 0.95,
+        "layers": [4],
     }
 
     env = RbcMultiSector(N=config["n_sectors"])
-    neural_net = ActorCritic(
-        actions_dim=env.action_dim,
-        hidden_dims_actor=[4],
-        hidden_dims_critic=[4],
-    )
+    if use_terminal_value:
+        neural_net = ActorCritic(
+            actions_dim=env.action_dim,
+            hidden_dims_actor=config["layers"],
+            hidden_dims_critic=[4],
+        )
+    else:
+        neural_net = PolicyNet(
+            features=config["layers"],
+            n_out=env.action_dim,
+        )
 
     rng = jax.random.PRNGKey(config["seed"])
     rng, rng_pol, rng_env, rng_epoch, rng_eval = jax.random.split(rng, 5)
@@ -54,9 +62,15 @@ def main():
     train_state_obj, _, epoch_metrics = epoch_train_fn(train_state_obj, rng_epoch)
     eval_metrics = eval_fn(train_state_obj, rng_eval)
 
-    print("APG smoke ok")
+    mode = "terminal value" if use_terminal_value else "policy only"
+    print(f"APG smoke ok ({mode})")
     print(f"epoch_loss={float(jnp.mean(epoch_metrics[0][0])):.6f}")
     print(f"eval_loss={float(eval_metrics[0]):.6f}")
+
+
+def main():
+    run_smoke(use_terminal_value=False)
+    run_smoke(use_terminal_value=True)
 
 
 if __name__ == "__main__":

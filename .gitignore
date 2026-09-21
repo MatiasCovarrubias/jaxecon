@@ -187,3 +187,6 @@ sprints/
 *.swp
 *.swo
 *~
+
+# APG experiment outputs
+APG/results/

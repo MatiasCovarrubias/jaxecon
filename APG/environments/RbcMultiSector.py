@@ -1,101 +1,168 @@
 from jax import numpy as jnp
-from jax import random
+
+from DEQN.econ_models.RBC.exact_kink_model import ExactKinkModel
+from DEQN.econ_models.RBC.model import Model
+from DEQN.econ_models.RBC.projected_irreversible_model import (
+    ProjectedIrreversibleModel,
+)
+
+from .base import WelfareEnvironment
 
 
-class RbcMultiSector:
-    """A JAX implementation of a multi-sector Ratiasc2
-    BC model."""
+class RbcMultiSector(WelfareEnvironment):
+    """APG environment wrapper around the shared RBC model.
+
+    The economics live in ``DEQN.econ_models.RBC``; this class picks the model
+    variant from the constructor arguments and exposes the rollout interface
+    required by ``WelfareEnvironment``. Model attributes (``beta``, ``K_ss``,
+    ``discount_rate``, ``value_ss``, ``obs_ss``, ``action_dim``, ...) are
+    delegated to ``self.econ`` and can be read directly from the environment.
+
+    Model selection:
+
+    - ``policy_map="exact_kink"``: ``ExactKinkModel`` (explicit irreversibility kink).
+    - ``i_min_frac > 0``: ``ProjectedIrreversibleModel`` (investment floor by projection).
+    - otherwise: ``Model`` (smooth saving-rate policy).
+    """
 
     def __init__(
         self,
-        N=2,
-        beta=0.96,
-        alpha_values=0.3,
-        delta_values=0.1,
-        rho_values=0.9,
-        shock_sd=0.1,
-        xi_values=None,
-        sigma_c=0.5,
-        discount_rate=None,
+        N=1,
+        investment_penalty=0.0,
+        project_investment=True,
+        policy_map="saving_rate",
+        policy_beta=10.0,
+        hard_floor=False,
+        kappa_mu=None,
+        state_k_scale=0.1,
+        investment_cap_frac=0.9,
+        **kwargs,
     ):
+        if investment_penalty < 0:
+            raise ValueError("investment_penalty must be nonnegative")
+        if investment_penalty > 0 and project_investment:
+            raise ValueError("a positive investment penalty requires project_investment=False")
+        if investment_penalty > 0 and N != 1:
+            raise ValueError("the utility-scaled investment penalty currently supports one sector")
+        if policy_map not in ("saving_rate", "exact_kink"):
+            raise ValueError(
+                "policy_map must be 'saving_rate' or 'exact_kink'"
+            )
+        self.investment_penalty = float(investment_penalty)
+        if policy_map == "exact_kink":
+            self.econ = ExactKinkModel(
+                n_sectors=N,
+                project_investment=project_investment,
+                policy_beta=policy_beta,
+                hard_floor=hard_floor,
+                kappa_mu=kappa_mu,
+                state_k_scale=state_k_scale,
+                investment_cap_frac=investment_cap_frac,
+                **kwargs,
+            )
+        elif float(kwargs.get("i_min_frac", 0.0)) > 0:
+            self.econ = ProjectedIrreversibleModel(
+                n_sectors=N,
+                project_investment=project_investment,
+                **kwargs,
+            )
+        else:
+            self.econ = Model(
+                n_sectors=N,
+                project_investment=project_investment,
+                **kwargs,
+            )
+        self.N = self.econ.n_sectors
 
-        self.N = N
-        self.beta = beta
-        self.alpha = jnp.ones(N) * alpha_values
-        self.delta = jnp.ones(N) * delta_values
-        self.rho = jnp.ones(N) * rho_values
-        self.discount_rate = beta if discount_rate is None else discount_rate
-        self.shock_sd = jnp.ones(N) * shock_sd
-        self.sigma_c = sigma_c
-        self.xi = jnp.ones(N) / N if xi_values is None else xi_values
+    def __getattr__(self, name):
+        if name == "econ":
+            raise AttributeError(name)
+        return getattr(self.econ, name)
 
-        # Calculate steady state values
-        self.k_ss = jnp.log((self.alpha / (1 / self.beta - 1 + self.delta)) ** (1 / (1 - self.alpha)))
-        self.a_ss = jnp.zeros(N)
-        self.obs_ss = jnp.concatenate([self.k_ss, self.a_ss])
-        self.obs_sd = jnp.ones(2 * N)
-        self.policy_ss = jnp.log(self.delta * jnp.exp(self.k_ss))
-        self.policy_sd = jnp.ones(N)
+    def deterministic_steady_state_action(self):
+        return self.econ.deterministic_steady_state_action()
 
-        # Steady state rewards and value
-        self.I_ss = jnp.exp(self.policy_ss)
-        self.K_ss = jnp.exp(self.k_ss)
-        self.A_ss = jnp.exp(self.a_ss)
-        self.Y_ss = self.A_ss * self.K_ss**self.alpha
-        self.C_ss = self.Y_ss - jnp.exp(self.policy_ss)
-        self.Cagg_ss = jnp.sum(self.xi ** (self.sigma_c ** (-1)) * self.C_ss ** (1 - self.sigma_c ** (-1))) ** (
-            1 / (1 - self.sigma_c ** (-1))
+    def terminal_value(self, state, horizon=512):
+        return self.econ.terminal_value(state, horizon)
+
+    def saving_rate_from_action(self, action, output=None):
+        return self.econ.saving_rate_from_policy(action, output)
+
+    def allocation_from_action(self, action, output):
+        return self.econ.allocation_from_policy(action, output)
+
+    def training_reward(self, state, action):
+        reward = self.econ.reward(state, action)
+        if not self.investment_penalty:
+            return reward
+        K, a = self.econ._capital_and_productivity(state)
+        output = self.econ.production(K, a)
+        investment, _, _ = self.econ.allocation_from_policy(action, output)
+        shortfall = self.econ.investment_shortfall(investment)
+        utility_scale = self.econ.marginal_utility(self.econ.C_ss)
+        return reward - self.investment_penalty * jnp.sum(utility_scale * shortfall, axis=-1)
+
+    def normalized_investment_slack(self, state, action):
+        K, a = self.econ._capital_and_productivity(state)
+        output = self.econ.production(K, a)
+        investment, _, _ = self.econ.allocation_from_policy(action, output)
+        return (investment - self.econ.I_min) / self.econ.I_ss
+
+    def constraint_utility_scale(self):
+        return self.econ.marginal_utility(self.econ.C_ss) * self.econ.I_ss
+
+    def constraint_state_grid(
+        self,
+        size=33,
+        k_min=0.90,
+        k_max=1.16,
+        a_sd_min=-2.5,
+        a_sd_max=2.5,
+    ):
+        if size < 2:
+            raise ValueError("constraint grid size must be at least two")
+        k = self.econ.K_ss[0] * jnp.linspace(k_min, k_max, size, dtype=self.econ.precision)
+        stationary_a_sd = self.econ.shock_sd[0] / jnp.sqrt(1 - self.econ.rho[0] ** 2)
+        a = stationary_a_sd * jnp.linspace(
+            a_sd_min,
+            a_sd_max,
+            size,
+            dtype=self.econ.precision,
         )
-        self.reward_ss = jnp.log(self.Cagg_ss)
-        self.value_ss = self.reward_ss / (1 - self.beta)
+        capital, productivity = jnp.meshgrid(k, a, indexing="ij")
+        return self.econ._normalize_state(
+            capital.reshape(-1, 1),
+            productivity.reshape(-1, 1),
+        )
 
-        # Utility variables
-        self.obs_dim = 2 * N
-        self.state_dim = 2 * N
-        self.action_dim = N
+    def deterministic_steady_state_welfare(self, horizon):
+        return self.econ.deterministic_steady_state_welfare(horizon)
 
-    def reset(self, rng):
-        """Get initial obs given first shock"""
-        rng_k, rng_a = random.split(rng, 2)
-        K = random.uniform(rng_k, shape=(self.N,), minval=0.95 * jnp.exp(self.k_ss), maxval=1.05 * jnp.exp(self.k_ss))
-        A = random.uniform(rng_a, shape=(self.N,), minval=0.95 * jnp.exp(self.a_ss), maxval=1.05 * jnp.exp(self.a_ss))
+    def consumption_equivalent(self, welfare, baseline_welfare, horizon):
+        return self.econ.consumption_equivalent(welfare, baseline_welfare, horizon)
 
-        obs_init_notnorm = jnp.concatenate([jnp.log(K), jnp.log(A)])
-        obs_init = (obs_init_notnorm - self.obs_ss) / self.obs_sd  # normalize
-        state_init = obs_init
-        return obs_init, state_init
+    def initial_state(self, rng, init_range=0, init_range_a=None, mode=None):
+        return self.econ.initial_state(
+            rng, init_range, init_range_a=init_range_a, mode=mode
+        )
+
+    def set_stationary_start(self, cov_obs):
+        return self.econ.set_stationary_start(cov_obs)
+
+    def sample_shock(self, rng):
+        return self.econ.sample_shock(rng)
+
+    def transition(self, state, action, shock):
+        return self.econ.step(state, action, shock)
+
+    def reset(self, rng, init_range=5, init_range_a=None):
+        obs_init = self.initial_state(rng, init_range=init_range, init_range_a=init_range_a)
+        return obs_init, obs_init
 
     def step(self, rng, state, action):
-        """A period step of the model, given current obs and policy"""
-
-        # Process observation
-        obs = state
-        obs_notnorm = obs * self.obs_sd + self.obs_ss  # denormalize
-        K = jnp.exp(obs_notnorm[: self.N])
-        a = obs_notnorm[self.N :]
-
-        # Evolution of state
-        a_tplus1 = self.rho * a + self.shock_sd * random.normal(rng, (self.N,))
-        action_notnorm = action * self.policy_sd + self.policy_ss
-        Inv = jnp.exp(action_notnorm)
-        K_tplus1 = (1 - self.delta) * K + Inv
-
-        # New observation and state
-        new_obs_notnorm = jnp.concatenate([jnp.log(K_tplus1), a_tplus1])
-        new_obs = (new_obs_notnorm - self.obs_ss) / self.obs_sd  # normalize
-        new_state = new_obs
-
-        # Reward
-        A = jnp.exp(a)
-        Y = A * K**self.alpha
-        C = Y - Inv
-        Cagg = jnp.sum(self.xi ** (self.sigma_c ** (-1)) * C ** (1 - self.sigma_c ** (-1))) ** (
-            1 / (1 - self.sigma_c ** (-1))
-        )
-        reward = jnp.log(Cagg)
-
-        # Done, Info
+        shock = self.sample_shock(rng)
+        reward = self.training_reward(state, action)
+        new_obs = self.transition(state, action, shock)
         done = jnp.array(False)
         info = jnp.array([0.0])
-
-        return new_obs, new_state, reward, done, info
+        return new_obs, new_obs, reward, done, info

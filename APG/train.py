@@ -1,242 +1,143 @@
 #!/usr/bin/env python3
-"""
-APG Training script.
-
-Usage:
-    LOCAL:
-        # Method 1: Run as module (from repository root):
-        python -m APG.train
-
-        # Method 2: Run directly as script (from repository root):
-        python APG/train.py
-
-        Both methods require you to be in the repository root directory.
-
-    COLAB:
-        Simply run all cells in order. The script will automatically detect the Colab
-        environment, install dependencies, clone the repository, and mount Google Drive.
-"""
+"""Train the core analytical policy-gradient algorithm."""
 
 import os
 import sys
 
-# ============================================================================
-# ENVIRONMENT DETECTION AND SETUP
-# ============================================================================
+import jax.numpy as jnp
+from jax import config as jax_config
 
-try:
-    import google.colab  # type: ignore  # noqa: F401
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
 
-    IN_COLAB = True
-except ImportError:
-    IN_COLAB = False
-
-print(f"Environment: {'Google Colab' if IN_COLAB else 'Local'}")
-
-if IN_COLAB:
-    import subprocess
-
-    def _colab_package_stack_is_usable() -> bool:
-        try:
-            import numpy
-            import scipy
-            import scipy.io  # noqa: F401
-            import jax
-            import optax  # noqa: F401
-        except Exception as exc:
-            print(f"Package stack check failed in current kernel: {exc!r}")
-            return False
-        print(
-            "Package stack OK: "
-            f"numpy={numpy.__version__} scipy={scipy.__version__} jax={jax.__version__}"
-        )
-        return True
-
-    _COLAB_REPAIR_MARKER = "/content/.jaxecon_colab_numpy_repair_attempted"
-    if _colab_package_stack_is_usable():
-        if os.path.exists(_COLAB_REPAIR_MARKER):
-            os.remove(_COLAB_REPAIR_MARKER)
-    else:
-        if os.path.exists(_COLAB_REPAIR_MARKER):
-            raise RuntimeError(
-                "The Colab NumPy/SciPy/JAX stack is still inconsistent after a repair restart. "
-                "Use Runtime > Disconnect and delete runtime, then rerun the notebook."
-            )
-        print("Installing pinned NumPy/SciPy/JAX stack, then restarting Colab.")
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--upgrade",
-                "--force-reinstall",
-                "numpy==2.0.2",
-                "scipy==1.15.3",
-                "jax[cuda12]",
-                "optax",
-                "orbax-checkpoint",
-            ],
-            check=True,
-        )
-        with open(_COLAB_REPAIR_MARKER, "w", encoding="utf-8") as marker:
-            marker.write("numpy==2.0.2 scipy==1.15.3 jax[cuda12]\n")
-        print("Package stack repaired. Restarting Colab runtime; rerun this cell after reconnecting.")
-        os.kill(os.getpid(), 9)
-
-    print("Cloning jaxecon repository...")
-    if not os.path.exists("/content/jaxecon"):
-        subprocess.run(["git", "clone", "https://github.com/MatiasCovarrubias/jaxecon"], check=True)
-
-    sys.path.insert(0, "/content/jaxecon")
-
-    print("Mounting Google Drive...")
-    from google.colab import drive  # type: ignore
-
-    drive.mount("/content/drive")
-
-    base_dir = "/content/drive/MyDrive/Jaxecon/APG"
-
-else:
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    if repo_root not in sys.path:
-        sys.path.insert(0, repo_root)
-    base_dir = os.path.join(repo_root, "APG")
-
-# ============================================================================
-# IMPORTS
-# ============================================================================
-
-import optax  # noqa: E402
-from jax import config as jax_config  # noqa: E402
-
-from APG.algorithm import create_epoch_train_fn, create_eval_fn  # noqa: E402
-from APG.environments import RbcMultiSector  # noqa: E402
-from APG.neural_nets import ActorCritic  # noqa: E402
-from APG.training import run_experiment  # noqa: E402
-from APG.training.plots import plot_training_metrics, plot_learning_rate_schedule  # noqa: E402
-
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+from APG.algorithm import create_epoch_train_fn, create_eval_fn
+from APG.environments import RbcMultiSector
+from APG.loglinear import apply_lq_design, build_actor, prepare_loglinear
+from APG.training import run_experiment
+from APG.training.plots import (
+    plot_learning_rate_schedule,
+    plot_training_metrics,
+)
+from DEQN.econ_models.RBC.euler_eval import create_euler_eval_fn
+from DEQN.econ_models.RBC.train_shared import (
+    APG_LEARNING_RATE,
+    DEQN_EVAL_MC_DRAWS,
+    SHARED_RBC_TRAIN,
+    shared_model_kwargs,
+    with_derived_counts,
+)
+from DEQN.econ_models.RBC.welfare_eval import create_welfare_eval_fn
 
 
-def get_lr_schedule():
-    """Create learning rate schedule."""
-    return optax.join_schedules(
-        schedules=[
-            optax.linear_schedule(0, 0.01, 100),
-            optax.constant_schedule(0.01),
-            optax.constant_schedule(0.001),
-            optax.constant_schedule(0.0001),
-            optax.cosine_decay_schedule(0.0001, 1000),
-        ],
-        boundaries=[200, 400, 600, 800],
-    )
-
-
-config = {
-    # Key configuration - Edit these first
-    "run_name": "rbc_ms_baseline",
-    "date": "Dec2025",
-    "seed": 42,
-    # Environment parameters
-    "n_sectors": 8,
-    # Training parameters
-    "fp64_precision": False,
-    "learning_rate": get_lr_schedule(),
-    "n_epochs": 100,
-    "steps_per_epoch": 100,
-    "epis_per_step": 1024 * 8,
-    "periods_per_epis": 32,
-    "checkpoint_every_n_epochs": 10,
-    # Evaluation parameters
-    "eval_n_epis": 1024 * 32,
-    "eval_periods_per_epis": 32,
-    # Algorithm parameters
-    "gae_lambda": 0.95,
-    "max_grad_norm": None,
-    # Neural network architecture
-    "layers_actor": [16, 8],
-    "layers_critic": [8, 4],
-    # Directories
-    "working_dir": os.path.join(base_dir, "results/"),
-}
-
-
-# ============================================================================
-# MAIN FUNCTION
-# ============================================================================
+config = with_derived_counts(
+    {
+        **SHARED_RBC_TRAIN,
+        "run_name": "rbc_policy_baseline",
+        "date": "Aug2026",
+        "learning_rate": APG_LEARNING_RATE,
+        "checkpoint_every_n_epochs": 10,
+        "save_orbax_checkpoint": True,
+        "generate_plots": True,
+        "use_terminal_value": False,
+        "use_model_terminal_value": False,
+        "terminal_value_horizon": 512,
+        "gae_lambda": 0.95,
+        "algorithm_schema": "apg_v1",
+        "layers_critic": SHARED_RBC_TRAIN["layers"],
+        "antithetic_episodes": False,
+        "rematerialize_rollout": False,
+        "loglinear_baseline": False,
+        "loglinear_normalize": True,
+        "loglinear_solver": "scipy",
+        "use_lq_terminal_value": False,
+        "working_dir": os.path.join(repo_root, "APG", "results"),
+    }
+)
 
 
 def main():
     print(f"Training: {config['run_name']}", flush=True)
-
-    # Precision setup
-    if config["fp64_precision"]:
+    if config["double_precision"]:
         jax_config.update("jax_enable_x64", True)
-
-    # Create environment
-    print("Creating environment...", flush=True)
-    env = RbcMultiSector(N=config["n_sectors"])
-    print(f"  n_sectors: {config['n_sectors']}", flush=True)
-    print(f"  obs_dim: {env.obs_dim}", flush=True)
-    print(f"  action_dim: {env.action_dim}", flush=True)
-
-    # Create neural network
-    print("Creating neural network...", flush=True)
-    neural_net = ActorCritic(
-        actions_dim=env.action_dim,
-        hidden_dims_actor=config["layers_actor"],
-        hidden_dims_critic=config["layers_critic"],
-    )
-    print("Neural network created successfully.", flush=True)
-
-    # Create training and evaluation functions
-    print("Creating training functions...", flush=True)
-    epoch_train_fn = create_epoch_train_fn(env, config)
-    eval_fn = create_eval_fn(env, config)
-
-    # Run training
-    print("Starting training...", flush=True)
-    try:
-        result = run_experiment(
-            config=config,
-            env=env,
-            neural_net=neural_net,
-            epoch_train_fn=epoch_train_fn,
-            eval_fn=eval_fn,
+    if sum(
+        bool(config.get(key, False))
+        for key in ("use_terminal_value", "use_model_terminal_value", "use_lq_terminal_value")
+    ) > 1:
+        raise ValueError(
+            "learned critic, model terminal continuation, and LQ terminal value "
+            "cannot be combined"
         )
-    except Exception as e:
-        print(f"Training failed: {e}")
-        import traceback
 
-        traceback.print_exc()
-        return None
+    precision = jnp.float64 if config["double_precision"] else jnp.float32
+    model_kwargs = shared_model_kwargs(config)
+    n_sectors = model_kwargs.pop("n_sectors")
+    env = RbcMultiSector(
+        N=n_sectors,
+        **model_kwargs,
+        project_investment=True,
+        policy_map="saving_rate",
+        double_precision=config["double_precision"],
+        precision=precision,
+    )
 
-    # Generate plots
-    if result:
+    from APG.loglinear.design import needs_lq_objects
+
+    if needs_lq_objects(config) or config.get("design") == "lq":
+        loglinear = apply_lq_design(env, env.econ, config)
+    else:
+        loglinear = prepare_loglinear(env, config)
+    actor_solution = loglinear if config.get("loglinear_baseline") else None
+    neural_net = build_actor(env, config, precision, solution=actor_solution)
+
+    def policy_fn(params, obs):
+        output = neural_net.apply(params, obs)
+        return output[0] if config.get("use_terminal_value") else output
+
+    welfare_eval_fn = create_welfare_eval_fn(
+        env.econ,
+        policy_fn=policy_fn,
+        horizon=config.get("welfare_history_horizon", config["welfare_horizon"]),
+        n_epis=config["welfare_n_epis"],
+        init_range=config["welfare_init_range"],
+        init_range_a=config.get("welfare_init_range_a"),
+    )
+    euler_eval_fn = create_euler_eval_fn(
+        env.econ,
+        policy_fn=policy_fn,
+        periods_per_epis=config["eval_periods_per_epis"],
+        n_epis=config["eval_n_epis"],
+        mc_draws=DEQN_EVAL_MC_DRAWS,
+        init_range=config["init_range"],
+        init_range_a=config.get("init_range_a"),
+        simul_vol_scale=config["simul_vol_scale"],
+    )
+    result = run_experiment(
+        config=config,
+        env=env,
+        neural_net=neural_net,
+        epoch_train_fn=create_epoch_train_fn(env, config),
+        eval_fn=create_eval_fn(env, config),
+        welfare_eval_fn=welfare_eval_fn,
+        euler_eval_fn=euler_eval_fn,
+    )
+
+    if result and config.get("generate_plots", True):
         plots_dir = os.path.join(config["working_dir"], config["run_name"])
-
         plot_training_metrics(
-            training_results=result, save_dir=plots_dir, experiment_name=config["run_name"], display_dpi=100
+            training_results=result,
+            save_dir=plots_dir,
+            experiment_name=config["run_name"],
+            display_dpi=100,
         )
         plot_learning_rate_schedule(
-            training_results=result, save_dir=plots_dir, experiment_name=config["run_name"], display_dpi=100
+            training_results=result,
+            save_dir=plots_dir,
+            experiment_name=config["run_name"],
+            display_dpi=100,
         )
-
-        if "metrics" in result:
-            m = result["metrics"]
-            print(
-                f"Min Loss: {m['min_loss']:.7f} | "
-                f"Final Acc: {m['final_critic_acc']:.2f}% | "
-                f"Time: {m['time_fullexp_minutes']:.1f}m"
-            )
-
     return result
 
 
 if __name__ == "__main__":
     main()
-
-

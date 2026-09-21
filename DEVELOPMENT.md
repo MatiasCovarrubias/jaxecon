@@ -19,7 +19,7 @@ appropriate JAX CUDA or TPU package for the machine.
 Check the environment:
 
 ```bash
-python -c "from DEQN.neural_nets.neural_nets import NeuralNet; from APG.environments import RbcMultiSector; print('ok')"
+python -c "from DEQN.neural_nets.neural_nets import PolicyNet; from APG.environments import RbcMultiSector; print('ok')"
 ```
 
 ## Public Smoke Runs
@@ -28,6 +28,7 @@ These commands should run without private data:
 
 ```bash
 python -m DEQN.econ_models.RBC.train
+python -m TimeIteration.train
 python VFI/vfi.py
 ```
 
@@ -45,6 +46,18 @@ python -m APG.smoke
 
 The full `APG/train.py` runner compiles and checkpoints a heavier experiment.
 Use it after the component smoke passes.
+
+## Tests
+
+The `unittest` suites run on CPU in under a minute:
+
+```bash
+python -m unittest discover -s APG/tests -t .     # APG contract, rollout, constrained variants
+python -m unittest discover -s DEQN/tests -t .    # RBC model invariants, DEQN state sampling
+```
+
+`pytest APG/tests DEQN/tests` also works if pytest is installed. A new APG
+environment is verified with `APG.environments.check_environment(env)`.
 
 ## RbcProdNet Research Runs
 

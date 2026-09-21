@@ -90,9 +90,9 @@ The main execution flow in `DEQN/analysis.py` is:
 
 Keep only the latest three entries here. Add newest first. Keep each entry to one short bullet focused on the behavioral change, not the implementation details.
 
+- Long analyses always run a matched FirstOrder sample for simulation outputs.
 - Analysis modules can skip stochastic SS, impulse responses, and welfare independently.
 - Aggregate histograms now emit a paper-ready four-panel LaTeX figure.
-- The experiment selector accepts either a checkpoint string or one labeled mapping.
 
 ## Current defaults and compatibility
 

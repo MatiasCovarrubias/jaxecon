@@ -2,14 +2,16 @@
 
 JaxEcon collects JAX-based solution algorithms for dynamic economic models. The
 main research workflow is **DEQN**: Deep Equilibrium Networks for continuous-state
-dynamic models. The repository also contains an educational VFI implementation
-and an experimental APG implementation.
+dynamic models. The repository also contains **TimeIteration** (grid time
+iteration with a semi-smooth Newton local solver), an educational VFI
+implementation, and an experimental APG implementation.
 
 ## Algorithms
 
 | Algorithm | Status | Role |
 | --- | --- | --- |
 | [**DEQN**](DEQN/) | Mature core | Main framework for neural-network global solutions, training, and analysis |
+| [**TimeIteration**](TimeIteration/) | New | Grid time iteration with a semi-smooth Newton local solver |
 | [**VFI**](VFI/) | Educational | Self-contained value-function iteration example for JAX vectorization and device parallelism |
 | [**APG**](APG/) | Experimental | Analytical policy-gradient prototype for differentiable environments |
 | **PI** | Planned | Policy iteration placeholder |
@@ -28,6 +30,12 @@ Run a simple DEQN model:
 
 ```bash
 python -m DEQN.econ_models.RBC.train
+```
+
+Run time iteration (closed-form gate, then a small irreversible RBC):
+
+```bash
+python -m TimeIteration.train
 ```
 
 Run the educational VFI example:
@@ -76,6 +84,7 @@ jaxecon/
 │   ├── training/        # Experiment orchestration, checkpoints, and plots
 │   ├── train.py         # RbcProdNet research training entry point
 │   └── analysis.py      # RbcProdNet research analysis entry point
+├── TimeIteration/       # Grid time iteration with semi-smooth Newton
 ├── VFI/                 # Self-contained value-function iteration example
 ├── APG/                 # Experimental analytical policy-gradient implementation
 └── PI/                  # Planned policy-iteration work

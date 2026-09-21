@@ -8,6 +8,7 @@ from .neural_nets import (
     NeuralNet,
     NeuralNet_dropout,
     NeuralNet_freezed_layers,
+    PolicyNet,
     create_neural_net_builder,
 )
 from .with_loglinear_baseline import (
@@ -19,6 +20,7 @@ from .with_loglinear_baseline import (
 # )
 
 __all__ = [
+    "PolicyNet",
     "NeuralNet",
     "NeuralNet_freezed_layers",
     "NeuralNet_dropout",
